@@ -130,19 +130,19 @@
     <curator.version>2.4.0</curator.version>
     <hive.group>org.spark-project.hive</hive.group>
     <!-- Version used in Maven Hive dependency -->
-    <hive.version>1.2.1.spark2</hive.version>
+    <hive.version>1.2.1.spark2-nflx</hive.version>
     <!-- Version used for internal directory structure -->
     <hive.version.short>1.2.1</hive.version.short>
     <derby.version>10.12.1.1</derby.version>
-    <parquet.version>1.8.1</parquet.version>
-    <hive.parquet.version>1.6.0</hive.parquet.version>
+    <parquet.version>1.8.1-nflx</parquet.version>
+    <hive.parquet.version>1.6.0-nflx</hive.parquet.version>
     <jetty.version>9.2.16.v20160414</jetty.version>
     <javaxservlet.version>3.1.0</javaxservlet.version>
     <chill.version>0.8.0</chill.version>
     <ivy.version>2.4.0</ivy.version>
     <oro.version>2.0.8</oro.version>
     <codahale.metrics.version>3.1.2</codahale.metrics.version>
-    <avro.version>1.7.7</avro.version>
+    <avro.version>1.8.1</avro.version>
     <avro.mapred.classifier>hadoop2</avro.mapred.classifier>
     <jets3t.version>0.7.1</jets3t.version>
     <aws.kinesis.client.version>1.6.1</aws.kinesis.client.version>
@@ -229,6 +229,29 @@
       <!-- This should be at top, it makes maven try the central repo first and then others and hence faster dep resolution -->
       <name>Maven Repository</name>
       <url>https://repo1.maven.org/maven2</url>
+      <releases>
+        <enabled>true</enabled>
+      </releases>
+      <snapshots>
+        <enabled>false</enabled>
+      </snapshots>
+    </repository>
+    <!-- For parquet 1.6.0-nflx -->
+    <repository>
+      <id>ext-releases-local-pom</id>
+      <name>Netflix Artifactory</name>
+      <url>http://artifacts.netflix.com/ext-releases-local-pom</url>
+      <releases>
+        <enabled>true</enabled>
+      </releases>
+      <snapshots>
+        <enabled>false</enabled>
+      </snapshots>
+    </repository>
+    <repository>
+      <id>libs-releases-local-pom</id>
+      <name>Netflix Artifactory</name>
+      <url>http://artifacts.netflix.com/libs-releases-local-pom</url>
       <releases>
         <enabled>true</enabled>
       </releases>
@@ -594,6 +617,11 @@
         <groupId>io.dropwizard.metrics</groupId>
         <artifactId>metrics-graphite</artifactId>
         <version>${codahale.metrics.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.fasterxml.jackson.core</groupId>
+        <artifactId>jackson-core</artifactId>
+        <version>${fasterxml.jackson.version}</version>
       </dependency>
       <dependency>
         <groupId>com.fasterxml.jackson.core</groupId>
@@ -1857,6 +1885,11 @@
         <groupId>${jline.groupid}</groupId>
         <artifactId>jline</artifactId>
         <version>${jline.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>netflix</groupId>
+        <artifactId>brotli-codec</artifactId>
+        <version>0.1.7</version>
       </dependency>
       <dependency>
         <groupId>org.apache.commons</groupId>
