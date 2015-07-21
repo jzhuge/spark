@@ -125,21 +125,21 @@
     <curator.version>2.6.0</curator.version>
     <hive.group>org.spark-project.hive</hive.group>
     <!-- Version used in Maven Hive dependency -->
-    <hive.version>1.2.1.spark2</hive.version>
+    <hive.version>1.2.1.spark2-nflx8</hive.version>
     <!-- Version used for internal directory structure -->
     <hive.version.short>1.2.1</hive.version.short>
     <derby.version>10.12.1.1</derby.version>
-    <parquet.version>1.8.3</parquet.version>
+    <parquet.version>1.9.1-nflx-14</parquet.version>
     <orc.version>1.4.4</orc.version>
     <orc.classifier>nohive</orc.classifier>
-    <hive.parquet.version>1.6.0</hive.parquet.version>
+    <hive.parquet.version>1.6.0-nflx</hive.parquet.version>
     <jetty.version>9.3.24.v20180605</jetty.version>
     <javaxservlet.version>3.1.0</javaxservlet.version>
     <chill.version>0.8.4</chill.version>
     <ivy.version>2.4.0</ivy.version>
     <oro.version>2.0.8</oro.version>
     <codahale.metrics.version>3.1.5</codahale.metrics.version>
-    <avro.version>1.7.7</avro.version>
+    <avro.version>1.8.1</avro.version>
     <avro.mapred.classifier>hadoop2</avro.mapred.classifier>
     <jets3t.version>0.9.4</jets3t.version>
     <aws.kinesis.client.version>1.7.3</aws.kinesis.client.version>
@@ -168,7 +168,7 @@
     <!-- org.apache.commons/commons-lang/-->
     <commons-lang2.version>2.6</commons-lang2.version>
     <!-- org.apache.commons/commons-lang3/-->
-    <commons-lang3.version>3.5</commons-lang3.version>
+    <commons-lang3.version>3.3.2</commons-lang3.version>
     <datanucleus-core.version>3.2.10</datanucleus-core.version>
     <janino.version>3.0.8</janino.version>
     <jersey.version>2.22.2</jersey.version>
@@ -229,10 +229,8 @@
   </properties>
   <repositories>
     <repository>
-      <id>central</id>
-      <!-- This should be at top, it makes maven try the central repo first and then others and hence faster dep resolution -->
-      <name>Maven Repository</name>
-      <url>https://repo.maven.apache.org/maven2</url>
+      <id>nfrepo-everything-pom</id>
+      <url>https://artifacts.netflix.com/nfrepo-everything-pom</url>
       <releases>
         <enabled>true</enabled>
       </releases>
@@ -243,8 +241,8 @@
   </repositories>
   <pluginRepositories>
     <pluginRepository>
-      <id>central</id>
-      <url>https://repo.maven.apache.org/maven2</url>
+      <id>nfrepo-everything-pom</id>
+      <url>https://artifacts.netflix.com/nfrepo-everything-pom</url>
       <releases>
         <enabled>true</enabled>
       </releases>
@@ -292,6 +290,24 @@
   </dependencies>
   <dependencyManagement>
     <dependencies>
+      <dependency>
+        <groupId>com.netflix.bdp.s3</groupId>
+        <artifactId>s3committer</artifactId>
+        <version>0.9.1</version>
+        <scope>compile</scope>
+      </dependency>
+      <dependency>
+        <groupId>com.netflix.bdp</groupId>
+        <artifactId>metrics</artifactId>
+        <version>0.3.1</version>
+        <scope>compile</scope>
+      </dependency>
+      <dependency>
+        <groupId>netflix</groupId>
+        <artifactId>atlas-hive</artifactId>
+        <version>1.2.9</version>
+        <scope>compile</scope>
+      </dependency>
       <dependency>
         <groupId>org.apache.spark</groupId>
         <artifactId>spark-tags_${scala.binary.version}</artifactId>
@@ -808,13 +824,13 @@
         <groupId>mysql</groupId>
         <artifactId>mysql-connector-java</artifactId>
         <version>5.1.38</version>
-        <scope>test</scope>
+        <scope>compile</scope>
       </dependency>
       <dependency>
         <groupId>org.postgresql</groupId>
         <artifactId>postgresql</artifactId>
         <version>9.4.1207.jre7</version>
-        <scope>test</scope>
+        <scope>compile</scope>
       </dependency>
       <dependency>
         <groupId>org.apache.curator</groupId>
@@ -1451,6 +1467,10 @@
             <artifactId>curator-framework</artifactId>
           </exclusion>
           <exclusion>
+            <groupId>org.apache.parquet</groupId>
+            <artifactId>parquet-hadoop-bundle</artifactId>
+          </exclusion>
+          <exclusion>
             <groupId>org.apache.thrift</groupId>
             <artifactId>libthrift</artifactId>
           </exclusion>
@@ -1947,6 +1967,11 @@
         <version>${antlr4.version}</version>
       </dependency>
       <dependency>
+        <groupId>netflix</groupId>
+        <artifactId>brotli-codec</artifactId>
+        <version>0.1.8</version>
+      </dependency>
+      <dependency>
         <groupId>org.apache.commons</groupId>
         <artifactId>commons-crypto</artifactId>
         <version>${commons-crypto.version}</version>
@@ -2168,6 +2193,7 @@
             <junitxml>.</junitxml>
             <filereports>SparkTestSuite.txt</filereports>
             <argLine>-ea -Xmx3g -Xss4m -XX:ReservedCodeCacheSize=${CodeCacheSize}</argLine>
+            <logForkedProcessCommand>true</logForkedProcessCommand>
             <stderr/>
             <environmentVariables>
               <!--
