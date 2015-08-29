@@ -20,6 +20,9 @@ package org.apache.spark.scheduler
 import java.util.concurrent.atomic.AtomicInteger
 
 import scala.concurrent.{Future, Promise}
+import scala.util.Try
+
+import sun.misc.{Signal, SignalHandler}
 
 import org.apache.spark.internal.Logging
 
@@ -33,6 +36,30 @@ private[spark] class JobWaiter[T](
     totalTasks: Int,
     resultHandler: (Int, T) => Unit)
   extends JobListener with Logging {
+
+  private val sigint: Signal = new Signal("INT")
+  @volatile
+  private var _originalHandler: SignalHandler = null
+
+  def attachSigintHandler(): SignalHandler = {
+    Signal.handle(sigint, new SignalHandler with Logging {
+      override def handle(signal: Signal): Unit = {
+        logInfo("Cancelling running job.. This might take some time, so be patient. " +
+          "Press Ctrl-C again to kill JVM.")
+        // Detach sigint handler so that pressing ctrl-c again will interrupt the jvm.
+        detachSigintHandler()
+        cancel()
+      }
+    })
+  }
+
+  def detachSigintHandler(): Unit = {
+    if (_originalHandler != null) {
+      Signal.handle(sigint, _originalHandler)
+    }
+  }
+
+  Try(_originalHandler = attachSigintHandler())
 
   private val finishedTasks = new AtomicInteger(0)
   // If the job is finished, this will be its result. In the case of 0 task jobs (e.g. zero
@@ -59,14 +86,15 @@ private[spark] class JobWaiter[T](
       resultHandler(index, result.asInstanceOf[T])
     }
     if (finishedTasks.incrementAndGet() == totalTasks) {
+      Try(detachSigintHandler())
       jobPromise.success(())
     }
   }
 
   override def jobFailed(exception: Exception): Unit = {
+    Try(detachSigintHandler())
     if (!jobPromise.tryFailure(exception)) {
       logWarning("Ignore failure", exception)
     }
   }
-
 }
