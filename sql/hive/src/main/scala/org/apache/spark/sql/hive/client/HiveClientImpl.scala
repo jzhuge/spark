@@ -18,13 +18,14 @@
 package org.apache.spark.sql.hive.client
 
 import java.io.{File, PrintStream}
+import java.net.{MalformedURLException, URL}
 
 import scala.collection.JavaConverters._
 import scala.collection.mutable.ArrayBuffer
 import scala.language.reflectiveCalls
 
 import org.apache.hadoop.conf.Configuration
-import org.apache.hadoop.fs.Path
+import org.apache.hadoop.fs.{FileSystem, FsUrlStreamHandlerFactory, Path}
 import org.apache.hadoop.hive.conf.HiveConf
 import org.apache.hadoop.hive.metastore.{TableType => HiveTableType}
 import org.apache.hadoop.hive.metastore.api.{Database => HiveDatabase, FieldSchema}
@@ -733,7 +734,27 @@ private[hive] class HiveClientImpl(
       new File(path).toURI.toURL
     } else {
       // `path` is a URL with a scheme
-      uri.toURL
+      try {
+        uri.toURL
+      } catch {
+        case e: MalformedURLException =>
+          Option(FileSystem.get(uri, hadoopConf)) match {
+            case Some(fs) =>
+              URLFactoryRegistrationLock.synchronized {
+                try {
+                  // check one more time, in case another thread set the factory.
+                  uri.toURL
+                } catch {
+                  case e: MalformedURLException =>
+                    // Register URLStreamHanlerFactory so HDFS urls work, should only happen once
+                    URL.setURLStreamHandlerFactory(new FsUrlStreamHandlerFactory(hadoopConf))
+                    uri.toURL
+                }
+              }
+            case None =>
+              throw e
+          }
+      }
     }
     clientLoader.addJar(jarURL)
     runSqlHive(s"ADD JAR $path")
@@ -885,3 +906,6 @@ private[hive] class HiveClientImpl(
           if (hp.getParameters() != null) hp.getParameters().asScala.toMap else Map.empty)
   }
 }
+
+// An object lock to ensure URL factory is registered exactly once.
+object URLFactoryRegistrationLock{}
