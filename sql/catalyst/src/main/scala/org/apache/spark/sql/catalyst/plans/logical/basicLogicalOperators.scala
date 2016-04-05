@@ -392,16 +392,46 @@ case class InsertIntoTable(
     partition: Map[String, Option[String]],
     child: LogicalPlan,
     overwrite: OverwriteOptions,
-    ifNotExists: Boolean)
+    ifNotExists: Boolean,
+    options: Map[String, String])
   extends LogicalPlan {
 
   override def children: Seq[LogicalPlan] = child :: Nil
   override def output: Seq[Attribute] = Seq.empty
 
+  private[spark] def isMatchByName: Boolean = {
+    options.get("matchByName").map(_.toBoolean).getOrElse(false)
+  }
+
+  private[spark] def writersPerPartition: Option[Int] = {
+    options.get("writersPerPartition").map(_.toInt)
+  }
+
+  private[spark] def isFromDataFrame: Boolean = {
+    options.get("fromDataFrame").map(_.toBoolean).getOrElse(false)
+  }
+
+  private[spark] lazy val expectedColumns = {
+    if (table.output.isEmpty) {
+      None
+    } else {
+      // Note: The parser (visitPartitionSpec in AstBuilder) already turns
+      // keys in partition to their lowercase forms.
+      val staticPartCols = partition.filter(_._2.isDefined).keySet
+      Some(table.output.filterNot(a => staticPartCols.contains(a.name)))
+    }
+  }
+
   assert(overwrite.enabled || !ifNotExists)
   assert(partition.values.forall(_.nonEmpty) || !ifNotExists)
-
-  override lazy val resolved: Boolean = childrenResolved && table.resolved
+  override lazy val resolved: Boolean =
+    childrenResolved && table.resolved && expectedColumns.forall { expected =>
+    child.output.size == expected.size && child.output.zip(expected).forall {
+      case (childAttr, tableAttr) =>
+        childAttr.name == tableAttr.name && // required by some relations
+        DataType.equalsIgnoreCompatibleNullability(childAttr.dataType, tableAttr.dataType)
+    }
+  }
 }
 
 /**

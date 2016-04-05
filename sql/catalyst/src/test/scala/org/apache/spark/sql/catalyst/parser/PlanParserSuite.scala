@@ -189,7 +189,7 @@ class PlanParserSuite extends PlanTest {
           } else {
             Map.empty
           }),
-        ifNotExists)
+        ifNotExists, Map.empty)
 
     // Single inserts
     assertEqual(s"insert overwrite table s $sql",
@@ -205,9 +205,11 @@ class PlanParserSuite extends PlanTest {
     val plan2 = table("t").where('x > 5).select(star())
     assertEqual("from t insert into s select * limit 1 insert into u select * where x > 5",
       InsertIntoTable(
-        table("s"), Map.empty, plan.limit(1), OverwriteOptions(false), ifNotExists = false).union(
+        table("s"), Map.empty, plan.limit(1), OverwriteOptions(false), ifNotExists = false,
+        Map.empty).union(
         InsertIntoTable(
-          table("u"), Map.empty, plan2, OverwriteOptions(false), ifNotExists = false)))
+          table("u"), Map.empty, plan2, OverwriteOptions(false), ifNotExists = false,
+          Map.empty)))
   }
 
   test ("insert with if not exists") {

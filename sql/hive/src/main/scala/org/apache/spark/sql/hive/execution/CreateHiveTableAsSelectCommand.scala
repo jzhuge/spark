@@ -89,7 +89,7 @@ case class CreateHiveTableAsSelectCommand(
       try {
         sparkSession.sessionState.executePlan(InsertIntoTable(
           metastoreRelation, Map(), query, overwrite = OverwriteOptions(true),
-          ifNotExists = false)).toRdd
+          ifNotExists = false, options = Map.empty)).toRdd
       } catch {
         case NonFatal(e) =>
           // drop the created table.

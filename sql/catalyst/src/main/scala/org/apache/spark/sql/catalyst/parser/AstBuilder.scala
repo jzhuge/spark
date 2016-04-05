@@ -186,7 +186,8 @@ class AstBuilder extends SqlBaseBaseVisitor[AnyRef] with Logging {
       partitionKeys,
       query,
       OverwriteOptions(overwrite, if (overwrite) staticPartitionKeys else Map.empty),
-      ctx.EXISTS != null)
+      ifNotExists = ctx.EXISTS != null,
+      Map.empty /* SQL always matches by position */)
   }
 
   /**

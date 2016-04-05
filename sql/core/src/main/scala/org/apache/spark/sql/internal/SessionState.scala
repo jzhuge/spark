@@ -114,7 +114,6 @@ private[sql] class SessionState(sparkSession: SparkSession) {
     new Analyzer(catalog, conf) {
       override val extendedResolutionRules =
         AnalyzeCreateTable(sparkSession) ::
-        PreprocessTableInsertion(conf) ::
         new FindDataSourceTable(sparkSession) ::
         DataSourceAnalysis(conf) ::
         (if (conf.runSQLonFile) new ResolveDataSource(sparkSession) :: Nil else Nil)

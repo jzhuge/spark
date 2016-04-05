@@ -25,9 +25,9 @@ import org.apache.spark.annotation.InterfaceStability
 import org.apache.spark.sql.catalyst.TableIdentifier
 import org.apache.spark.sql.catalyst.analysis.UnresolvedRelation
 import org.apache.spark.sql.catalyst.catalog.{BucketSpec, CatalogTable, CatalogTableType}
-import org.apache.spark.sql.catalyst.plans.logical.{InsertIntoTable, OverwriteOptions}
-import org.apache.spark.sql.execution.command.{AlterTableRecoverPartitionsCommand, DDLUtils}
-import org.apache.spark.sql.execution.datasources.{CreateTable, DataSource, HadoopFsRelation}
+import org.apache.spark.sql.catalyst.plans.logical.{InsertIntoTable, OverwriteOptions, Project}
+import org.apache.spark.sql.execution.command.DDLUtils
+import org.apache.spark.sql.execution.datasources.{CreateTable, DataSource}
 import org.apache.spark.sql.types.StructType
 
 /**
@@ -246,21 +246,28 @@ final class DataFrameWriter[T] private[sql](ds: Dataset[T]) {
   private def insertInto(tableIdent: TableIdentifier): Unit = {
     assertNotBucketed("insertInto")
 
-    if (partitioningColumns.isDefined) {
-      throw new AnalysisException(
-        "insertInto() can't be used together with partitionBy(). " +
-          "Partition columns have already be defined for the table. " +
-          "It is not necessary to use partitionBy()."
-      )
-    }
+    val partitions = normalizedParCols.map(_.map(col => col -> (None: Option[String])).toMap)
+
+    // A partitioned relation's schema can be different from the input logicalPlan, since
+    // partition columns are all moved after data columns. We Project to adjust the ordering.
+    // TODO: this belongs to the analyzer.
+    val input = normalizedParCols.map { parCols =>
+      val (inputPartCols, inputDataCols) = df.logicalPlan.output.partition { attr =>
+        parCols.contains(attr.name)
+      }
+      Project(inputDataCols ++ inputPartCols, df.logicalPlan)
+    }.getOrElse(df.logicalPlan)
+
+    extraOptions.put("fromDataFrame", "true")
 
     df.sparkSession.sessionState.executePlan(
       InsertIntoTable(
         table = UnresolvedRelation(tableIdent),
-        partition = Map.empty[String, Option[String]],
-        child = df.logicalPlan,
+        partition = partitions.getOrElse(Map.empty[String, Option[String]]),
+        child = input,
         overwrite = OverwriteOptions(mode == SaveMode.Overwrite),
-        ifNotExists = false)).toRdd
+        ifNotExists = false,
+        options = extraOptions.toMap)).toRdd
   }
 
   private def normalizedParCols: Option[Seq[String]] = partitioningColumns.map { cols =>
@@ -319,6 +326,11 @@ final class DataFrameWriter[T] private[sql](ds: Dataset[T]) {
     if (partitioningColumns.isDefined) {
       throw new AnalysisException( s"'$operation' does not support partitioning")
     }
+  }
+
+  def byName: DataFrameWriter[T] = {
+    extraOptions.put("matchByName", "true")
+    this
   }
 
   /**
@@ -440,7 +452,7 @@ final class DataFrameWriter[T] private[sql](ds: Dataset[T]) {
     assertNotPartitioned("jdbc")
     assertNotBucketed("jdbc")
     // connectionProperties should override settings in extraOptions.
-    this.extraOptions = this.extraOptions ++ connectionProperties.asScala
+    this.extraOptions ++= connectionProperties.asScala
     // explicit url and dbtable should override all
     this.extraOptions += ("url" -> url, "dbtable" -> table)
     format("jdbc").save()

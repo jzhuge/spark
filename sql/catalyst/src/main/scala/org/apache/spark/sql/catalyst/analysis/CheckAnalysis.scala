@@ -406,21 +406,21 @@ trait CheckAnalysis extends PredicateHelper {
 
           // TODO: We need to consolidate this kind of checks for InsertIntoTable
           // with the rule of PreWriteCheck defined in extendedCheckRules.
-          case InsertIntoTable(s: SimpleCatalogRelation, _, _, _, _) =>
+          case InsertIntoTable(s: SimpleCatalogRelation, _, _, _, _, _) =>
             failAnalysis(
               s"""
                  |Hive support is required to insert into the following tables:
                  |${s.catalogTable.identifier}
                """.stripMargin)
 
-          case InsertIntoTable(t, _, _, _, _)
+          case InsertIntoTable(t, _, _, _, _, _)
             if !t.isInstanceOf[LeafNode] ||
               t.isInstanceOf[Range] ||
               t == OneRowRelation ||
               t.isInstanceOf[LocalRelation] =>
             failAnalysis(s"Inserting into an RDD-based table is not allowed.")
 
-          case i @ InsertIntoTable(table, partitions, query, _, _) =>
+          case i @ InsertIntoTable(table, partitions, query, _, _, _) =>
             val numStaticPartitions = partitions.values.count(_.isDefined)
             if (table.output.size != (query.output.size + numStaticPartitions)) {
               failAnalysis(

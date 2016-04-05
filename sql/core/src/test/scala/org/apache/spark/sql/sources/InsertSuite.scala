@@ -114,7 +114,9 @@ class InsertSuite extends DataSourceTest with SharedSQLContext {
         |INSERT OVERWRITE TABLE jsonTable SELECT a FROM jt
       """.stripMargin)
     }.getMessage
-    assert(message.contains("the number of columns are different")
+    assert(
+      message.contains("Not enough data columns to write"),
+      "SELECT clause must generate all of a table's columns to write"
     )
   }
 

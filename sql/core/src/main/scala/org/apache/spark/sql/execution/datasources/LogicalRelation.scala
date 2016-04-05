@@ -17,7 +17,7 @@
 package org.apache.spark.sql.execution.datasources
 
 import org.apache.spark.sql.catalyst.analysis.MultiInstanceRelation
-import org.apache.spark.sql.catalyst.catalog.CatalogTable
+import org.apache.spark.sql.catalyst.catalog.{CatalogRelation, CatalogTable, MaybeCatalogRelation}
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeMap, AttributeReference}
 import org.apache.spark.sql.catalyst.plans.logical.{LeafNode, LogicalPlan, Statistics}
 import org.apache.spark.sql.sources.BaseRelation
@@ -34,7 +34,18 @@ case class LogicalRelation(
     relation: BaseRelation,
     expectedOutputAttributes: Option[Seq[Attribute]] = None,
     catalogTable: Option[CatalogTable] = None)
-  extends LeafNode with MultiInstanceRelation {
+  extends LeafNode with MultiInstanceRelation with MaybeCatalogRelation {
+
+  override def asCatalogRelation: Option[CatalogRelation] = {
+    relation match {
+      case c: CatalogRelation =>
+        Some(c)
+      case m: MaybeCatalogRelation =>
+        m.asCatalogRelation
+      case _ =>
+        None
+    }
+  }
 
   override val output: Seq[AttributeReference] = {
     val attrs = relation.schema.toAttributes

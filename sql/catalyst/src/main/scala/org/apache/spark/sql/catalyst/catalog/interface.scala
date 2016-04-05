@@ -28,6 +28,14 @@ import org.apache.spark.sql.types.{StructField, StructType}
 
 
 /**
+ * Trait for relations to appear as catalog relations, if possible.
+ */
+trait MaybeCatalogRelation {
+  def asCatalogRelation: Option[CatalogRelation]
+}
+
+
+/**
  * A function defined in the catalog.
  *
  * @param identifier name of the function
