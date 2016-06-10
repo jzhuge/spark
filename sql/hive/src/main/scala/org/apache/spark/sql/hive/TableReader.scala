@@ -73,8 +73,7 @@ class HadoopTableReader(
   private val _minSplitsPerRDD = if (sparkSession.sparkContext.isLocal) {
     0 // will splitted based on block by default.
   } else {
-    math.max(hadoopConf.getInt("mapred.map.tasks", 1),
-      sparkSession.sparkContext.defaultMinPartitions)
+    1
   }
 
   SparkHadoopUtil.get.appendS3AndSparkHadoopConfigurations(
