@@ -58,6 +58,7 @@ private[spark] class ClientDistributedCacheManager() extends Logging {
    * @param link link presented in the distributed cache to the destination
    * @param statCache cache to store the file/directory stats
    * @param appMasterOnly Whether to only add the resource to the app master
+   * @param forcePublic Whether to upload the resource to the NodeManager shared cache.
    */
   def addResource(
       fs: FileSystem,
@@ -67,11 +68,12 @@ private[spark] class ClientDistributedCacheManager() extends Logging {
       resourceType: LocalResourceType,
       link: String,
       statCache: Map[URI, FileStatus],
-      appMasterOnly: Boolean = false): Unit = {
+      appMasterOnly: Boolean = false,
+      forcePublic: Boolean = false): Unit = {
     val destStatus = statCache.getOrElse(destPath.toUri(), fs.getFileStatus(destPath))
     val amJarRsrc = Records.newRecord(classOf[LocalResource])
     amJarRsrc.setType(resourceType)
-    val visibility = getVisibility(conf, destPath.toUri(), statCache)
+    val visibility = getVisibility(conf, destPath.toUri(), statCache, forcePublic)
     amJarRsrc.setVisibility(visibility)
     amJarRsrc.setResource(ConverterUtils.getYarnUrlFromPath(destPath))
     amJarRsrc.setTimestamp(destStatus.getModificationTime())
@@ -105,8 +107,9 @@ private[spark] class ClientDistributedCacheManager() extends Logging {
   private[yarn] def getVisibility(
       conf: Configuration,
       uri: URI,
-      statCache: Map[URI, FileStatus]): LocalResourceVisibility = {
-    if (isPublic(conf, uri, statCache)) {
+      statCache: Map[URI, FileStatus],
+      forcePublic: Boolean = false): LocalResourceVisibility = {
+    if (forcePublic || isPublic(conf, uri, statCache)) {
       LocalResourceVisibility.PUBLIC
     } else {
       LocalResourceVisibility.PRIVATE
