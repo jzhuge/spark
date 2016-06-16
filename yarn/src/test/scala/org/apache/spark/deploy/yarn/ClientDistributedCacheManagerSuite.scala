@@ -39,7 +39,8 @@ import org.apache.spark.deploy.yarn.config._
 class ClientDistributedCacheManagerSuite extends SparkFunSuite with MockitoSugar {
 
   class MockClientDistributedCacheManager extends ClientDistributedCacheManager {
-    override def getVisibility(conf: Configuration, uri: URI, statCache: Map[URI, FileStatus]):
+    override def getVisibility(conf: Configuration, uri: URI, statCache: Map[URI, FileStatus],
+        forcePublic: Boolean = false):
         LocalResourceVisibility = {
       LocalResourceVisibility.PRIVATE
     }

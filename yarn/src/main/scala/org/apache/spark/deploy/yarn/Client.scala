@@ -26,11 +26,12 @@ import java.util.zip.{ZipEntry, ZipOutputStream}
 
 import scala.collection.JavaConverters._
 import scala.collection.mutable.{ArrayBuffer, HashMap, HashSet, ListBuffer, Map}
-import scala.util.{Failure, Success, Try}
+import scala.util.{Failure, Random, Success, Try}
 import scala.util.control.NonFatal
 
 import com.google.common.base.Objects
 import com.google.common.io.Files
+import org.apache.commons.codec.digest.DigestUtils
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs._
 import org.apache.hadoop.fs.permission.FsPermission
@@ -480,6 +481,16 @@ private[spark] class Client(
       }
     }
 
+    val sharedCacheStorage = sparkConf.getOption("spark.shared.archive.path").map(new Path(_))
+
+    def checksum(path: Path): String = {
+      DigestUtils.sha256Hex(path.getFileSystem(hadoopConf).open(path))
+    }
+
+    def publicSharedPath(checksum: String, name: String): Path = {
+      new Path(new Path(sharedCacheStorage.get, checksum), name)
+    }
+
     /**
      * Distribute a file to the cluster.
      *
@@ -500,7 +511,8 @@ private[spark] class Client(
         resType: LocalResourceType = LocalResourceType.FILE,
         destName: Option[String] = None,
         targetDir: Option[String] = None,
-        appMasterOnly: Boolean = false): (Boolean, String) = {
+        appMasterOnly: Boolean = false,
+        makePublic: Boolean = false): (Boolean, String) = {
       val trimmedPath = path.trim()
       val localURI = Utils.resolveURI(trimmedPath)
       if (localURI.getScheme != LOCAL_SCHEME) {
@@ -508,11 +520,25 @@ private[spark] class Client(
           val localPath = getQualifiedLocalPath(localURI, hadoopConf)
           val linkname = targetDir.map(_ + "/").getOrElse("") +
             destName.orElse(Option(localURI.getFragment())).getOrElse(localPath.getName())
-          val destPath = copyFileToRemote(destDir, localPath, replication, symlinkCache)
-          val destFs = FileSystem.get(destPath.toUri(), hadoopConf)
+
+          val destPath = if (makePublic && sharedCacheStorage.isDefined) {
+            val expectedChecksum = checksum(localPath)
+            val publicPath = publicSharedPath(expectedChecksum, localPath.getName)
+
+            if (publicPath.getFileSystem(hadoopConf).exists(publicPath)) {
+              publicPath
+            } else {
+              copyFileToRemote(publicPath.getParent, localPath, replication,
+                destName = Some(publicPath.getName), symlinkCache = symlinkCache)
+            }
+          } else {
+            copyFileToRemote(destDir, localPath, replication, symlinkCache)
+          }
+
+          val destFs = destPath.getFileSystem(hadoopConf)
           distCacheMgr.addResource(
             destFs, hadoopConf, destPath, localResources, resType, linkname, statCache,
-            appMasterOnly = appMasterOnly)
+            appMasterOnly = appMasterOnly, forcePublic = makePublic)
           (false, linkname)
         } else {
           (false, null)
@@ -549,7 +575,8 @@ private[spark] class Client(
       require(!isLocalUri(archive), s"${SPARK_ARCHIVE.key} cannot be a local URI.")
       distribute(Utils.resolveURI(archive).toString,
         resType = LocalResourceType.ARCHIVE,
-        destName = Some(LOCALIZED_LIB_DIR))
+        destName = Some(LOCALIZED_LIB_DIR),
+        makePublic = true)
     } else {
       sparkConf.get(SPARK_JARS) match {
         case Some(jars) =>
@@ -562,7 +589,9 @@ private[spark] class Client(
               pathFs.globStatus(path).filter(_.isFile()).foreach { entry =>
                 val uri = entry.getPath().toUri()
                 statCache.update(uri, entry)
-                distribute(uri.toString(), targetDir = Some(LOCALIZED_LIB_DIR))
+                distribute(uri.toString(),
+                  targetDir = Some(LOCALIZED_LIB_DIR),
+                  makePublic = true)
               }
             } else {
               localJars += jar
@@ -578,15 +607,16 @@ private[spark] class Client(
             "to uploading libraries under SPARK_HOME.")
           val jarsDir = new File(YarnCommandBuilderUtils.findJarsDir(
             sparkConf.getenv("SPARK_HOME")))
-          val jarsArchive = File.createTempFile(LOCALIZED_LIB_DIR, ".zip",
-            new File(Utils.getLocalDir(sparkConf)))
+          val jarsArchive = new File(Utils.getLocalDir(sparkConf), LOCALIZED_LIB_DIR + ".zip")
           val jarsStream = new ZipOutputStream(new FileOutputStream(jarsArchive))
 
           try {
             jarsStream.setLevel(0)
-            jarsDir.listFiles().foreach { f =>
+            jarsDir.listFiles().sorted.foreach { f =>
               if (f.isFile && f.getName.toLowerCase().endsWith(".jar") && f.canRead) {
-                jarsStream.putNextEntry(new ZipEntry(f.getName))
+                val ze = new ZipEntry(f.getName)
+                ze.setTime(f.lastModified())
+                jarsStream.putNextEntry(ze)
                 Files.copy(f, jarsStream)
                 jarsStream.closeEntry()
               }
@@ -597,7 +627,8 @@ private[spark] class Client(
 
           distribute(jarsArchive.toURI.getPath,
             resType = LocalResourceType.ARCHIVE,
-            destName = Some(LOCALIZED_LIB_DIR))
+            destName = Some(LOCALIZED_LIB_DIR),
+            makePublic = true)
       }
     }
 
