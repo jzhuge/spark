@@ -23,10 +23,13 @@ import java.util.Locale
 import com.github.luben.zstd.{ZstdInputStream, ZstdOutputStream}
 import com.ning.compress.lzf.{LZFInputStream, LZFOutputStream}
 import net.jpountz.lz4.{LZ4BlockInputStream, LZ4BlockOutputStream}
+import org.apache.hadoop.conf.Configuration
+import org.apache.hadoop.io.compress.{BrotliCodec, Compressor, CompressorStream, Decompressor, DecompressorStream}
 import org.xerial.snappy.{Snappy, SnappyInputStream, SnappyOutputStream}
 
 import org.apache.spark.SparkConf
 import org.apache.spark.annotation.DeveloperApi
+import org.apache.spark.internal.Logging
 import org.apache.spark.util.Utils
 
 /**
@@ -45,7 +48,7 @@ trait CompressionCodec {
   def compressedInputStream(s: InputStream): InputStream
 }
 
-private[spark] object CompressionCodec {
+private[spark] object CompressionCodec extends Logging {
 
   private val configKey = "spark.io.compression.codec"
 
@@ -58,7 +61,8 @@ private[spark] object CompressionCodec {
     "lz4" -> classOf[LZ4CompressionCodec].getName,
     "lzf" -> classOf[LZFCompressionCodec].getName,
     "snappy" -> classOf[SnappyCompressionCodec].getName,
-    "zstd" -> classOf[ZStdCompressionCodec].getName)
+    "zstd" -> classOf[ZStdCompressionCodec].getName,
+    "brotli" -> classOf[BrotliCompressionCodec].getName)
 
   def getCodecName(conf: SparkConf): String = {
     conf.get(configKey, DEFAULT_COMPRESSION_CODEC)
@@ -69,6 +73,7 @@ private[spark] object CompressionCodec {
   }
 
   def createCodec(conf: SparkConf, codecName: String): CompressionCodec = {
+    logDebug(s"Creating codec $codecName")
     val codecClass =
       shortCompressionCodecNames.getOrElse(codecName.toLowerCase(Locale.ROOT), codecName)
     val codec = try {
@@ -140,6 +145,61 @@ class LZFCompressionCodec(conf: SparkConf) extends CompressionCodec {
   }
 
   override def compressedInputStream(s: InputStream): InputStream = new LZFInputStream(s)
+}
+
+
+/**
+ * :: DeveloperApi ::
+ */
+@DeveloperApi
+class BrotliCompressionCodec(conf: SparkConf) extends CompressionCodec {
+  val hadoopConf = new Configuration(false /* empty conf */)
+  conf.getOption("spark.compression.brotli.quality").foreach { quality =>
+    hadoopConf.set(BrotliCodec.QUALITY_LEVEL_PROP, quality)
+  }
+
+  val codec = new BrotliCodec
+  codec.setConf(hadoopConf)
+
+  class BrotliCompressorStream(
+      wrapped: OutputStream,
+      brotliCompressor: Compressor = codec.createCompressor())
+    extends CompressorStream(wrapped, brotliCompressor) {
+
+    private var isClosed: Boolean = false
+
+    override def close(): Unit = {
+      if (!isClosed) {
+        super.close()
+        brotliCompressor.end()
+        isClosed = true
+      }
+    }
+  }
+
+  class BrotliDecompressorStream(
+      wrapped: InputStream,
+      brotliDecompressor: Decompressor = codec.createDecompressor())
+    extends DecompressorStream(wrapped, brotliDecompressor) {
+
+    private var isClosed: Boolean = false
+
+    override def close(): Unit = {
+      if (!isClosed) {
+        super.close()
+        brotliDecompressor.end()
+        isClosed = true;
+      }
+    }
+  }
+
+  override def compressedOutputStream(s: OutputStream): OutputStream = {
+    new BrotliCompressorStream(s)
+  }
+
+  override def compressedInputStream(s: InputStream): InputStream = {
+    new BrotliDecompressorStream(s)
+  }
 }
 
 
