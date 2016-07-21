@@ -20,6 +20,7 @@ package org.apache.spark.sql.hive.execution
 import scala.collection.JavaConverters._
 
 import org.apache.hadoop.conf.Configuration
+import org.apache.hadoop.fs.PathFilter
 import org.apache.hadoop.hive.ql.metadata.{Partition => HivePartition}
 import org.apache.hadoop.hive.ql.plan.TableDesc
 import org.apache.hadoop.hive.serde.serdeConstants
@@ -28,7 +29,7 @@ import org.apache.hadoop.hive.serde2.objectinspector.ObjectInspectorUtils.Object
 import org.apache.hadoop.hive.serde2.typeinfo.TypeInfoUtils
 
 import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.{BatchIdPathFilter, SparkSession}
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.analysis.CastSupport
 import org.apache.spark.sql.catalyst.catalog.HiveTableRelation
@@ -98,6 +99,11 @@ case class HiveTableScanExec(
     // append columns ids and names before broadcast
     addColumnMetadataToConf(c)
     c
+  }
+
+  if (sparkSession.sqlContext.conf.ignoreBatchIdFolders) {
+    hadoopConf.setClass("mapreduce.input.pathFilter.class",
+      classOf[BatchIdPathFilter], classOf[PathFilter])
   }
 
   @transient private lazy val hadoopReader = new HadoopTableReader(
