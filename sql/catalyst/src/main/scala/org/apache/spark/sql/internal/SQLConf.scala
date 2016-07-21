@@ -641,6 +641,11 @@ object SQLConf {
     .booleanConf
     .createWithDefault(false)
 
+  val IGNORE_BATCH_ID_FOLDERS = SQLConfigBuilder("spark.sql.ignore-batchid-folders")
+      .doc("Ignore folders named batchid=<num> when listing files in a partition directory.")
+      .booleanConf
+      .createWithDefault(false)
+
   object Deprecated {
     val MAPRED_REDUCE_TASKS = "mapred.reduce.tasks"
   }
@@ -840,6 +845,8 @@ class SQLConf extends Serializable with Logging {
   def ignoreCorruptFiles: Boolean = getConf(IGNORE_CORRUPT_FILES)
 
   def orderByOrdinal: Boolean = getConf(ORDER_BY_ORDINAL)
+
+  def ignoreBatchIdFolders: Boolean = getConf(IGNORE_BATCH_ID_FOLDERS)
 
   def groupByOrdinal: Boolean = getConf(GROUP_BY_ORDINAL)
 
