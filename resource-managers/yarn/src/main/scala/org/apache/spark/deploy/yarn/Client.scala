@@ -242,7 +242,12 @@ private[spark] class Client(
       containerContext: ContainerLaunchContext): ApplicationSubmissionContext = {
     val appContext = newApp.getApplicationSubmissionContext
     appContext.setApplicationName(sparkConf.get("spark.app.name", "Spark"))
-    appContext.setQueue(sparkConf.get(QUEUE_NAME))
+    // if the queue isn't set, use the default, spark.queue.name, in yarn-site.xml
+    if (sparkConf.contains(QUEUE_NAME.key)) {
+      appContext.setQueue(sparkConf.get(QUEUE_NAME))
+    } else {
+      appContext.setQueue(hadoopConf.get("spark.queue.name", QUEUE_NAME.defaultValueString))
+    }
     appContext.setAMContainerSpec(containerContext)
     appContext.setApplicationType("SPARK")
 
