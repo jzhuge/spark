@@ -17,6 +17,8 @@
 
 package org.apache.spark.internal
 
+import java.io.File
+
 import org.apache.log4j.{Level, LogManager, PropertyConfigurator}
 import org.slf4j.{Logger, LoggerFactory}
 import org.slf4j.impl.StaticLoggerBinder
@@ -113,18 +115,35 @@ private[spark] trait Logging {
     // org.slf4j.impl.Log4jLoggerFactory, from the log4j 2.0 binding, currently
     // org.apache.logging.slf4j.Log4jLoggerFactory
     val usingLog4j12 = "org.slf4j.impl.Log4jLoggerFactory".equals(binderClass)
-    if (usingLog4j12) {
-      val log4j12Initialized = LogManager.getRootLogger.getAllAppenders.hasMoreElements
+    if (usingLog4j12 && !sys.props.contains("spark.testing")) {
       // scalastyle:off println
-      if (!log4j12Initialized) {
-        val defaultLogProps = "org/apache/spark/log4j-defaults.properties"
-        Option(Utils.getSparkClassLoader.getResource(defaultLogProps)) match {
-          case Some(url) =>
-            PropertyConfigurator.configure(url)
-            System.err.println(s"Using Spark's default log4j profile: $defaultLogProps")
-          case None =>
-            System.err.println(s"Spark was unable to load $defaultLogProps")
-        }
+
+      // clear any previous configuration. either none was set or it should be overridden
+      LogManager.resetConfiguration()
+
+      Option(System.getProperty("log4j.configuration")) match {
+        case Some(file) =>
+          val f = new File(file)
+          if (f.exists && f.canRead) {
+            PropertyConfigurator.configure(f.toURI.toURL)
+            return
+          }
+          // otherwise, use the default configuration files
+        case _ =>
+          // use the default configuration files
+      }
+
+      var defaultLogProps = "org/apache/spark/log4j-defaults.properties"
+      if (isInterpreter) {
+        defaultLogProps = "org/apache/spark/log4j-defaults-repl.properties"
+      }
+
+      Option(Utils.getSparkClassLoader.getResource(defaultLogProps)) match {
+        case Some(url) =>
+          PropertyConfigurator.configure(url)
+          System.err.println(s"Using Spark's default log4j profile: $defaultLogProps")
+        case None =>
+          System.err.println(s"Spark was unable to load $defaultLogProps")
       }
 
       if (isInterpreter) {
