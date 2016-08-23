@@ -85,6 +85,8 @@ private[hive] object SparkSQLCLIDriver extends Logging {
       System.exit(1)
     }
 
+    initializeLogIfNecessary(isInterpreter = true)
+
     val sparkConf = new SparkConf(loadDefaults = true)
     val hadoopConf = SparkHadoopUtil.get.newConfiguration(sparkConf)
     val extraConfigs = HiveUtils.formatTimeVarsForHiveClient(hadoopConf)
