@@ -206,10 +206,13 @@ private[netty] class Inbox(
       case NonFatal(e) =>
         try endpoint.onError(e) catch {
           case NonFatal(ee) =>
+            if (ee != e) {
+              ee.addSuppressed(e)
+            }
             if (stopped) {
               logDebug("Ignoring error", ee)
             } else {
-              logError("Ignoring error", ee)
+              logWarning("Ignoring error", ee)
             }
         }
     }
