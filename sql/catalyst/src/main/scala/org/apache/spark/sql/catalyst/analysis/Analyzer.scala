@@ -562,7 +562,8 @@ class Analyzer(
       val resolved = if (insertInto.isMatchByName) {
         projectAndCastOutputColumns(columns, insertInto.child, relation)
       } else {
-        castAndRenameOutputColumns(columns, insertInto.child, relation)
+        castAndRenameOutputColumns(columns, insertInto.child, relation,
+          safeCasts = insertInto.insertSafeCasts)
       }
 
       if (resolved == insertInto.child.output) {
@@ -594,7 +595,8 @@ class Analyzer(
     private def castAndRenameOutputColumns(
         output: Seq[Attribute],
         data: LogicalPlan,
-        relation: String): Seq[NamedExpression] = {
+        relation: String,
+        safeCasts: Boolean): Seq[NamedExpression] = {
       val outputNames = output.map(_.name)
       // incoming expressions may not have names
       val inputNames = data.output.flatMap(col => Option(col.name))
@@ -632,7 +634,11 @@ class Analyzer(
 
       data.output.zip(output).map {
         case (in, out) if !in.dataType.sameType(out.dataType) =>
-          Alias(Cast(in, out.dataType), out.name)()
+          if (safeCasts) {
+            Alias(UpCast(in, out.dataType, Seq()), out.name)()
+          } else {
+            Alias(Cast(in, out.dataType), out.name)()
+          }
         case (in, out) if in.name != out.name =>
           Alias(in, out.name)()
         case (in, _) => in
