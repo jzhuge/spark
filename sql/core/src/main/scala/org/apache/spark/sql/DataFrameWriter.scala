@@ -324,6 +324,10 @@ final class DataFrameWriter[T] private[sql](ds: Dataset[T]) {
     }.getOrElse(df.planWithBarrier)
 
     extraOptions.put("fromDataFrame", "true")
+    if (!extraOptions.contains("insertSafeCasts")) {
+      extraOptions.put("insertSafeCasts",
+        df.sparkSession.sessionState.conf.getConfString("spark.sql.insertSafeCasts", "false"))
+    }
 
     runCommand(df.sparkSession, "insertInto") {
       InsertIntoTable(

@@ -390,6 +390,10 @@ case class InsertIntoTable(
     options.get("fromDataFrame").map(_.toBoolean).getOrElse(false)
   }
 
+  private[spark] def insertSafeCasts: Boolean = {
+    options.get("insertSafeCasts").map(_.toBoolean).getOrElse(false)
+  }
+
   private[spark] lazy val expectedColumns = {
     if (table.output.isEmpty) {
       None
