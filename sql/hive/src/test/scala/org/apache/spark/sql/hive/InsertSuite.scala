@@ -950,4 +950,19 @@ class InsertSuite extends QueryTest with TestHiveSingleton with BeforeAndAfter
       checkAnswer(sql("SELECT * FROM partitioned"), expected.collect().toSeq)
     }
   }
+
+  test("Insert safe casts") {
+    withSQLConf(("spark.sql.insertSafeCasts", "true")) {
+      sql("CREATE TABLE destInt (id int)")
+      val bigintData = (1L to 10L).toDF("id")
+      val e = intercept[AnalysisException] {
+        bigintData.write.insertInto("destInt")
+      }
+      assert(e.message.contains("bigint to int"))
+
+      sql("CREATE TABLE destBigint (id bigint)")
+      val intData = (1 to 10).toDF("id")
+      intData.write.insertInto("destBigint")
+    }
+  }
 }
