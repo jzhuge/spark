@@ -17,12 +17,14 @@
 
 package org.apache.spark.sql.hive
 
+import org.apache.hadoop.conf.Configuration
+
 import org.apache.spark.sql._
 import org.apache.spark.sql.catalyst.analysis.Analyzer
 import org.apache.spark.sql.execution.SparkPlanner
 import org.apache.spark.sql.execution.datasources._
 import org.apache.spark.sql.hive.client.HiveClient
-import org.apache.spark.sql.internal.SessionState
+import org.apache.spark.sql.internal.{SessionState, SQLConf}
 
 
 /**
@@ -32,6 +34,40 @@ private[hive] class HiveSessionState(sparkSession: SparkSession)
   extends SessionState(sparkSession) {
 
   self =>
+
+  /**
+   * A SQLConf that uses values from Hadoop environment configurations as defaults.
+   *
+   * @param hadoopConf a Hadoop Configuration
+   */
+  private[sql] class HiveSQLConf(@transient hadoopConf: Configuration) extends SQLConf {
+    /** Return the value of Spark SQL configuration property for the given key. */
+    override def getConfString(
+        key: String): String = {
+      Option(hadoopConf.get(key)) match {
+        case Some(envDefault) =>
+          super.getConfString(key, envDefault)
+        case None =>
+          super.getConfString(key)
+      }
+    }
+
+    /**
+     * Return the `string` value of Spark SQL configuration property for the given key. If the key
+     * is not set yet, return `defaultValue`.
+     */
+    override def getConfString(key: String,
+        defaultValue: String): String = {
+      Option(hadoopConf.get(key)) match {
+        case Some(envDefault) =>
+          super.getConfString(key, envDefault)
+        case None =>
+          super.getConfString(key, defaultValue)
+      }
+    }
+  }
+
+  override lazy val conf: SQLConf = new HiveSQLConf(sparkSession.sparkContext.hadoopConfiguration)
 
   /**
    * A Hive client used for interacting with the metastore.
