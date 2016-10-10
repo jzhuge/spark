@@ -821,7 +821,7 @@ class Analyzer(
       } else {
         // check for reordered names and warn. this may be on purpose, so it isn't an error.
         if (outputNames.toSet == inputNames.toSet && outputNames != inputNames) {
-          logWarning(
+          throw new AnalysisException(
             s"""Data column names match the table in a different order:
                |Data columns: ${inputNames.mkString(", ")}
                |Table columns: ${outputNames.mkString(", ")}
