@@ -17,6 +17,8 @@
 
 package org.apache.spark.sql.execution.metric
 
+import com.fasterxml.jackson.annotation.JsonProperty
+
 import org.apache.spark.annotation.DeveloperApi
 
 /**
@@ -27,4 +29,10 @@ import org.apache.spark.annotation.DeveloperApi
 class SQLMetricInfo(
     val name: String,
     val accumulatorId: Long,
-    val metricType: String)
+    var metricType: String) {
+
+  @JsonProperty("metricParam")
+  def setMetricParam(s: String): Unit = {
+    this.metricType = s
+  }
+}
