@@ -304,12 +304,36 @@ private[history] class FsHistoryProvider(conf: SparkConf, clock: Clock)
   override def getLastUpdatedTime(): Long = lastScanTime.get()
 
   override def getAppUI(appId: String, attemptId: Option[String]): Option[LoadedAppUI] = {
-    val app = try {
-      load(appId)
-     } catch {
-      case _: NoSuchElementException =>
-        return None
+    getAppFromCache(appId) match {
+      case Some(app) =>
+        getAppUIFromCache(appId, attemptId)
+      case None =>
+        val path = new Path(logDir, attemptId.map(appId + "_" + _).getOrElse(appId))
+        val pathInprogress = path.suffix(EventLoggingListener.IN_PROGRESS)
+        // We check if either path or path.inprogress exists, if neither exists we return None.
+        val validPath = if (fs.exists(path)) Some(path)
+        else if (fs.exists(pathInprogress)) Some(pathInprogress)
+        else None
+
+        // call merge so the app gets added to cache, then return the cached version.
+        validPath.map { path =>
+          mergeApplicationListing(fs.getFileStatus(path), getNewLastScanTime())
+          getAppUIFromCache(appId, attemptId)
+        }.getOrElse(None)
     }
+  }
+
+  def getAppFromCache(appId: String): Option[ApplicationInfoWrapper] = {
+    try {
+      Some(load(appId))
+    } catch {
+      case _: NoSuchElementException =>
+        None
+    }
+  }
+
+  def getAppUIFromCache(appId: String, attemptId: Option[String]): Option[LoadedAppUI] = {
+    val app = getAppFromCache(appId).getOrElse(return None)
 
     val attempt = app.attempts.find(_.info.attemptId == attemptId).orNull
     if (attempt == null) {
