@@ -110,6 +110,10 @@ private[history] class FsHistoryProvider(conf: SparkConf, clock: Clock)
     "; users with admin permissions: " + HISTORY_UI_ADMIN_ACLS.toString +
     "; groups with admin permissions" + HISTORY_UI_ADMIN_ACLS_GROUPS.toString)
 
+  // Max size of log that will be processed by history server.
+  private val MAX_SIZE_CONF = "spark.history.fs.max.size"
+  private val MAX_SIZE = conf.getSizeAsBytes(MAX_SIZE_CONF, "1g")
+
   private val hadoopConf = SparkHadoopUtil.get.newConfiguration(conf)
   // Visible for testing
   private[history] val fs: FileSystem = new Path(logDir).getFileSystem(hadoopConf)
@@ -124,6 +128,9 @@ private[history] class FsHistoryProvider(conf: SparkConf, clock: Clock)
   private val lastScanTime = new java.util.concurrent.atomic.AtomicLong(-1)
 
   private val pendingReplayTasksCount = new java.util.concurrent.atomic.AtomicInteger(0)
+
+  @volatile private var failedApps: mutable.LinkedHashMap[String, String] =
+    new mutable.LinkedHashMap()
 
   private val storePath = conf.get(LOCAL_STORE_DIR).map(new File(_))
 
@@ -291,11 +298,13 @@ private[history] class FsHistoryProvider(conf: SparkConf, clock: Clock)
   }
 
   override def getApplicationInfo(appId: String): Option[ApplicationInfo] = {
-    try {
-      Some(load(appId).toApplicationInfo())
-    } catch {
-      case _: NoSuchElementException =>
-        None
+    getAppFromCache(appId) match {
+      case Some(app) =>
+        Some(app.toApplicationInfo())
+      case None =>
+        logInfo(s"Application $appId is not present in cache, trying to populate the cache.")
+        populateCache(appId, None)
+        getAppFromCache(appId).flatMap(app => Some(app.toApplicationInfo()))
     }
   }
 
@@ -306,21 +315,26 @@ private[history] class FsHistoryProvider(conf: SparkConf, clock: Clock)
   override def getAppUI(appId: String, attemptId: Option[String]): Option[LoadedAppUI] = {
     getAppFromCache(appId) match {
       case Some(app) =>
+        logInfo(s"Loading application $appId-$attemptId from cache.")
         getAppUIFromCache(appId, attemptId)
       case None =>
-        val path = new Path(logDir, attemptId.map(appId + "_" + _).getOrElse(appId))
-        val pathInprogress = path.suffix(EventLoggingListener.IN_PROGRESS)
-        // We check if either path or path.inprogress exists, if neither exists we return None.
-        val validPath = if (fs.exists(path)) Some(path)
-        else if (fs.exists(pathInprogress)) Some(pathInprogress)
-        else None
-
-        // call merge so the app gets added to cache, then return the cached version.
-        validPath.map { path =>
-          mergeApplicationListing(fs.getFileStatus(path), getNewLastScanTime())
-          getAppUIFromCache(appId, attemptId)
-        }.getOrElse(None)
+        populateCache(appId, attemptId)
+        getAppUIFromCache(appId, attemptId)
     }
+  }
+
+  def populateCache(appId: String, attemptId: Option[String]): Unit = {
+    val path = new Path(logDir, attemptId.map(appId + "_" + _).getOrElse(appId))
+    val pathInprogress = path.suffix(EventLoggingListener.IN_PROGRESS)
+    // We check if either path or path.inprogress exists, if neither exists we return None.
+    val validPath = if (fs.exists(path)) Some(path)
+    else if (fs.exists(pathInprogress)) Some(pathInprogress)
+    else None
+
+    logInfo(s"appId $appId is not found in cache, will attempt to load using path $validPath")
+
+    // call merge so the app gets added to cache, then return the cached version.
+    validPath.map(path => mergeApplicationListing(fs.getFileStatus(path), getNewLastScanTime()))
   }
 
   def getAppFromCache(appId: String): Option[ApplicationInfoWrapper] = {
@@ -657,6 +671,17 @@ private[history] class FsHistoryProvider(conf: SparkConf, clock: Clock)
    * Replay the given log file, saving the application in the listing db.
    */
   protected def mergeApplicationListing(fileStatus: FileStatus, scanTime: Long): Unit = {
+
+    if (fileStatus.getLen > MAX_SIZE) {
+      val errorMsg = s"history file ${fileStatus.getPath.getName}'s " +
+        s"size = ${fileStatus.getLen} bytes is greater than ${MAX_SIZE_CONF} = ${MAX_SIZE} " +
+        s"bytes, ignoring the history file."
+      logWarning(errorMsg)
+      val fileName = fileStatus.getPath.getName
+      failedApps(fileName.substring(0, fileName.lastIndexOf('_'))) = errorMsg
+      return
+    }
+
     val eventsFilter: ReplayEventsFilter = { eventString =>
       eventString.startsWith(APPL_START_EVENT_PREFIX) ||
         eventString.startsWith(APPL_END_EVENT_PREFIX) ||
@@ -681,8 +706,11 @@ private[history] class FsHistoryProvider(conf: SparkConf, clock: Clock)
           }
         }
 
+        val attemptInfo = app.attempts.head.info
+        logInfo(s"Application log ${logPath} loaded successfully: ${attemptInfo}")
+
         addListing(app)
-        (Some(app.info.id), app.attempts.head.info.attemptId)
+        (Some(app.info.id), attemptInfo.attemptId)
 
       case _ =>
         // If the app hasn't written down its app ID to the logs, still record the entry in the
