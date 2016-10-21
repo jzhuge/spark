@@ -914,7 +914,9 @@ class InsertSuite extends QueryTest with TestHiveSingleton with BeforeAndAfter
     }
   }
 
-  test("Ignore names when writing by position") {
+  // This test is ignored because the warning was changed to an error in 2.0.0-nflx.
+  // This is to be more strict rather than printing warnings that no one ever reads.
+  ignore("Ignore names when writing by position") {
     withSQLConf(("hive.exec.dynamic.partition.mode", "nonstrict")) {
       sql("CREATE TABLE source (id bigint, part string, data string)") // part, data transposed
       sql("CREATE TABLE destination (id bigint, data string, part string)")
