@@ -17,7 +17,7 @@
 
 package org.apache.spark.sql.execution.datasources.parquet
 
-import java.util.{Map => JMap, TimeZone}
+import java.util.{Locale, Map => JMap, TimeZone}
 
 import scala.collection.JavaConverters._
 
@@ -278,11 +278,12 @@ private[parquet] object ParquetReadSupport {
    */
   private def clipParquetGroupFields(
       parquetRecord: GroupType, structType: StructType): Seq[Type] = {
-    val parquetFieldMap = parquetRecord.getFields.asScala.map(f => f.getName -> f).toMap
+    val parquetFieldMap = parquetRecord.getFields.asScala
+        .map(f => f.getName.toLowerCase(Locale.ENGLISH) -> f).toMap
     val toParquet = new SparkToParquetSchemaConverter(writeLegacyParquetFormat = false)
     structType.map { f =>
       parquetFieldMap
-        .get(f.name)
+        .get(f.name.toLowerCase(Locale.ENGLISH))
         .map(clipParquetType(_, f.dataType))
         .getOrElse(toParquet.convertField(f))
     }
