@@ -799,6 +799,7 @@ private[ui] class TaskPagedTable(
           val headerLink = Unparsed(
             basePath +
               s"&task.sort=${URLEncoder.encode(header, "UTF-8")}" +
+              s"&task.desc=true" +
               s"&task.pageSize=$pageSize")
           <th class={cssClass}>
             <a href={headerLink}>
