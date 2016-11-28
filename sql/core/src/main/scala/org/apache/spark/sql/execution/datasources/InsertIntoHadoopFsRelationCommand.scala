@@ -19,6 +19,8 @@ package org.apache.spark.sql.execution.datasources
 
 import java.io.IOException
 
+import scala.collection.mutable
+
 import org.apache.hadoop.fs.{FileSystem, Path}
 
 import org.apache.spark.internal.io.FileCommitProtocol
@@ -29,6 +31,7 @@ import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.command._
+import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.internal.SQLConf.PartitionOverwriteMode
 import org.apache.spark.sql.util.SchemaUtils
 
@@ -70,7 +73,11 @@ case class InsertIntoHadoopFsRelationCommand(
     val fs = outputPath.getFileSystem(hadoopConf)
     val qualifiedOutputPath = outputPath.makeQualified(fs.getUri, fs.getWorkingDirectory)
 
+    val useS3Committer = sparkSession.sessionState.conf.useS3OutputCommitter
+    val isS3 = Option(outputPath.toUri.getScheme).exists(_.startsWith("s3"))
+
     val partitionsTrackedByCatalog = sparkSession.sessionState.conf.manageFilesourcePartitions &&
+      !(useS3Committer && isS3) &&
       catalogTable.isDefined &&
       catalogTable.get.partitionColumnNames.nonEmpty &&
       catalogTable.get.tracksPartitionsInCatalog
@@ -98,11 +105,42 @@ case class InsertIntoHadoopFsRelationCommand(
     val dynamicPartitionOverwrite = enableDynamicOverwrite && mode == SaveMode.Overwrite &&
       staticPartitions.size < partitionColumns.length
 
+    // If we are appending data to an existing dir.
+    val isAppend = pathExists && (mode == SaveMode.Append)
+
+    val committerOptions: mutable.Map[String, String] = new mutable.HashMap[String, String]()
+    committerOptions.put("spark.sql.commit-protocol.append", isAppend.toString)
+
+    committerOptions.put("spark.sql.commit-protocol.dynamicPartitionOverwrite",
+      dynamicPartitionOverwrite.toString)
+
+    val committerClass = if (useS3Committer && isS3) {
+      committerOptions.put(
+        "spark.sql.s3committer.is-partitioned",
+        partitionColumns.nonEmpty.toString)
+
+      catalogTable match {
+        case Some(table) =>
+          val hiveEnv = hadoopConf.get("spark.sql.hive.env", "prod")
+          committerOptions.put("s3.multipart.committer.catalog", s"${hiveEnv}hive")
+          committerOptions.put("s3.multipart.committer.database",
+            table.identifier.database.getOrElse("default"))
+          committerOptions.put("s3.multipart.committer.table", table.identifier.table)
+          committerOptions.put("spark.sql.s3committer.use-batch", "true")
+        case _ =>
+          committerOptions.put("spark.sql.s3committer.use-batch", "false")
+      }
+
+      sparkSession.sessionState.conf.s3CommitProtocolClass
+    } else {
+      sparkSession.sessionState.conf.fileCommitProtocolClass
+    }
+
     val committer = FileCommitProtocol.instantiate(
-      sparkSession.sessionState.conf.fileCommitProtocolClass,
+      committerClass,
       jobId = java.util.UUID.randomUUID().toString,
       outputPath = outputPath.toString,
-      dynamicPartitionOverwrite = dynamicPartitionOverwrite)
+      committerOptions.toMap)
 
     val doInsertion = (mode, pathExists) match {
       case (SaveMode.ErrorIfExists, true) =>
@@ -239,7 +277,14 @@ case class InsertIntoHadoopFsRelationCommand(
     partitions.flatMap { p =>
       val defaultLocation = qualifiedOutputPath.suffix(
         "/" + PartitioningUtils.getPathFragment(p.spec, table.partitionSchema)).toString
-      val catalogLocation = new Path(p.location).makeQualified(
+      // remove batch IDs from locations so that the partitions match and these paths will not go
+      // through the absolute path code, which is used to insert into specific partition locations
+      val location = p.location match {
+        case InsertIntoHadoopFsRelationCommand.BatchIDPattern(partition, _) =>
+          partition
+        case _ => p.location.toString
+      }
+      val catalogLocation = new Path(location).makeQualified(
         fs.getUri, fs.getWorkingDirectory).toString
       if (catalogLocation != defaultLocation) {
         Some(p.spec -> catalogLocation)
@@ -248,4 +293,8 @@ case class InsertIntoHadoopFsRelationCommand(
       }
     }.toMap
   }
+}
+
+object InsertIntoHadoopFsRelationCommand {
+  private[sql] val BatchIDPattern = "(.*)/batchid=([\\d]+)$".r
 }

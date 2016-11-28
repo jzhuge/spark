@@ -592,6 +592,18 @@ object SQLConf {
       .createWithDefault(
         "org.apache.spark.sql.execution.datasources.SQLHadoopMapReduceCommitProtocol")
 
+  val S3_COMMIT_PROTOCOL_CLASS =
+    buildConf("spark.sql.sources.s3.commitProtocolClass")
+      .internal()
+      .stringConf
+      .createWithDefault("org.apache.spark.sql.execution.datasources.S3MapReduceCommitProtocol")
+
+  val USE_S3_OUTPUT_COMMITTER =
+    buildConf("spark.sql.s3commiter.enabled")
+      .doc("When true, use the S3 output committer for S3 paths.")
+      .booleanConf
+      .createWithDefault(true)
+
   val PARALLEL_PARTITION_DISCOVERY_THRESHOLD =
     buildConf("spark.sql.sources.parallelPartitionDiscovery.threshold")
       .doc("The maximum number of paths allowed for listing files at driver side. If the number " +
@@ -1438,6 +1450,10 @@ class SQLConf extends Serializable with Logging {
     getConf(SQLConf.PARTITION_COLUMN_TYPE_INFERENCE)
 
   def fileCommitProtocolClass: String = getConf(SQLConf.FILE_COMMIT_PROTOCOL_CLASS)
+
+  def s3CommitProtocolClass: String = getConf(SQLConf.S3_COMMIT_PROTOCOL_CLASS)
+
+  def useS3OutputCommitter: Boolean = getConf(SQLConf.USE_S3_OUTPUT_COMMITTER)
 
   def parallelPartitionDiscoveryThreshold: Int =
     getConf(SQLConf.PARALLEL_PARTITION_DISCOVERY_THRESHOLD)

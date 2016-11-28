@@ -39,25 +39,29 @@ import org.apache.spark.mapred.SparkHadoopMapRedUtil
  *
  * @param jobId the job's or stage's id
  * @param path the job's output path, or null if committer acts as a noop
- * @param dynamicPartitionOverwrite If true, Spark will overwrite partition directories at runtime
- *                                  dynamically, i.e., we first write files under a staging
- *                                  directory with partition path, e.g.
- *                                  /path/to/staging/a=1/b=1/xxx.parquet. When committing the job,
- *                                  we first clean up the corresponding partition directories at
- *                                  destination path, e.g. /path/to/destination/a=1/b=1, and move
- *                                  files from staging directory to the corresponding partition
- *                                  directories under destination path.
+ * @param options the committer options
  */
 class HadoopMapReduceCommitProtocol(
     jobId: String,
     path: String,
-    dynamicPartitionOverwrite: Boolean = false)
+    options: Map[String, String] = Map.empty)
   extends FileCommitProtocol with Serializable with Logging {
 
   import FileCommitProtocol._
 
   /** OutputCommitter from Hadoop is not serializable so marking it transient. */
-  @transient private var committer: OutputCommitter = _
+  @transient protected var committer: OutputCommitter = _
+
+  /**
+   * If true, Spark will overwrite partition directories at runtime dynamically,
+   * i.e., we first write files under a staging directory with partition path,
+   * e.g. /path/to/staging/a=1/b=1/xxx.parquet. When committing the job,
+   * we first clean up the corresponding partition directories at destination path,
+   * e.g. /path/to/destination/a=1/b=1, and move files from staging directory
+   * to the corresponding partition directories under destination path.
+   */
+  private val dynamicPartitionOverwrite =
+    options.get("spark.sql.commit-protocol.dynamicPartitionOverwrite").exists(_.toBoolean)
 
   /**
    * Checks whether there are files to be committed to a valid output location.
@@ -98,6 +102,24 @@ class HadoopMapReduceCommitProtocol(
       case _ => ()
     }
     format.getOutputCommitter(context)
+  }
+
+  protected def setupCommitter(context: JobContext): OutputCommitter = {
+    // Setup IDs
+    val jobId = SparkHadoopWriterUtils.createJobID(new Date, 0)
+    val taskId = new TaskID(jobId, TaskType.MAP, 0)
+    val taskAttemptId = new TaskAttemptID(taskId, 0)
+
+    // Set up the configuration object
+    context.getConfiguration.set("mapreduce.job.id", jobId.toString)
+    context.getConfiguration.set("mapreduce.task.id", taskAttemptId.getTaskID.toString)
+    context.getConfiguration.set("mapreduce.task.attempt.id", taskAttemptId.toString)
+    context.getConfiguration.setBoolean("mapreduce.task.ismap", true)
+    context.getConfiguration.setInt("mapreduce.task.partition", 0)
+
+    val taskAttemptContext = new TaskAttemptContextImpl(context.getConfiguration, taskAttemptId)
+
+    setupCommitter(taskAttemptContext)
   }
 
   override def newTaskTempFile(
@@ -145,20 +167,7 @@ class HadoopMapReduceCommitProtocol(
   }
 
   override def setupJob(jobContext: JobContext): Unit = {
-    // Setup IDs
-    val jobId = SparkHadoopWriterUtils.createJobID(new Date, 0)
-    val taskId = new TaskID(jobId, TaskType.MAP, 0)
-    val taskAttemptId = new TaskAttemptID(taskId, 0)
-
-    // Set up the configuration object
-    jobContext.getConfiguration.set("mapreduce.job.id", jobId.toString)
-    jobContext.getConfiguration.set("mapreduce.task.id", taskAttemptId.getTaskID.toString)
-    jobContext.getConfiguration.set("mapreduce.task.attempt.id", taskAttemptId.toString)
-    jobContext.getConfiguration.setBoolean("mapreduce.task.ismap", true)
-    jobContext.getConfiguration.setInt("mapreduce.task.partition", 0)
-
-    val taskAttemptContext = new TaskAttemptContextImpl(jobContext.getConfiguration, taskAttemptId)
-    committer = setupCommitter(taskAttemptContext)
+    committer = setupCommitter(jobContext)
     committer.setupJob(jobContext)
   }
 

@@ -30,7 +30,8 @@ import org.apache.spark.util.Utils
  *    will be used for tasks on executors.
  * 2. Implementations should have a constructor with 2 or 3 arguments:
  *      (jobId: String, path: String) or
- *      (jobId: String, path: String, dynamicPartitionOverwrite: Boolean)
+ *      (jobId: String, path: String, dynamicPartitionOverwrite: Boolean) or
+ *      (jobId: String, path: String, options: Map[String, String])
  * 3. A committer should not be reused across multiple Spark jobs.
  *
  * The proper call sequence is:
@@ -144,18 +145,29 @@ object FileCommitProtocol {
       className: String,
       jobId: String,
       outputPath: String,
-      dynamicPartitionOverwrite: Boolean = false): FileCommitProtocol = {
+      options: Map[String, String] = Map.empty)
+    : FileCommitProtocol = {
     val clazz = Utils.classForName(className).asInstanceOf[Class[FileCommitProtocol]]
     // First try the constructor with arguments (jobId: String, outputPath: String,
     // dynamicPartitionOverwrite: Boolean).
     // If that doesn't exist, try the one with (jobId: string, outputPath: String).
     try {
-      val ctor = clazz.getDeclaredConstructor(classOf[String], classOf[String], classOf[Boolean])
-      ctor.newInstance(jobId, outputPath, dynamicPartitionOverwrite.asInstanceOf[java.lang.Boolean])
+      val ctor = clazz.getDeclaredConstructor(classOf[String], classOf[String], classOf[Map[_, _]])
+      ctor.newInstance(jobId, outputPath, options)
     } catch {
       case _: NoSuchMethodException =>
-        val ctor = clazz.getDeclaredConstructor(classOf[String], classOf[String])
-        ctor.newInstance(jobId, outputPath)
+        val dynamicPartitionOverwrite =
+          options.get("spark.sql.commit-protocol.dynamicPartitionOverwrite").exists(_.toBoolean)
+        try {
+          val ctor = clazz.getDeclaredConstructor(
+            classOf[String], classOf[String], classOf[Boolean])
+          ctor.newInstance(jobId, outputPath,
+            dynamicPartitionOverwrite.asInstanceOf[java.lang.Boolean])
+        } catch {
+          case _: NoSuchMethodException =>
+            val ctor = clazz.getDeclaredConstructor(classOf[String], classOf[String])
+            ctor.newInstance(jobId, outputPath)
+        }
     }
   }
 }
