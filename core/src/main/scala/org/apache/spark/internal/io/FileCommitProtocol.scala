@@ -123,19 +123,31 @@ object FileCommitProtocol {
   /**
    * Instantiates a FileCommitProtocol using the given className.
    */
-  def instantiate(className: String, jobId: String, outputPath: String, isAppend: Boolean)
+  def instantiate(
+      className: String,
+      jobId: String,
+      outputPath: String,
+      options: Map[String, String])
     : FileCommitProtocol = {
     val clazz = Utils.classForName(className).asInstanceOf[Class[FileCommitProtocol]]
 
     // First try the one with argument (jobId: String, outputPath: String, isAppend: Boolean).
     // If that doesn't exist, try the one with (jobId: string, outputPath: String).
     try {
-      val ctor = clazz.getDeclaredConstructor(classOf[String], classOf[String], classOf[Boolean])
-      ctor.newInstance(jobId, outputPath, isAppend.asInstanceOf[java.lang.Boolean])
+      val ctor = clazz.getDeclaredConstructor(classOf[String], classOf[String], classOf[Map[_, _]])
+      ctor.newInstance(jobId, outputPath, options)
     } catch {
       case _: NoSuchMethodException =>
-        val ctor = clazz.getDeclaredConstructor(classOf[String], classOf[String])
-        ctor.newInstance(jobId, outputPath)
+        val isAppend = options.get("spark.sql.commit-protocol.append").exists(_.toBoolean)
+        try {
+          val ctor = clazz.getDeclaredConstructor(
+            classOf[String], classOf[String], classOf[Boolean])
+          ctor.newInstance(jobId, outputPath, isAppend.asInstanceOf[java.lang.Boolean])
+        } catch {
+          case _: NoSuchMethodException =>
+            val ctor = clazz.getDeclaredConstructor(classOf[String], classOf[String])
+            ctor.newInstance(jobId, outputPath)
+        }
     }
   }
 }

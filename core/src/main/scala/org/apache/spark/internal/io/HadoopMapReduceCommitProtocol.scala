@@ -42,7 +42,7 @@ class HadoopMapReduceCommitProtocol(jobId: String, path: String)
   import FileCommitProtocol._
 
   /** OutputCommitter from Hadoop is not serializable so marking it transient. */
-  @transient private var committer: OutputCommitter = _
+  @transient protected var committer: OutputCommitter = _
 
   /**
    * Tracks files staged by this task for absolute output paths. These outputs are not managed by
@@ -59,6 +59,24 @@ class HadoopMapReduceCommitProtocol(jobId: String, path: String)
 
   protected def setupCommitter(context: TaskAttemptContext): OutputCommitter = {
     context.getOutputFormatClass.newInstance().getOutputCommitter(context)
+  }
+
+  protected def setupCommitter(context: JobContext): OutputCommitter = {
+    // Setup IDs
+    val jobId = SparkHadoopWriter.createJobID(new Date, 0)
+    val taskId = new TaskID(jobId, TaskType.MAP, 0)
+    val taskAttemptId = new TaskAttemptID(taskId, 0)
+
+    // Set up the configuration object
+    context.getConfiguration.set("mapred.job.id", jobId.toString)
+    context.getConfiguration.set("mapred.tip.id", taskAttemptId.getTaskID.toString)
+    context.getConfiguration.set("mapred.task.id", taskAttemptId.toString)
+    context.getConfiguration.setBoolean("mapred.task.is.map", true)
+    context.getConfiguration.setInt("mapred.task.partition", 0)
+
+    val taskAttemptContext = new TaskAttemptContextImpl(context.getConfiguration, taskAttemptId)
+
+    setupCommitter(taskAttemptContext)
   }
 
   override def newTaskTempFile(
@@ -101,20 +119,7 @@ class HadoopMapReduceCommitProtocol(jobId: String, path: String)
   }
 
   override def setupJob(jobContext: JobContext): Unit = {
-    // Setup IDs
-    val jobId = SparkHadoopWriter.createJobID(new Date, 0)
-    val taskId = new TaskID(jobId, TaskType.MAP, 0)
-    val taskAttemptId = new TaskAttemptID(taskId, 0)
-
-    // Set up the configuration object
-    jobContext.getConfiguration.set("mapred.job.id", jobId.toString)
-    jobContext.getConfiguration.set("mapred.tip.id", taskAttemptId.getTaskID.toString)
-    jobContext.getConfiguration.set("mapred.task.id", taskAttemptId.toString)
-    jobContext.getConfiguration.setBoolean("mapred.task.is.map", true)
-    jobContext.getConfiguration.setInt("mapred.task.partition", 0)
-
-    val taskAttemptContext = new TaskAttemptContextImpl(jobContext.getConfiguration, taskAttemptId)
-    committer = setupCommitter(taskAttemptContext)
+    committer = setupCommitter(jobContext)
     committer.setupJob(jobContext)
   }
 

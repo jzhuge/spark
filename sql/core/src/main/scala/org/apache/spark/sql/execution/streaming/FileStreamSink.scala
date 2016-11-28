@@ -58,7 +58,7 @@ class FileStreamSink(
         className = sparkSession.sessionState.conf.streamingFileCommitProtocolClass,
         jobId = batchId.toString,
         outputPath = path,
-        isAppend = false)
+        Map("spark.sql.commit-protocol.append" -> "false"))
 
       committer match {
         case manifestCommitter: ManifestFileCommitProtocol =>

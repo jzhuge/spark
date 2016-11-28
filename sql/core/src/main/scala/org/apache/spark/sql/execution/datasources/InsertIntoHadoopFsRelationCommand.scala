@@ -19,6 +19,8 @@ package org.apache.spark.sql.execution.datasources
 
 import java.io.IOException
 
+import scala.collection.mutable
+
 import org.apache.hadoop.fs.{FileSystem, Path}
 
 import org.apache.spark.internal.io.FileCommitProtocol
@@ -28,6 +30,7 @@ import org.apache.spark.sql.catalyst.catalog.CatalogTypes.TablePartitionSpec
 import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
 import org.apache.spark.sql.execution.command.RunnableCommand
+import org.apache.spark.sql.internal.SQLConf
 
 /**
  * A command for writing data to a [[HadoopFsRelation]].  Supports both overwriting and appending.
@@ -92,11 +95,38 @@ case class InsertIntoHadoopFsRelationCommand(
     val isAppend = pathExists && (mode == SaveMode.Append)
 
     if (doInsertion) {
+      val committerOptions: mutable.Map[String, String] = new mutable.HashMap[String, String]()
+      committerOptions.put("spark.sql.commit-protocol.append", isAppend.toString)
+
+      val useS3Committer = sparkSession.conf.get(SQLConf.USE_S3_OUTPUT_COMMITTER)
+      val isS3 = Option(outputPath.toUri.getScheme).exists(_.startsWith("s3"))
+      val committerClass = if (useS3Committer && isS3) {
+        committerOptions.put(
+          "spark.sql.s3committer.is-partitioned",
+          partitionColumns.nonEmpty.toString)
+
+        catalogTable match {
+          case Some(table) =>
+            val hiveEnv = hadoopConf.get("spark.sql.hive.env", "prod")
+            committerOptions.put("s3.multipart.committer.catalog", s"${hiveEnv}hive")
+            committerOptions.put("s3.multipart.committer.database",
+              table.identifier.database.getOrElse("default"))
+            committerOptions.put("s3.multipart.committer.table", table.identifier.table)
+            committerOptions.put("spark.sql.s3committer.use-batch", "true")
+          case _ =>
+            committerOptions.put("spark.sql.s3committer.use-batch", "false")
+        }
+
+        sparkSession.sessionState.conf.s3CommitProtocolClass
+      } else {
+        sparkSession.sessionState.conf.fileCommitProtocolClass
+      }
+
       val committer = FileCommitProtocol.instantiate(
-        sparkSession.sessionState.conf.fileCommitProtocolClass,
+        committerClass,
         jobId = java.util.UUID.randomUUID().toString,
         outputPath = outputPath.toString,
-        isAppend = isAppend)
+        committerOptions.toMap)
 
       FileFormatWriter.write(
         sparkSession = sparkSession,

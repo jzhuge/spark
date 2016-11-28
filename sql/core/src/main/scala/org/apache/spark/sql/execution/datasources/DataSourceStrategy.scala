@@ -267,7 +267,14 @@ case class DataSourceAnalysis(conf: CatalystConf) extends Rule[LogicalPlan] {
     partitions.flatMap { p =>
       val defaultLocation = qualifiedBasePath.suffix(
         "/" + PartitioningUtils.getPathFragment(p.spec, table.partitionSchema)).toString
-      val catalogLocation = new Path(p.location).makeQualified(
+      // remove batch IDs from locations so that the partitions match and these paths will not go
+      // through the absolute path code, which is used to insert into specific partition locations
+      val location = p.location match {
+        case DataSourceAnalysis.BatchIDPattern(partition, _) =>
+          partition
+        case _ => p.location
+      }
+      val catalogLocation = new Path(location).makeQualified(
         fs.getUri, fs.getWorkingDirectory).toString
       if (catalogLocation != defaultLocation) {
         Some(p.spec -> catalogLocation)
@@ -276,6 +283,10 @@ case class DataSourceAnalysis(conf: CatalystConf) extends Rule[LogicalPlan] {
       }
     }.toMap
   }
+}
+
+object DataSourceAnalysis {
+  private[sql] val BatchIDPattern = "(.*)/batchid=([\\d]+)$".r
 }
 
 
