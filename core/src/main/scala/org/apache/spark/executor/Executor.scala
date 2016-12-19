@@ -31,6 +31,7 @@ import scala.collection.mutable.{ArrayBuffer, HashMap, Map}
 import scala.util.control.NonFatal
 
 import com.google.common.util.concurrent.ThreadFactoryBuilder
+import com.netflix.bdp
 
 import org.apache.spark._
 import org.apache.spark.deploy.SparkHadoopUtil
@@ -291,6 +292,7 @@ private[spark] class Executor(
       threadId = Thread.currentThread.getId
       Thread.currentThread.setName(threadName)
       val threadMXBean = ManagementFactory.getThreadMXBean
+      bdp.TaskMetrics.setThreadContext("task-" + taskId + "-" + taskDescription.attemptNumber)
       val taskMemoryManager = new TaskMemoryManager(env.memoryManager, taskId)
       val deserializeStartTime = System.currentTimeMillis()
       val deserializeStartCpuTime = if (threadMXBean.isCurrentThreadCpuTimeSupported) {
