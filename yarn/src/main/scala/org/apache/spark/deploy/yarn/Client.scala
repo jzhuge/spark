@@ -1188,6 +1188,12 @@ private[spark] class Client(
   }
 
   private def formatReportDetails(report: ApplicationReport): String = {
+    val historyServer = sparkConf.getOption("spark.yarn.historyServer.address")
+    val historyUrl = historyServer match {
+      case Some(hostPort) => Some("http://%s/history/%s".format(hostPort, report.getApplicationId))
+      case None => None
+    }
+
     val details = Seq[(String, String)](
       ("client token", getClientToken(report)),
       ("diagnostics", report.getDiagnostics),
@@ -1197,6 +1203,7 @@ private[spark] class Client(
       ("start time", report.getStartTime.toString),
       ("final status", report.getFinalApplicationStatus.toString),
       ("tracking URL", report.getTrackingUrl),
+      ("history URL", historyUrl.orNull),
       ("user", report.getUser)
     )
 
