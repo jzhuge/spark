@@ -59,9 +59,7 @@ class OutputRedirector {
     try {
       String line;
       while ((line = reader.readLine()) != null) {
-        if (active) {
-          sink.info(line.replaceFirst("\\s*$", ""));
-        }
+        sink.info(line.replaceFirst("\\s*$", ""));
       }
     } catch (IOException e) {
       sink.log(Level.FINE, "Error reading child process output.", e);
