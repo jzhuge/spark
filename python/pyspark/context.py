@@ -1067,6 +1067,19 @@ class SparkContext(object):
         conf.setAll(self._conf.getAll())
         return conf
 
+    def _repr_html_(self):
+        app_id = self.applicationId
+        web_proxy = self._jsc.hadoopConfiguration().get("yarn.web-proxy.address")
+        master_host = web_proxy.split(":")[0]
+        log_file = self._conf.get("spark.log.path")
+        return """
+        <ul>
+        <li><a href="http://%s/proxy/%s" target="new_tab">Spark UI</a></li>
+        <li><a href="http://%s:8088/cluster/app/%s" target="new_tab">Hadoop app: %s</a></li>
+        <li>Local log file: %s</li>
+        </ul>
+        """ % (web_proxy, app_id, master_host, app_id, app_id, log_file)
+
 
 def _test():
     import atexit
