@@ -617,6 +617,9 @@ class SparkSession(object):
         """
         self.stop()
 
+    def _repr_html_(self):
+        return self.sparkContext._repr_html_()
+
 
 def _test():
     import os
