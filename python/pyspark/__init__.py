@@ -56,6 +56,12 @@ from pyspark.profiler import Profiler, BasicProfiler
 from pyspark.version import __version__
 from pyspark._globals import _NoValue
 
+try:
+    if __IPYTHON__:
+        import pyspark.magics
+except:
+    pass # not ipython, no magics
+
 
 def since(version):
     """
