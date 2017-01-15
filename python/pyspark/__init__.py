@@ -52,6 +52,12 @@ from pyspark.status import *
 from pyspark.profiler import Profiler, BasicProfiler
 from pyspark.version import __version__
 
+try:
+    if __IPYTHON__:
+        import pyspark.magics
+except:
+    pass # not ipython, no magics
+
 
 def since(version):
     """
