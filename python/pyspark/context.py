@@ -1076,10 +1076,10 @@ class SparkContext(object):
         <ul>
         <li><a href="http://%s/proxy/%s" target="new_tab">Spark UI</a></li>
         <li><a href="http://%s:8088/cluster/app/%s" target="new_tab">Hadoop app: %s</a></li>
-        <li>Local log file: %s</li>
+        <li>Local logs at: %s</li>
+        <li>Local logs available using %%tail_log</li>
         </ul>
         """ % (web_proxy, app_id, master_host, app_id, app_id, log_file)
-
 
 def _test():
     import atexit
