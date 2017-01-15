@@ -1179,9 +1179,22 @@ private[spark] class Client(
 
   private def formatReportDetails(report: ApplicationReport): String = {
     val historyServer = sparkConf.getOption("spark.yarn.historyServer.address")
-    val historyUrl = historyServer match {
-      case Some(hostPort) => Some("http://%s/history/%s".format(hostPort, report.getApplicationId))
-      case None => None
+    val historyUrl = historyServer.map(
+      hostPort => "http://%s/history/%s/%d/".format(
+        hostPort, report.getApplicationId, report.getCurrentApplicationAttemptId.getAttemptId))
+
+    val trackingUrl = report.getTrackingUrl
+    val webProxy: Option[URI] = Option(trackingUrl).map(URI.create)
+    val yarnAppUrl = webProxy.map(
+      uri => "http://%s:8088/cluster/app/%s".format(uri.getHost, report.getApplicationId))
+
+    val amLogUrl = report.getYarnApplicationState match {
+      case YarnApplicationState.RUNNING =>
+        val amContainer = yarnClient.getApplicationAttemptReport(
+          report.getCurrentApplicationAttemptId).getAMContainerId
+        val amContainerInfo = yarnClient.getContainerReport(amContainer)
+        Some(amContainerInfo.getLogUrl)
+      case _ => None
     }
 
     val details = Seq[(String, String)](
@@ -1189,11 +1202,13 @@ private[spark] class Client(
       ("diagnostics", report.getDiagnostics),
       ("ApplicationMaster host", report.getHost),
       ("ApplicationMaster RPC port", report.getRpcPort.toString),
+      ("ApplicationMaster log URL", amLogUrl.orNull),
       ("queue", report.getQueue),
       ("start time", report.getStartTime.toString),
       ("final status", report.getFinalApplicationStatus.toString),
-      ("tracking URL", report.getTrackingUrl),
+      ("tracking URL", trackingUrl),
       ("history URL", historyUrl.orNull),
+      ("yarn URL", yarnAppUrl.orNull),
       ("user", report.getUser)
     )
 
