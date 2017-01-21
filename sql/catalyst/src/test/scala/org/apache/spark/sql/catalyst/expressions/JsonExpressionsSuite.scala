@@ -76,6 +76,30 @@ class JsonExpressionsSuite extends SparkFunSuite with ExpressionEvalHelper with 
       "it works")
   }
 
+  test("$[\"store\"].bicycle") {
+    checkEvaluation(
+      GetJsonObject(Literal(json), Literal("$[\"store\"].bicycle")),
+      """{"price":19.95,"color":"red"}""")
+  }
+
+  test("$.store[\"bicycle\"]") {
+    checkEvaluation(
+      GetJsonObject(Literal(json), Literal("$.store[\"bicycle\"]")),
+      """{"price":19.95,"color":"red"}""")
+  }
+
+  test("$[\"store\"][\"bicycle\"]") {
+    checkEvaluation(
+      GetJsonObject(Literal(json), Literal("$[\"store\"][\"bicycle\"]")),
+      """{"price":19.95,"color":"red"}""")
+  }
+
+  test("$[\"key with spaces\"]") {
+    checkEvaluation(GetJsonObject(
+      Literal("""{ "key with spaces": "it works" }"""), Literal("$[\"key with spaces\"]")),
+      "it works")
+  }
+
   test("$.store.book") {
     checkEvaluation(
       GetJsonObject(Literal(json), Literal("$.store.book")),
