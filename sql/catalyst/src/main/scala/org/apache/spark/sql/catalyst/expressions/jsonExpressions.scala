@@ -68,10 +68,11 @@ private[this] object JsonPathParser extends RegexParsers {
       Subscript :: operand :: Nil
     }
 
-  // parse `.name` or `['name']` child expressions
+  // parse `.name`, `['name']`, or `["name"]` child expressions
   def named: Parser[List[PathInstruction]] =
     for {
-      name <- '.' ~> "[^\\.\\[]+".r | "['" ~> "[^\\'\\?]+".r <~ "']"
+      name <-
+          '.' ~> "[^\\.\\[]+".r | "['" ~> "[^\\'\\?]+".r <~ "']" | "[\"" ~> "[^\\\"\\?]+".r <~ "\"]"
     } yield {
       Key :: Named(name) :: Nil
     }
