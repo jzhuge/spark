@@ -25,9 +25,11 @@ import org.apache.spark.annotation.InterfaceStability
 import org.apache.spark.sql.catalyst.TableIdentifier
 import org.apache.spark.sql.catalyst.analysis.UnresolvedRelation
 import org.apache.spark.sql.catalyst.catalog.{BucketSpec, CatalogTable, CatalogTableType}
-import org.apache.spark.sql.catalyst.plans.logical.{InsertIntoTable, OverwriteOptions, Project}
+import org.apache.spark.sql.catalyst.plans.logical.{InsertIntoTable, LogicalPlan, OverwriteOptions, Project}
+import org.apache.spark.sql.execution.SQLExecution
 import org.apache.spark.sql.execution.command.DDLUtils
-import org.apache.spark.sql.execution.datasources.{CreateTable, DataSource}
+import org.apache.spark.sql.execution.datasources.{CreateTable, DataSource, SaveIntoDataSourceCommand}
+import org.apache.spark.sql.execution.datasources.jdbc.JdbcUtils
 import org.apache.spark.sql.types.StructType
 
 /**
@@ -212,7 +214,14 @@ final class DataFrameWriter[T] private[sql](ds: Dataset[T]) {
       bucketSpec = getBucketSpec,
       options = extraOptions.toMap)
 
-    dataSource.write(mode, df)
+    runCommand(df.sparkSession, "save") {
+      SaveIntoDataSourceCommand(
+        query = df.logicalPlan,
+        provider = source,
+        partitionColumns = partitioningColumns.getOrElse(Nil),
+        options = extraOptions.toMap,
+        mode = mode)
+    }
   }
   /**
    * Inserts the content of the `DataFrame` to the specified table. It requires that
@@ -264,14 +273,15 @@ final class DataFrameWriter[T] private[sql](ds: Dataset[T]) {
         df.sparkSession.sessionState.conf.getConfString("spark.sql.insertSafeCasts", "false"))
     }
 
-    df.sparkSession.sessionState.executePlan(
+    runCommand(df.sparkSession, "insertInto") {
       InsertIntoTable(
         table = UnresolvedRelation(tableIdent),
         partition = partitions.getOrElse(Map.empty[String, Option[String]]),
         child = input,
         overwrite = OverwriteOptions(mode == SaveMode.Overwrite),
         ifNotExists = false,
-        options = extraOptions.toMap)).toRdd
+        options = extraOptions.toMap)
+    }
   }
 
   private def normalizedParCols: Option[Seq[String]] = partitioningColumns.map { cols =>
@@ -416,8 +426,9 @@ final class DataFrameWriter[T] private[sql](ds: Dataset[T]) {
           partitionColumnNames = partitioningColumns.getOrElse(Nil),
           bucketSpec = getBucketSpec
         )
-        df.sparkSession.sessionState.executePlan(
-          CreateTable(tableDesc, mode, Some(df.logicalPlan))).toRdd
+        runCommand(df.sparkSession, "saveAsTable") {
+          CreateTable(tableDesc, mode, Some(df.logicalPlan))
+        }
     }
   }
 
@@ -593,6 +604,25 @@ final class DataFrameWriter[T] private[sql](ds: Dataset[T]) {
    */
   def csv(path: String): Unit = {
     format("csv").save(path)
+  }
+
+  /**
+   * Wrap a DataFrameWriter action to track the QueryExecution and time cost, then report to the
+   * user-registered callback functions.
+   */
+  private def runCommand(session: SparkSession, name: String)(command: LogicalPlan): Unit = {
+    val qe = session.sessionState.executePlan(command)
+    try {
+      val start = System.nanoTime()
+      // call `QueryExecution.toRDD` to trigger the execution of commands.
+      qe.toRdd
+      val end = System.nanoTime()
+      session.listenerManager.onSuccess(name, qe, end - start)
+    } catch {
+      case e: Exception =>
+        session.listenerManager.onFailure(name, qe, e)
+        throw e
+    }
   }
 
   ///////////////////////////////////////////////////////////////////////////////////////
