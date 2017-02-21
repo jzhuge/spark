@@ -189,6 +189,13 @@ class SparkSubmitCommandBuilder extends AbstractCommandBuilder {
       args.add(propertiesFile);
     }
 
+    if (extraPropertiesFiles != null) {
+      for (String file : extraPropertiesFiles) {
+        args.add(parser.EXTRA_PROPERTIES_FILE);
+        args.add(file);
+      }
+    }
+
     if (isExample) {
       jars.addAll(findExamplesJars());
     }
@@ -419,6 +426,9 @@ class SparkSubmitCommandBuilder extends AbstractCommandBuilder {
           break;
         case PROPERTIES_FILE:
           propertiesFile = value;
+          break;
+        case EXTRA_PROPERTIES_FILE:
+          extraPropertiesFiles.add(value);
           break;
         case DRIVER_MEMORY:
           conf.put(SparkLauncher.DRIVER_MEMORY, value);
