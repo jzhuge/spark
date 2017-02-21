@@ -48,6 +48,7 @@ abstract class AbstractCommandBuilder {
   String mainClass;
   String master;
   protected String propertiesFile;
+  protected List<String> extraPropertiesFiles = new ArrayList<>();
   final List<String> appArgs;
   final List<String> jars;
   final List<String> files;
@@ -266,7 +267,7 @@ abstract class AbstractCommandBuilder {
   Map<String, String> getEffectiveConfig() throws IOException {
     if (effectiveConfig == null) {
       effectiveConfig = new HashMap<>(conf);
-      Properties p = loadPropertiesFile();
+      Properties p = loadPropertiesFiles();
       for (String key : p.stringPropertyNames()) {
         if (!effectiveConfig.containsKey(key)) {
           effectiveConfig.put(key, p.getProperty(key));
@@ -281,8 +282,16 @@ abstract class AbstractCommandBuilder {
    * user-specified properties file, or the spark-defaults.conf file under the Spark configuration
    * directory.
    */
-  private Properties loadPropertiesFile() throws IOException {
+  private Properties loadPropertiesFiles() throws IOException {
     Properties props = new Properties();
+    addPropertiesFromFile(propertiesFile, props);
+    for (String extraFile : extraPropertiesFiles) {
+      addPropertiesFromFile(extraFile, props);
+    }
+    return props;
+  }
+
+  private void addPropertiesFromFile(String propertiesFile, Properties props) throws IOException {
     File propsFile;
     if (propertiesFile != null) {
       propsFile = new File(propertiesFile);
@@ -291,16 +300,16 @@ abstract class AbstractCommandBuilder {
       propsFile = new File(getConfDir(), DEFAULT_PROPERTIES_FILE);
     }
 
+    Properties temp = new Properties();
     if (propsFile.isFile()) {
       try (InputStreamReader isr = new InputStreamReader(
           new FileInputStream(propsFile), StandardCharsets.UTF_8)) {
-        props.load(isr);
-        for (Map.Entry<Object, Object> e : props.entrySet()) {
-          e.setValue(e.getValue().toString().trim());
+        temp.load(isr);
+        for (String property : temp.stringPropertyNames()) {
+          props.setProperty(property, temp.getProperty(property).trim());
         }
       }
     }
-    return props;
   }
 
   private String getConfDir() {
