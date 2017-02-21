@@ -44,6 +44,7 @@ private[deploy] class SparkSubmitArguments(args: Seq[String], env: Map[String, S
   var executorCores: String = null
   var totalExecutorCores: String = null
   var propertiesFile: String = null
+  var extraPropertiesFiles: Seq[String] = Nil
   var driverMemory: String = null
   var driverExtraClassPath: String = null
   var driverExtraLibraryPath: String = null
@@ -83,7 +84,7 @@ private[deploy] class SparkSubmitArguments(args: Seq[String], env: Map[String, S
     val defaultProperties = new HashMap[String, String]()
     // scalastyle:off println
     if (verbose) SparkSubmit.printStream.println(s"Using properties file: $propertiesFile")
-    Option(propertiesFile).foreach { filename =>
+    (Option(propertiesFile) ++ extraPropertiesFiles).foreach { filename =>
       Utils.getPropertiesFromFile(filename).foreach { case (k, v) =>
         defaultProperties(k) = v
         if (verbose) SparkSubmit.printStream.println(s"Adding default property: $k=$v")
@@ -295,6 +296,7 @@ private[deploy] class SparkSubmitArguments(args: Seq[String], env: Map[String, S
     |  executorCores           $executorCores
     |  totalExecutorCores      $totalExecutorCores
     |  propertiesFile          $propertiesFile
+    |  extraPropertiesFiles    [${extraPropertiesFiles.mkString(", ")}]
     |  driverMemory            $driverMemory
     |  driverCores             $driverCores
     |  driverExtraClassPath    $driverExtraClassPath
@@ -317,7 +319,7 @@ private[deploy] class SparkSubmitArguments(args: Seq[String], env: Map[String, S
     |  verbose                 $verbose
     |
     |Spark properties used, including those specified through
-    | --conf and those from the properties file $propertiesFile:
+    | --conf and those from the properties files:
     |${sparkProperties.mkString("  ", "\n  ", "\n")}
     """.stripMargin
   }
@@ -369,6 +371,9 @@ private[deploy] class SparkSubmitArguments(args: Seq[String], env: Map[String, S
 
       case PROPERTIES_FILE =>
         propertiesFile = value
+
+      case EXTRA_PROPERTIES_FILE =>
+        extraPropertiesFiles :+= value
 
       case KILL_SUBMISSION =>
         submissionToKill = value
