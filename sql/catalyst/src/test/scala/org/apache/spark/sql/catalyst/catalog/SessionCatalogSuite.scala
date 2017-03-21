@@ -23,7 +23,7 @@ import org.apache.spark.sql.catalyst.{FunctionIdentifier, TableIdentifier}
 import org.apache.spark.sql.catalyst.analysis._
 import org.apache.spark.sql.catalyst.expressions.{Expression, ExpressionInfo, Literal}
 import org.apache.spark.sql.catalyst.plans.logical.{Range, SubqueryAlias}
-
+import org.apache.spark.sql.types._
 
 /**
  * Tests for [[SessionCatalog]] that assume that [[InMemoryCatalog]] is correctly implemented.
@@ -390,6 +390,30 @@ class SessionCatalogSuite extends SparkFunSuite {
     intercept[NoSuchTableException] {
       catalog.alterTable(newTable("unknown_table", "db2"))
     }
+  }
+
+  test("alter table add columns") {
+    val sessionCatalog = new SessionCatalog(newBasicCatalog())
+    sessionCatalog.createTable(newTable("t1", "default"), ignoreIfExists = false)
+    val oldTab = sessionCatalog.externalCatalog.getTable("default", "t1")
+    sessionCatalog.alterTableSchema(TableIdentifier("t1", Some("default")),
+        StructType(oldTab.dataSchema.add("c3", IntegerType) ++ oldTab.partitionSchema))
+    val newTab = sessionCatalog.externalCatalog.getTable("default", "t1")
+    // construct the expected table schema
+    val expectedTableSchema = StructType(oldTab.dataSchema.fields ++
+      Seq(StructField("c3", IntegerType)) ++ oldTab.partitionSchema)
+    assert(newTab.schema == expectedTableSchema)
+  }
+
+  test("alter table drop columns") {
+    val sessionCatalog = new SessionCatalog(newBasicCatalog())
+    sessionCatalog.createTable(newTable("t1", "default"), ignoreIfExists = false)
+    val oldTab = sessionCatalog.externalCatalog.getTable("default", "t1")
+    val e = intercept[AnalysisException] {
+      sessionCatalog.alterTableSchema(
+        TableIdentifier("t1", Some("default")), StructType(oldTab.schema.drop(1)))
+      }.getMessage
+    assert(e.contains("We don't support dropping columns yet."))
   }
 
   test("get table") {
