@@ -111,12 +111,12 @@ class ExecutorSuite extends SparkFunSuite {
       executorSuiteHelper.latch1.await()
       // we know the task will be started, but not yet deserialized, because of the latches we
       // use in mockExecutorBackend.
-      executor.killAllTasks(true)
+      executor.killAllTasks(true, "test")
       executorSuiteHelper.latch2.countDown()
       executorSuiteHelper.latch3.await()
 
       // `testFailedReason` should be `TaskKilled`; `taskState` should be `KILLED`
-      assert(executorSuiteHelper.testFailedReason === TaskKilled)
+      assert(executorSuiteHelper.testFailedReason === TaskKilled("test"))
       assert(executorSuiteHelper.taskState === TaskState.KILLED)
     }
     finally {
