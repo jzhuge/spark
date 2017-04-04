@@ -902,6 +902,8 @@ public final class BytesToBytesMap extends MemoryConsumer {
   @VisibleForTesting
   void growAndRehash() {
     assert(longArray != null);
+    // should always be strictly less than MAX_CAPACITY, or else it's at the max and trying to grow
+    assert(longArray.size() / 2 < MAX_CAPACITY);
 
     // Store references to the old data structures to be used when we re-hash
     final LongArray oldLongArray = longArray;
@@ -919,9 +921,17 @@ public final class BytesToBytesMap extends MemoryConsumer {
       final int hashcode = (int) oldLongArray.get(i + 1);
       int newPos = hashcode & mask;
       int step = 1;
-      while (longArray.get(newPos * 2) != 0) {
+      while (longArray.get(newPos * 2) != 0 && step <= mask) {
         newPos = (newPos + step) & mask;
         step++;
+      }
+      if (step > mask + 1) {
+        // if step is greater than mask (accounting for the last time through the loop), then there
+        // were no free locations because the triangular number series is guaranteed to visit every
+        // location before repeating.
+        throw new IllegalStateException(String.format("Unable to find an empty location while " +
+            "growing hash table (%d > %d, old cap %d, new cap %d)",
+            step, mask, oldCapacity, longArray.size() / 2));
       }
       longArray.set(newPos * 2, keyPointer);
       longArray.set(newPos * 2 + 1, hashcode);
