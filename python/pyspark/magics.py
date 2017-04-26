@@ -1,6 +1,8 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
+import os, sys
+
 from IPython.core.magic import (register_line_magic, register_line_cell_magic)
 
 from pyspark.context import SparkContext
@@ -12,20 +14,15 @@ def tail_log(arg = ""):
     except:
         num_lines = 100
 
-    sc = SparkContext._active_spark_context
-    if sc:
-        log = open(sc._conf.get("spark.log.path"))
-        lines = []
+    log = open(os.environ['SPARK_LOG_FILE_PATH'])
+    lines = []
 
-        line_count = 0
-        for line in log.readlines():
-            line_count += 1
-            lines.append(line)
-            # occasionally discard unnecessary lines
-            if line_count > 10 * num_lines:
-                lines = lines[-num_lines:]
+    line_count = 0
+    for line in log.readlines():
+        line_count += 1
+        lines.append(line)
+        # occasionally discard unnecessary lines
+        if line_count > 10 * num_lines:
+            lines = lines[-num_lines:]
 
-        print "".join(lines[-num_lines:])
-
-    else:
-        print "Cannot load logs: no active SparkContext"
+    print "".join(lines[-num_lines:])
