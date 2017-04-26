@@ -1069,17 +1069,31 @@ class SparkContext(object):
 
     def _repr_html_(self):
         app_id = self.applicationId
-        web_proxy = self._jsc.hadoopConfiguration().get("yarn.web-proxy.address")
-        master_host = web_proxy.split(":")[0]
-        log_file = self._conf.get("spark.log.path")
-        return """
-        <ul>
-        <li><a href="http://%s/proxy/%s" target="new_tab">Spark UI</a></li>
-        <li><a href="http://%s:8088/cluster/app/%s" target="new_tab">Hadoop app: %s</a></li>
-        <li>Local logs at: %s</li>
-        <li>Local logs available using %%tail_log</li>
-        </ul>
-        """ % (web_proxy, app_id, master_host, app_id, app_id, log_file)
+        log_file = os.environ['SPARK_LOG_FILE_PATH']
+        master = self._conf.get("spark.master")
+        if master.startswith("mesos"):
+            web_ui = self._jsc.sc().uiWebUrl().get()
+            cluster = os.environ['BDAS_APP_NAME']
+            region = os.environ['EC2_REGION']
+            return """
+                <ul>
+                <li><a href="%s" target="new_tab">Spark UI</a></li>
+                <li><a href="http://%s.master.%s.dynprod.netflix.net:5050/#/frameworks/%s" target="new_tab">Mesos UI: %s</a></li>
+                <li>Local logs available using %%tail_log</li>
+                <li>Local logs are at %s</li>
+                </ul>
+                """ % (web_ui, cluster, region, app_id, app_id, log_file)
+        else:
+            web_proxy = self._jsc.hadoopConfiguration().get("yarn.web-proxy.address")
+            master_host = web_proxy.split(":")[0]
+            return """
+                <ul>
+                <li><a href="http://%s/proxy/%s" target="new_tab">Spark UI</a></li>
+                <li><a href="http://%s:8088/cluster/app/%s" target="new_tab">Hadoop app: %s</a></li>
+                <li>Local logs available using %%tail_log</li>
+                <li>Local logs are at %s</li>
+                </ul>
+                """ % (web_proxy, app_id, master_host, app_id, app_id, log_file)
 
 def _test():
     import atexit
