@@ -1184,9 +1184,8 @@ private[spark] class Client(
         hostPort, report.getApplicationId, report.getCurrentApplicationAttemptId.getAttemptId))
 
     val trackingUrl = report.getTrackingUrl
-    val webProxy: Option[URI] = Option(trackingUrl).map(URI.create)
-    val yarnAppUrl = webProxy.map(
-      uri => "http://%s:8088/cluster/app/%s".format(uri.getHost, report.getApplicationId))
+    val rmAddress = hadoopConf.get(YarnConfiguration.RM_WEBAPP_ADDRESS)
+    val yarnAppUrl = "http://%s/cluster/app/%s".format(rmAddress, report.getApplicationId)
 
     val amLogUrl = report.getYarnApplicationState match {
       case YarnApplicationState.RUNNING =>
@@ -1208,7 +1207,7 @@ private[spark] class Client(
       ("final status", report.getFinalApplicationStatus.toString),
       ("tracking URL", trackingUrl),
       ("history URL", historyUrl.orNull),
-      ("yarn URL", yarnAppUrl.orNull),
+      ("yarn URL", yarnAppUrl),
       ("user", report.getUser)
     )
 
