@@ -140,6 +140,11 @@ object TypeCoercion {
     case (StringType, NullType) => Some(StringType)
     case (NullType, StringType) => Some(StringType)
 
+    case (StringType, LongType) => Some(LongType)
+    case (LongType, StringType) => Some(LongType)
+    case (StringType, IntegerType) => Some(LongType)
+    case (IntegerType, StringType) => Some(LongType)
+
     // There is no proper decimal type we can pick,
     // using double type is the best we can do.
     // See SPARK-22469 for details.
