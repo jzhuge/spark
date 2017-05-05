@@ -591,7 +591,6 @@ class CoarseGrainedSchedulerBackend(scheduler: TaskSchedulerImpl, val rpcEnv: Rp
       // take into account executors that are pending to be added or removed.
       val adjustTotalExecutors =
         if (!replace) {
-          requestedTotalExecutors = math.max(requestedTotalExecutors - executorsToKill.size, 0)
           if (requestedTotalExecutors !=
               (numExistingExecutors + numPendingExecutors - executorsPendingToRemove.size)) {
             logInfo(
