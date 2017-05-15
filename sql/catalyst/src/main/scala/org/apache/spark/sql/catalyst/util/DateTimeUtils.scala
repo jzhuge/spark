@@ -20,6 +20,8 @@ package org.apache.spark.sql.catalyst.util
 import java.sql.{Date, Timestamp}
 import java.text.{DateFormat, SimpleDateFormat}
 import java.util.{Calendar, Locale, TimeZone}
+import java.util.concurrent.ConcurrentHashMap
+import java.util.function.{Function => JFunction}
 import javax.xml.bind.DatatypeConverter
 
 import scala.annotation.tailrec
@@ -89,6 +91,15 @@ object DateTimeUtils {
     override def initialValue(): SimpleDateFormat = {
       new SimpleDateFormat("yyyy-MM-dd", Locale.US)
     }
+  }
+
+  private val computedTimeZones = new ConcurrentHashMap[String, TimeZone]
+  private val computeTimeZone = new JFunction[String, TimeZone] {
+    override def apply(timeZoneId: String): TimeZone = TimeZone.getTimeZone(timeZoneId)
+  }
+
+  def getTimeZone(timeZoneId: String): TimeZone = {
+    computedTimeZones.computeIfAbsent(timeZoneId, computeTimeZone)
   }
 
   // we should use the exact day as Int, for example, (year, month, day) -> day
@@ -372,7 +383,8 @@ object DateTimeUtils {
       Calendar.getInstance()
     } else {
       Calendar.getInstance(
-        TimeZone.getTimeZone(f"GMT${timeZone.get.toChar}${segments(7)}%02d:${segments(8)}%02d"))
+        getTimeZone(f"GMT${timeZone.get.toChar}${segments(7)}%02d:${segments(8)}%02d"))
+
     }
     c.set(Calendar.MILLISECOND, 0)
 
@@ -937,7 +949,7 @@ object DateTimeUtils {
    * representation in their timezone.
    */
   def fromUTCTime(time: SQLTimestamp, timeZone: String): SQLTimestamp = {
-    convertTz(time, TimeZoneGMT, TimeZone.getTimeZone(timeZone))
+    convertTz(time, TimeZoneGMT, getTimeZone(timeZone))
   }
 
   /**
@@ -945,7 +957,7 @@ object DateTimeUtils {
    * string representation in their timezone.
    */
   def toUTCTime(time: SQLTimestamp, timeZone: String): SQLTimestamp = {
-    convertTz(time, TimeZone.getTimeZone(timeZone), TimeZoneGMT)
+    convertTz(time, getTimeZone(timeZone), TimeZoneGMT)
   }
 
   /**
