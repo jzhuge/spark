@@ -17,8 +17,9 @@
 
 package org.apache.spark.rdd
 
+import java.net.URI
 import java.nio.ByteBuffer
-import java.util.{HashMap => JHashMap}
+import java.util.{Date, HashMap => JHashMap, Locale, UUID}
 
 import scala.collection.{mutable, Map}
 import scala.collection.JavaConverters._
@@ -26,11 +27,13 @@ import scala.collection.mutable.ArrayBuffer
 import scala.reflect.ClassTag
 
 import com.clearspring.analytics.stream.cardinality.HyperLogLogPlus
+import com.netflix.bdp.{Committers, MapredCommitters}
 import org.apache.hadoop.conf.Configuration
+import org.apache.hadoop.fs.Path
 import org.apache.hadoop.io.SequenceFile.CompressionType
 import org.apache.hadoop.io.compress.CompressionCodec
 import org.apache.hadoop.mapred.{FileOutputCommitter, FileOutputFormat, JobConf, OutputFormat}
-import org.apache.hadoop.mapreduce.{Job => NewAPIHadoopJob, OutputFormat => NewOutputFormat}
+import org.apache.hadoop.mapreduce.{Job => NewAPIHadoopJob, JobID, OutputFormat => NewOutputFormat}
 
 import org.apache.spark._
 import org.apache.spark.Partitioner.defaultPartitioner
@@ -1045,7 +1048,14 @@ class PairRDDFunctions[K, V](self: RDD[(K, V)])
     }
 
     // Use configured output committer if already set
-    if (conf.getOutputCommitter == null) {
+    val isS3 = Option(URI.create(path).getScheme).exists(_.startsWith("s3"))
+    val useS3committer = isS3 && hadoopConf.getBoolean("spark.s3committer.enabled", true)
+
+    if (useS3committer) {
+      hadoopConf.set("s3.multipart.committer.uuid", UUID.randomUUID.toString)
+      hadoopConf.setOutputCommitter(
+        MapredCommitters.newS3Committer(new Path(path), hadoopConf, false).getClass)
+    } else if (conf.getOutputCommitter == null) {
       hadoopConf.setOutputCommitter(classOf[FileOutputCommitter])
     }
 
