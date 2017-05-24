@@ -236,7 +236,7 @@ private case class OutputCommitFunctions(tempDirPath: String) {
         mock(classOf[TaskAttemptContext])
       }
     }
-    sparkHadoopWriter.setup(ctx.stageId, ctx.partitionId, ctx.attemptNumber)
+    sparkHadoopWriter.setup(0, ctx.stageId, ctx.partitionId, ctx.attemptNumber)
     sparkHadoopWriter.commit()
   }
 }

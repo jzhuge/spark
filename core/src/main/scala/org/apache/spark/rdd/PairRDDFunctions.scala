@@ -17,9 +17,10 @@
 
 package org.apache.spark.rdd
 
+import java.net.URI
 import java.nio.ByteBuffer
 import java.text.SimpleDateFormat
-import java.util.{Date, HashMap => JHashMap, Locale}
+import java.util.{Date, HashMap => JHashMap, Locale, UUID}
 
 import scala.collection.{mutable, Map}
 import scala.collection.JavaConverters._
@@ -28,13 +29,14 @@ import scala.reflect.ClassTag
 import scala.util.DynamicVariable
 
 import com.clearspring.analytics.stream.cardinality.HyperLogLogPlus
+import com.netflix.bdp.{Committers, MapredCommitters}
 import org.apache.hadoop.conf.{Configurable, Configuration}
-import org.apache.hadoop.fs.FileSystem
+import org.apache.hadoop.fs.{FileSystem, Path}
 import org.apache.hadoop.io.SequenceFile.CompressionType
 import org.apache.hadoop.io.compress.CompressionCodec
 import org.apache.hadoop.mapred.{FileOutputCommitter, FileOutputFormat, JobConf, OutputFormat}
-import org.apache.hadoop.mapreduce.{Job => NewAPIHadoopJob, OutputFormat => NewOutputFormat, RecordWriter => NewRecordWriter, TaskAttemptID, TaskType}
-import org.apache.hadoop.mapreduce.task.TaskAttemptContextImpl
+import org.apache.hadoop.mapreduce.{Job => NewAPIHadoopJob, JobID, OutputFormat => NewOutputFormat, RecordWriter => NewRecordWriter, TaskAttemptID, TaskType}
+import org.apache.hadoop.mapreduce.task.{JobContextImpl, TaskAttemptContextImpl}
 
 import org.apache.spark._
 import org.apache.spark.Partitioner.defaultPartitioner
@@ -1049,7 +1051,14 @@ class PairRDDFunctions[K, V](self: RDD[(K, V)])
     }
 
     // Use configured output committer if already set
-    if (conf.getOutputCommitter == null) {
+    val isS3 = Option(URI.create(path).getScheme).exists(_.startsWith("s3"))
+    val useS3committer = isS3 && hadoopConf.getBoolean("spark.s3committer.enabled", true)
+
+    if (useS3committer) {
+      hadoopConf.set("s3.multipart.committer.uuid", UUID.randomUUID.toString)
+      hadoopConf.setOutputCommitter(
+        MapredCommitters.newS3Committer(new Path(path), hadoopConf, false).getClass)
+    } else if (conf.getOutputCommitter == null) {
       hadoopConf.setOutputCommitter(classOf[FileOutputCommitter])
     }
 
@@ -1188,11 +1197,11 @@ class PairRDDFunctions[K, V](self: RDD[(K, V)])
     if (isOutputSpecValidationEnabled) {
       // FileOutputFormat ignores the filesystem parameter
       val ignoredFs = FileSystem.get(hadoopConf)
-      hadoopConf.getOutputFormat.checkOutputSpecs(ignoredFs, hadoopConf)
+      outputFormatInstance.checkOutputSpecs(ignoredFs, hadoopConf)
     }
 
     val writer = new SparkHadoopWriter(hadoopConf)
-    writer.preSetup()
+    writer.preSetup(self.id)
 
     val writeToFile = (context: TaskContext, iter: Iterator[(K, V)]) => {
       // Hadoop wants a 32-bit task attempt ID, so if ours is bigger than Int.MaxValue, roll it
@@ -1202,7 +1211,7 @@ class PairRDDFunctions[K, V](self: RDD[(K, V)])
       val outputMetricsAndBytesWrittenCallback: Option[(OutputMetrics, () => Long)] =
         initHadoopOutputMetrics(context)
 
-      writer.setup(context.stageId, context.partitionId, taskAttemptId)
+      writer.setup(self.id, context.stageId, context.partitionId, taskAttemptId)
       writer.open()
       var recordsWritten = 0L
 

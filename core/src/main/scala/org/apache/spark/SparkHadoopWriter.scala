@@ -20,7 +20,7 @@ package org.apache.spark
 import java.io.IOException
 import java.text.NumberFormat
 import java.text.SimpleDateFormat
-import java.util.{Date, Locale}
+import java.util.{Date, Locale, UUID}
 
 import org.apache.hadoop.fs.FileSystem
 import org.apache.hadoop.fs.Path
@@ -45,6 +45,7 @@ class SparkHadoopWriter(jobConf: JobConf) extends Logging with Serializable {
   private val conf = new SerializableJobConf(jobConf)
 
   private var jobID = 0
+  private var stageID = 0
   private var splitID = 0
   private var attemptID = 0
   private var jID: SerializableWritable[JobID] = null
@@ -56,17 +57,18 @@ class SparkHadoopWriter(jobConf: JobConf) extends Logging with Serializable {
   @transient private var jobContext: JobContext = null
   @transient private var taskContext: TaskAttemptContext = null
 
-  def preSetup() {
-    setIDs(0, 0, 0)
-    HadoopRDD.addLocalConfiguration("", 0, 0, 0, conf.value)
+  def preSetup(jobId: Int) {
+    setIDs(jobId, 0, 0, 0)
+    HadoopRDD.addLocalConfiguration(new SimpleDateFormat("yyyyMMddHHmmss", Locale.US).format(now),
+      jobId, 0, 0, conf.value)
 
     val jCtxt = getJobContext()
     getOutputCommitter().setupJob(jCtxt)
   }
 
 
-  def setup(jobid: Int, splitid: Int, attemptid: Int) {
-    setIDs(jobid, splitid, attemptid)
+  def setup(jobid: Int, stageid: Int, splitid: Int, attemptid: Int) {
+    setIDs(jobid, stageid, splitid, attemptid)
     HadoopRDD.addLocalConfiguration(new SimpleDateFormat("yyyyMMddHHmmss", Locale.US).format(now),
       jobid, splitID, attemptID, conf.value)
   }
@@ -103,7 +105,7 @@ class SparkHadoopWriter(jobConf: JobConf) extends Logging with Serializable {
   }
 
   def commit() {
-    SparkHadoopMapRedUtil.commitTask(getOutputCommitter(), getTaskContext(), jobID, splitID)
+    SparkHadoopMapRedUtil.commitTask(getOutputCommitter(), getTaskContext(), stageID, splitID)
   }
 
   def commitJob() {
@@ -148,8 +150,9 @@ class SparkHadoopWriter(jobConf: JobConf) extends Logging with Serializable {
     new TaskAttemptContextImpl(conf, attemptId)
   }
 
-  private def setIDs(jobid: Int, splitid: Int, attemptid: Int) {
+  private def setIDs(jobid: Int, stageid: Int, splitid: Int, attemptid: Int) {
     jobID = jobid
+    stageID = stageid
     splitID = splitid
     attemptID = attemptid
 
