@@ -1148,10 +1148,6 @@ class SparkSqlAstBuilder(conf: SQLConf) extends AstBuilder(conf) {
     val rowStorage = ctx.rowFormat.asScala.headOption.map(visitRowFormat)
       .getOrElse(CatalogStorageFormat.empty)
     val location = ctx.locationSpec.asScala.headOption.map(visitLocationSpec)
-    // If we are creating an EXTERNAL table, then the LOCATION field is required
-    if (external && location.isEmpty) {
-      operationNotAllowed("CREATE EXTERNAL TABLE must be accompanied by LOCATION", ctx)
-    }
 
     val locUri = location.map(CatalogUtils.stringToURI(_))
     val storage = CatalogStorageFormat(
