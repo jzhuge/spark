@@ -388,7 +388,8 @@ class DDLParserSuite extends PlanTest with SharedSQLContext {
     }
   }
 
-  test("create hive external table - location must be specified") {
+  // Disabled because location is no longer required for create table.
+  ignore("create hive external table - location must be specified") {
     assertUnsupported(
       sql = "CREATE EXTERNAL TABLE my_tab",
       containsThesePhrases = Seq("create external table", "location"))
