@@ -1,6 +1,10 @@
 {
   "id" : "local-1426533911241",
   "name" : "Spark shell",
+  "coresGranted" : null,
+  "maxCores" : null,
+  "coresPerExecutor" : null,
+  "memoryPerExecutorMB" : null,
   "attempts" : [ {
     "attemptId" : "2",
     "startTime" : "2015-03-17T23:11:50.242GMT",

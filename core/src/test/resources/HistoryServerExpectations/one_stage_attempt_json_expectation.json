@@ -35,6 +35,7 @@
       "taskLocality" : "PROCESS_LOCAL",
       "speculative" : false,
       "accumulatorUpdates" : [ ],
+      "errorMessage" : null,
       "taskMetrics" : {
         "executorDeserializeTime" : 1,
         "executorDeserializeCpuTime" : 0,
@@ -78,6 +79,7 @@
       "taskLocality" : "PROCESS_LOCAL",
       "speculative" : false,
       "accumulatorUpdates" : [ ],
+      "errorMessage" : null,
       "taskMetrics" : {
         "executorDeserializeTime" : 2,
         "executorDeserializeCpuTime" : 0,
@@ -121,6 +123,7 @@
       "taskLocality" : "PROCESS_LOCAL",
       "speculative" : false,
       "accumulatorUpdates" : [ ],
+      "errorMessage" : null,
       "taskMetrics" : {
         "executorDeserializeTime" : 2,
         "executorDeserializeCpuTime" : 0,
@@ -164,6 +167,7 @@
       "taskLocality" : "PROCESS_LOCAL",
       "speculative" : false,
       "accumulatorUpdates" : [ ],
+      "errorMessage" : null,
       "taskMetrics" : {
         "executorDeserializeTime" : 2,
         "executorDeserializeCpuTime" : 0,
@@ -207,6 +211,7 @@
       "taskLocality" : "PROCESS_LOCAL",
       "speculative" : false,
       "accumulatorUpdates" : [ ],
+      "errorMessage" : null,
       "taskMetrics" : {
         "executorDeserializeTime" : 2,
         "executorDeserializeCpuTime" : 0,
@@ -250,6 +255,7 @@
       "taskLocality" : "PROCESS_LOCAL",
       "speculative" : false,
       "accumulatorUpdates" : [ ],
+      "errorMessage" : null,
       "taskMetrics" : {
         "executorDeserializeTime" : 1,
         "executorDeserializeCpuTime" : 0,
@@ -293,6 +299,7 @@
       "taskLocality" : "PROCESS_LOCAL",
       "speculative" : false,
       "accumulatorUpdates" : [ ],
+      "errorMessage" : null,
       "taskMetrics" : {
         "executorDeserializeTime" : 2,
         "executorDeserializeCpuTime" : 0,
@@ -336,6 +343,7 @@
       "taskLocality" : "PROCESS_LOCAL",
       "speculative" : false,
       "accumulatorUpdates" : [ ],
+      "errorMessage" : null,
       "taskMetrics" : {
         "executorDeserializeTime" : 1,
         "executorDeserializeCpuTime" : 0,

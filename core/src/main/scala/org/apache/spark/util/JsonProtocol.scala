@@ -22,6 +22,7 @@ import java.util.{Properties, UUID}
 import scala.collection.JavaConverters._
 import scala.collection.Map
 
+import com.fasterxml.jackson.annotation.JsonInclude.Include
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.module.scala.DefaultScalaModule
 import org.json4s.DefaultFormats
@@ -56,7 +57,8 @@ private[spark] object JsonProtocol {
 
   private implicit val format = DefaultFormats
 
-  private val mapper = new ObjectMapper().registerModule(DefaultScalaModule)
+  private val mapper = new ObjectMapper()
+      .registerModule(DefaultScalaModule)
 
   /** ------------------------------------------------- *
    * JSON serialization methods for SparkListenerEvents |

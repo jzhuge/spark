@@ -8,6 +8,7 @@
   "taskLocality" : "PROCESS_LOCAL",
   "speculative" : false,
   "accumulatorUpdates" : [ ],
+  "errorMessage" : null,
   "taskMetrics" : {
     "executorDeserializeTime" : 29,
     "executorDeserializeCpuTime" : 0,
@@ -50,6 +51,7 @@
   "taskLocality" : "PROCESS_LOCAL",
   "speculative" : false,
   "accumulatorUpdates" : [ ],
+  "errorMessage" : null,
   "taskMetrics" : {
     "executorDeserializeTime" : 31,
     "executorDeserializeCpuTime" : 0,
@@ -92,6 +94,7 @@
   "taskLocality" : "PROCESS_LOCAL",
   "speculative" : false,
   "accumulatorUpdates" : [ ],
+  "errorMessage" : null,
   "taskMetrics" : {
     "executorDeserializeTime" : 30,
     "executorDeserializeCpuTime" : 0,
@@ -134,6 +137,7 @@
   "taskLocality" : "PROCESS_LOCAL",
   "speculative" : false,
   "accumulatorUpdates" : [ ],
+  "errorMessage" : null,
   "taskMetrics" : {
     "executorDeserializeTime" : 32,
     "executorDeserializeCpuTime" : 0,
@@ -176,6 +180,7 @@
   "taskLocality" : "PROCESS_LOCAL",
   "speculative" : false,
   "accumulatorUpdates" : [ ],
+  "errorMessage" : null,
   "taskMetrics" : {
     "executorDeserializeTime" : 31,
     "executorDeserializeCpuTime" : 0,
@@ -218,6 +223,7 @@
   "taskLocality" : "PROCESS_LOCAL",
   "speculative" : false,
   "accumulatorUpdates" : [ ],
+  "errorMessage" : null,
   "taskMetrics" : {
     "executorDeserializeTime" : 31,
     "executorDeserializeCpuTime" : 0,
@@ -260,6 +266,7 @@
   "taskLocality" : "PROCESS_LOCAL",
   "speculative" : false,
   "accumulatorUpdates" : [ ],
+  "errorMessage" : null,
   "taskMetrics" : {
     "executorDeserializeTime" : 31,
     "executorDeserializeCpuTime" : 0,
@@ -302,6 +309,7 @@
   "taskLocality" : "PROCESS_LOCAL",
   "speculative" : false,
   "accumulatorUpdates" : [ ],
+  "errorMessage" : null,
   "taskMetrics" : {
     "executorDeserializeTime" : 32,
     "executorDeserializeCpuTime" : 0,
@@ -344,6 +352,7 @@
   "taskLocality" : "PROCESS_LOCAL",
   "speculative" : false,
   "accumulatorUpdates" : [ ],
+  "errorMessage" : null,
   "taskMetrics" : {
     "executorDeserializeTime" : 5,
     "executorDeserializeCpuTime" : 0,
@@ -386,6 +395,7 @@
   "taskLocality" : "PROCESS_LOCAL",
   "speculative" : false,
   "accumulatorUpdates" : [ ],
+  "errorMessage" : null,
   "taskMetrics" : {
     "executorDeserializeTime" : 10,
     "executorDeserializeCpuTime" : 0,
@@ -428,6 +438,7 @@
   "taskLocality" : "PROCESS_LOCAL",
   "speculative" : false,
   "accumulatorUpdates" : [ ],
+  "errorMessage" : null,
   "taskMetrics" : {
     "executorDeserializeTime" : 11,
     "executorDeserializeCpuTime" : 0,
@@ -470,6 +481,7 @@
   "taskLocality" : "PROCESS_LOCAL",
   "speculative" : false,
   "accumulatorUpdates" : [ ],
+  "errorMessage" : null,
   "taskMetrics" : {
     "executorDeserializeTime" : 5,
     "executorDeserializeCpuTime" : 0,
@@ -512,6 +524,7 @@
   "taskLocality" : "PROCESS_LOCAL",
   "speculative" : false,
   "accumulatorUpdates" : [ ],
+  "errorMessage" : null,
   "taskMetrics" : {
     "executorDeserializeTime" : 9,
     "executorDeserializeCpuTime" : 0,
@@ -554,6 +567,7 @@
   "taskLocality" : "PROCESS_LOCAL",
   "speculative" : false,
   "accumulatorUpdates" : [ ],
+  "errorMessage" : null,
   "taskMetrics" : {
     "executorDeserializeTime" : 10,
     "executorDeserializeCpuTime" : 0,
@@ -596,6 +610,7 @@
   "taskLocality" : "PROCESS_LOCAL",
   "speculative" : false,
   "accumulatorUpdates" : [ ],
+  "errorMessage" : null,
   "taskMetrics" : {
     "executorDeserializeTime" : 5,
     "executorDeserializeCpuTime" : 0,
@@ -638,6 +653,7 @@
   "taskLocality" : "PROCESS_LOCAL",
   "speculative" : false,
   "accumulatorUpdates" : [ ],
+  "errorMessage" : null,
   "taskMetrics" : {
     "executorDeserializeTime" : 6,
     "executorDeserializeCpuTime" : 0,
@@ -680,6 +696,7 @@
   "taskLocality" : "PROCESS_LOCAL",
   "speculative" : false,
   "accumulatorUpdates" : [ ],
+  "errorMessage" : null,
   "taskMetrics" : {
     "executorDeserializeTime" : 3,
     "executorDeserializeCpuTime" : 0,
@@ -722,6 +739,7 @@
   "taskLocality" : "PROCESS_LOCAL",
   "speculative" : false,
   "accumulatorUpdates" : [ ],
+  "errorMessage" : null,
   "taskMetrics" : {
     "executorDeserializeTime" : 3,
     "executorDeserializeCpuTime" : 0,
@@ -764,6 +782,7 @@
   "taskLocality" : "PROCESS_LOCAL",
   "speculative" : false,
   "accumulatorUpdates" : [ ],
+  "errorMessage" : null,
   "taskMetrics" : {
     "executorDeserializeTime" : 9,
     "executorDeserializeCpuTime" : 0,
@@ -806,6 +825,7 @@
   "taskLocality" : "PROCESS_LOCAL",
   "speculative" : false,
   "accumulatorUpdates" : [ ],
+  "errorMessage" : null,
   "taskMetrics" : {
     "executorDeserializeTime" : 9,
     "executorDeserializeCpuTime" : 0,

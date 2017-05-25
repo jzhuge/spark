@@ -13,6 +13,7 @@
     "update" : "78",
     "value" : "5050"
   } ],
+  "errorMessage" : null,
   "taskMetrics" : {
     "executorDeserializeTime" : 14,
     "executorDeserializeCpuTime" : 0,
@@ -60,6 +61,7 @@
     "update" : "247",
     "value" : "2175"
   } ],
+  "errorMessage" : null,
   "taskMetrics" : {
     "executorDeserializeTime" : 14,
     "executorDeserializeCpuTime" : 0,
@@ -107,6 +109,7 @@
     "update" : "378",
     "value" : "378"
   } ],
+  "errorMessage" : null,
   "taskMetrics" : {
     "executorDeserializeTime" : 13,
     "executorDeserializeCpuTime" : 0,
@@ -154,6 +157,7 @@
     "update" : "572",
     "value" : "950"
   } ],
+  "errorMessage" : null,
   "taskMetrics" : {
     "executorDeserializeTime" : 13,
     "executorDeserializeCpuTime" : 0,
@@ -201,6 +205,7 @@
     "update" : "678",
     "value" : "2853"
   } ],
+  "errorMessage" : null,
   "taskMetrics" : {
     "executorDeserializeTime" : 12,
     "executorDeserializeCpuTime" : 0,
@@ -248,6 +253,7 @@
     "update" : "897",
     "value" : "3750"
   } ],
+  "errorMessage" : null,
   "taskMetrics" : {
     "executorDeserializeTime" : 12,
     "executorDeserializeCpuTime" : 0,
@@ -295,6 +301,7 @@
     "update" : "978",
     "value" : "1928"
   } ],
+  "errorMessage" : null,
   "taskMetrics" : {
     "executorDeserializeTime" : 12,
     "executorDeserializeCpuTime" : 0,
@@ -342,6 +349,7 @@
     "update" : "1222",
     "value" : "4972"
   } ],
+  "errorMessage" : null,
   "taskMetrics" : {
     "executorDeserializeTime" : 12,
     "executorDeserializeCpuTime" : 0,

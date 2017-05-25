@@ -26,6 +26,9 @@
   "accumulatorUpdates" : [ {
     "id" : 1,
     "name" : "my counter",
+    "update" : null,
     "value" : "5050"
-  } ]
+  } ],
+  "tasks" : null,
+  "executorSummary" : null
 } ]

@@ -86,7 +86,9 @@ class HistoryServerSuite extends SparkFunSuite with BeforeAndAfter with Matchers
   }
 
   def stop(): Unit = {
-    server.stop()
+    if (server != null) {
+      server.stop()
+    }
   }
 
   before {
