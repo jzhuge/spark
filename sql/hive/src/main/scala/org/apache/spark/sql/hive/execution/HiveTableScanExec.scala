@@ -27,6 +27,8 @@ import org.apache.hadoop.hive.serde.serdeConstants
 import org.apache.hadoop.hive.serde2.objectinspector._
 import org.apache.hadoop.hive.serde2.objectinspector.ObjectInspectorUtils.ObjectInspectorCopyOption
 import org.apache.hadoop.hive.serde2.typeinfo.TypeInfoUtils
+import parquet.filter2.predicate.FilterApi
+import parquet.hadoop.ParquetInputFormat
 
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.{BatchIdPathFilter, SparkSession}
@@ -36,11 +38,13 @@ import org.apache.spark.sql.catalyst.catalog.HiveTableRelation
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.plans.QueryPlan
 import org.apache.spark.sql.execution._
+import org.apache.spark.sql.execution.datasources.DataSourceStrategy
 import org.apache.spark.sql.execution.metric.SQLMetrics
 import org.apache.spark.sql.hive._
 import org.apache.spark.sql.hive.client.HiveClientImpl
+import org.apache.spark.sql.hive.parquet.HiveParquetFilters
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.types.{BooleanType, DataType}
+import org.apache.spark.sql.types.{BooleanType, DataType, StructType}
 import org.apache.spark.util.Utils
 
 /**
@@ -54,7 +58,8 @@ private[hive]
 case class HiveTableScanExec(
     requestedAttributes: Seq[Attribute],
     relation: HiveTableRelation,
-    partitionPruningPred: Seq[Expression])(
+    partitionPruningPred: Seq[Expression],
+    filterPredicates: Option[Seq[Expression]] = None)(
     @transient private val sparkSession: SparkSession)
   extends LeafExecNode with CastSupport {
 
@@ -92,6 +97,40 @@ case class HiveTableScanExec(
     hiveQlTable.getOutputFormatClass,
     hiveQlTable.getMetadata)
 
+  private lazy val dataFilters = {
+    if (filterPredicates.isDefined) {
+      // This is adapted from FileSourceStrategy:
+      // The attribute name of predicate could be different than the one in schema in case of
+      // case insensitive, we should change them to match the one in schema, so we donot need to
+      // worry about case sensitivity anymore.
+      val normalizedFilters = filterPredicates.get.map { pred =>
+        pred transform {
+          case attr: AttributeReference =>
+            attr.withName(requestedAttributes.find(_.semanticEquals(attr)).get.name)
+        }
+      }
+      Some(normalizedFilters.flatMap(DataSourceStrategy.translateFilter))
+    } else {
+      None
+    }
+  }
+
+  // This is adapted from ParquetFileFormat:
+  // Try to push down filters when filter push-down is enabled.
+  private lazy val parquetFilters = {
+    if (sparkSession.conf.get(SQLConf.PARQUET_FILTER_PUSHDOWN_ENABLED.key).toBoolean) {
+      val dataSchema = StructType.fromAttributes(requestedAttributes)
+      dataFilters.flatMap { filters =>
+        // Collects all converted Parquet filter predicates. Notice that not all predicates can be
+        // converted (`ParquetFilters.createFilter` returns an `Option`). That's why a `flatMap`
+        // is used here.
+        filters.flatMap(HiveParquetFilters.createFilter(dataSchema, _)).reduceOption(FilterApi.and)
+      }
+    } else {
+      None
+    }
+  }
+
   // Create a local copy of hadoopConf,so that scan specific modifications should not impact
   // other queries
   @transient private lazy val hadoopConf = {
@@ -99,6 +138,12 @@ case class HiveTableScanExec(
     // append columns ids and names before broadcast
     addColumnMetadataToConf(c)
     c
+  }
+
+  // for Parquet relations, push data filters
+  if (tableDesc.getSerdeClassName.toLowerCase.contains("parquet") &&
+      parquetFilters.isDefined) {
+    ParquetInputFormat.setFilterPredicate(hadoopConf, parquetFilters.get)
   }
 
   if (sparkSession.sqlContext.conf.ignoreBatchIdFolders) {
