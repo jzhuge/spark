@@ -96,7 +96,9 @@ private[hive] trait HiveStrategies {
           projectList,
           otherPredicates,
           identity[Seq[Expression]],
-          HiveTableScanExec(_, relation, pruningPredicates)(sparkSession)) :: Nil
+          HiveTableScanExec(
+            _, relation, pruningPredicates, filterPredicates = Some(otherPredicates)
+          )(sparkSession)) :: Nil
       case _ =>
         Nil
     }
