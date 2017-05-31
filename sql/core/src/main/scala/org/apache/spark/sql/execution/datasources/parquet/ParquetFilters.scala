@@ -177,23 +177,37 @@ private[parquet] object ParquetFilters {
    * using such fields, otherwise Parquet library will throw exception (PARQUET-389).
    * Here we filter out such fields.
    */
-  private def getFieldMap(dataType: DataType): Map[String, DataType] = dataType match {
-    case StructType(fields) =>
-      // Here we don't flatten the fields in the nested schema but just look up through
-      // root fields. Currently, accessing to nested fields does not push down filters
-      // and it does not support to create filters for them.
-      fields.filter { f =>
-        !f.metadata.contains(StructType.metadataKeyForOptionalField) ||
-          !f.metadata.getBoolean(StructType.metadataKeyForOptionalField)
-      }.map(f => f.name -> f.dataType).toMap
-    case _ => Map.empty[String, DataType]
+  private def getFieldMap(dataType: DataType): Map[String, (String, DataType)] = {
+    dataType match {
+      case StructType(fields) =>
+        // Here we don't flatten the fields in the nested schema but just look up through
+        // root fields. Currently, accessing to nested fields does not push down filters
+        // and it does not support to create filters for them.
+        fields.filter { f =>
+          !f.metadata.contains(StructType.metadataKeyForOptionalField) ||
+              !f.metadata.getBoolean(StructType.metadataKeyForOptionalField)
+        }.map(f => f.name.toLowerCase -> (f.name, f.dataType)).toMap
+      case _ => Map.empty[String, (String, DataType)]
+    }
   }
 
   /**
    * Converts data sources filters to Parquet filter predicates.
    */
   def createFilter(schema: StructType, predicate: sources.Filter): Option[FilterPredicate] = {
-    val dataTypeOf = getFieldMap(schema)
+    val fieldMap = getFieldMap(schema)
+
+    def fieldExists(name: String): Boolean = {
+      fieldMap.contains(name.toLowerCase)
+    }
+
+    def dataTypeOf(name: String): DataType = {
+      fieldMap.get(name.toLowerCase).map(_._2).get
+    }
+
+    def fieldName(name: String): String = {
+      fieldMap.get(name.toLowerCase).map(_._1).get
+    }
 
     // NOTE:
     //
@@ -211,30 +225,33 @@ private[parquet] object ParquetFilters {
     // Probably I missed something and obviously this should be changed.
 
     predicate match {
-      case sources.IsNull(name) if dataTypeOf.contains(name) =>
-        makeEq.lift(dataTypeOf(name)).map(_(name, null))
-      case sources.IsNotNull(name) if dataTypeOf.contains(name) =>
-        makeNotEq.lift(dataTypeOf(name)).map(_(name, null))
+      case sources.IsNull(name) if fieldExists(name) =>
+        makeEq.lift(dataTypeOf(name)).map(_(fieldName(name), null))
+      case sources.IsNotNull(name) if fieldExists(name) =>
+        makeNotEq.lift(dataTypeOf(name)).map(_(fieldName(name), null))
 
-      case sources.EqualTo(name, value) if dataTypeOf.contains(name) =>
-        makeEq.lift(dataTypeOf(name)).map(_(name, value))
-      case sources.Not(sources.EqualTo(name, value)) if dataTypeOf.contains(name) =>
-        makeNotEq.lift(dataTypeOf(name)).map(_(name, value))
+      case sources.EqualTo(name, value) if fieldExists(name) =>
+        makeEq.lift(dataTypeOf(name)).map(_(fieldName(name), value))
+      case sources.Not(sources.EqualTo(name, value)) if fieldExists(name) =>
+        makeNotEq.lift(dataTypeOf(name)).map(_(fieldName(name), value))
 
-      case sources.EqualNullSafe(name, value) if dataTypeOf.contains(name) =>
-        makeEq.lift(dataTypeOf(name)).map(_(name, value))
-      case sources.Not(sources.EqualNullSafe(name, value)) if dataTypeOf.contains(name) =>
-        makeNotEq.lift(dataTypeOf(name)).map(_(name, value))
+      case sources.EqualNullSafe(name, value) if fieldExists(name) =>
+        makeEq.lift(dataTypeOf(name)).map(_(fieldName(name), value))
+      case sources.Not(sources.EqualNullSafe(name, value)) if fieldExists(name) =>
+        makeNotEq.lift(dataTypeOf(name)).map(_(fieldName(name), value))
 
-      case sources.LessThan(name, value) if dataTypeOf.contains(name) =>
-        makeLt.lift(dataTypeOf(name)).map(_(name, value))
-      case sources.LessThanOrEqual(name, value) if dataTypeOf.contains(name) =>
-        makeLtEq.lift(dataTypeOf(name)).map(_(name, value))
+      case sources.LessThan(name, value) if fieldExists(name) =>
+        makeLt.lift(dataTypeOf(name)).map(_(fieldName(name), value))
+      case sources.LessThanOrEqual(name, value) if fieldExists(name) =>
+        makeLtEq.lift(dataTypeOf(name)).map(_(fieldName(name), value))
 
-      case sources.GreaterThan(name, value) if dataTypeOf.contains(name) =>
-        makeGt.lift(dataTypeOf(name)).map(_(name, value))
-      case sources.GreaterThanOrEqual(name, value) if dataTypeOf.contains(name) =>
-        makeGtEq.lift(dataTypeOf(name)).map(_(name, value))
+      case sources.GreaterThan(name, value) if fieldExists(name) =>
+        makeGt.lift(dataTypeOf(name)).map(_(fieldName(name), value))
+      case sources.GreaterThanOrEqual(name, value) if fieldExists(name) =>
+        makeGtEq.lift(dataTypeOf(name)).map(_(fieldName(name), value))
+
+      // case sources.In(name, valueSet) =>
+      //   makeInSet.lift(dataTypeOf(name)).map(_(fieldName(name), valueSet.toSet))
 
       case sources.And(lhs, rhs) =>
         // At here, it is not safe to just convert one side if we do not understand the
