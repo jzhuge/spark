@@ -29,8 +29,9 @@ import org.apache.hadoop.fs.Path
 import org.apache.spark.deploy.SparkHadoopUtil
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql._
+import org.apache.spark.sql.catalyst.analysis.UnresolvedAttribute
 import org.apache.spark.sql.catalyst.catalog.{BucketSpec, CatalogStorageFormat, CatalogTable}
-import org.apache.spark.sql.catalyst.expressions.Attribute
+import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
 import org.apache.spark.sql.catalyst.util.CaseInsensitiveMap
 import org.apache.spark.sql.execution.datasources.csv.CSVFileFormat
 import org.apache.spark.sql.execution.datasources.jdbc.JdbcRelationProvider
@@ -414,9 +415,10 @@ case class DataSource(
   }
 
   /**
-   * Writes the given [[DataFrame]] out in this [[FileFormat]].
+   * Writes the given [[LogicalPlan]] out in this [[FileFormat]].
    */
-  private def writeInFileFormat(format: FileFormat, mode: SaveMode, data: DataFrame): Unit = {
+  private def planForWritingFileFormat(
+      format: FileFormat, mode: SaveMode, data: LogicalPlan): LogicalPlan = {
     // Don't glob path for the write path.  The contracts here are:
     //  1. Only one output path can be specified on the write path;
     //  2. Output path must be a legal HDFS style file system path;
@@ -455,49 +457,38 @@ case class DataSource(
       }
     }
 
-    // SPARK-17230: Resolve the partition columns so InsertIntoHadoopFsRelationCommand does
-    // not need to have the query as child, to avoid to analyze an optimized query,
-    // because InsertIntoHadoopFsRelationCommand will be optimized first.
-    val columns = partitionColumns.map { name =>
-      val plan = data.logicalPlan
-      plan.resolve(name :: Nil, data.sparkSession.sessionState.analyzer.resolver).getOrElse {
-        throw new AnalysisException(
-          s"Unable to resolve $name given [${plan.output.map(_.name).mkString(", ")}]")
-      }.asInstanceOf[Attribute]
-    }
     // For partitioned relation r, r.schema's column ordering can be different from the column
     // ordering of data.logicalPlan (partition columns are all moved after data column).  This
     // will be adjusted within InsertIntoHadoopFsRelation.
-    val plan =
-      InsertIntoHadoopFsRelationCommand(
-        outputPath = outputPath,
-        staticPartitionKeys = Map.empty,
-        customPartitionLocations = Map.empty,
-        partitionColumns = columns,
-        bucketSpec = bucketSpec,
-        fileFormat = format,
-        refreshFunction = _ => Unit, // No existing table needs to be refreshed.
-        options = options,
-        query = data.logicalPlan,
-        mode = mode,
-        catalogTable = catalogTable)
-    sparkSession.sessionState.executePlan(plan).toRdd
+    InsertIntoHadoopFsRelationCommand(
+      outputPath = outputPath,
+      staticPartitionKeys = Map.empty,
+      customPartitionLocations = Map.empty,
+      partitionColumns = partitionColumns.map(UnresolvedAttribute.quoted),
+      bucketSpec = bucketSpec,
+      fileFormat = format,
+      refreshFunction = _ => Unit, // No existing table needs to be refreshed.
+      options = options,
+      query = data,
+      mode = mode,
+      catalogTable = catalogTable)
   }
 
   /**
-   * Writes the given [[DataFrame]] out to this [[DataSource]] and returns a [[BaseRelation]] for
+   * Writes the given [[LogicalPlan]] out to this [[DataSource]] and returns a [[BaseRelation]] for
    * the following reading.
    */
-  def writeAndRead(mode: SaveMode, data: DataFrame): BaseRelation = {
+  def writeAndRead(mode: SaveMode, data: LogicalPlan): BaseRelation = {
     if (data.schema.map(_.dataType).exists(_.isInstanceOf[CalendarIntervalType])) {
       throw new AnalysisException("Cannot save interval data type into external storage.")
     }
 
     providingClass.newInstance() match {
       case dataSource: CreatableRelationProvider =>
-        dataSource.createRelation(sparkSession.sqlContext, mode, caseInsensitiveOptions, data)
+        dataSource.createRelation(
+          sparkSession.sqlContext, mode, caseInsensitiveOptions, Dataset.ofRows(sparkSession, data))
       case format: FileFormat =>
-        writeInFileFormat(format, mode, data)
+        sparkSession.sessionState.executePlan(planForWritingFileFormat(format, mode, data)).toRdd
         // Replace the schema with that of the DataFrame we just wrote out to avoid re-inferring it.
         copy(userSpecifiedSchema = Some(data.schema.asNullable)).resolveRelation()
       case _ =>
@@ -506,18 +497,18 @@ case class DataSource(
   }
 
   /**
-   * Writes the given [[DataFrame]] out to this [[DataSource]].
+   * Returns a logical plan to write the given [[LogicalPlan]] out to this [[DataSource]].
    */
-  def write(mode: SaveMode, data: DataFrame): Unit = {
+  def planForWriting(mode: SaveMode, data: LogicalPlan): LogicalPlan = {
     if (data.schema.map(_.dataType).exists(_.isInstanceOf[CalendarIntervalType])) {
       throw new AnalysisException("Cannot save interval data type into external storage.")
     }
 
     providingClass.newInstance() match {
       case dataSource: CreatableRelationProvider =>
-        dataSource.createRelation(sparkSession.sqlContext, mode, caseInsensitiveOptions, data)
+        SaveIntoDataSourceCommand(data, dataSource, caseInsensitiveOptions, mode)
       case format: FileFormat =>
-        writeInFileFormat(format, mode, data)
+        planForWritingFileFormat(format, mode, data)
       case _ =>
         sys.error(s"${providingClass.getCanonicalName} does not allow create table as select.")
     }

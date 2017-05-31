@@ -329,7 +329,7 @@ abstract class SparkStrategies extends QueryPlanner[SparkPlan] {
     def numPartitions: Int = self.numPartitions
 
     def apply(plan: LogicalPlan): Seq[SparkPlan] = plan match {
-      case r: RunnableCommand => ExecutedCommandExec(r) :: Nil
+      case r: RunnableCommand => ExecutedCommandExec(r, r.children.map(planLater)) :: Nil
 
       case MemoryPlan(sink, output) =>
         val encoder = RowEncoder(sink.schema)
@@ -422,12 +422,12 @@ abstract class SparkStrategies extends QueryPlanner[SparkPlan] {
       case CreateTable(tableDesc, mode, None)
         if tableDesc.provider.get == DDLUtils.HIVE_PROVIDER =>
         val cmd = CreateTableCommand(tableDesc, ifNotExists = mode == SaveMode.Ignore)
-        ExecutedCommandExec(cmd) :: Nil
+        ExecutedCommandExec(cmd, cmd.children.map(planLater)) :: Nil
 
       case CreateTable(tableDesc, mode, None) =>
         val cmd =
           CreateDataSourceTableCommand(tableDesc, ignoreIfExists = mode == SaveMode.Ignore)
-        ExecutedCommandExec(cmd) :: Nil
+        ExecutedCommandExec(cmd, cmd.children.map(planLater)) :: Nil
 
       // CREATE TABLE ... AS SELECT ... for hive serde table is handled in hive module, by rule
       // `CreateTables`
@@ -439,9 +439,9 @@ abstract class SparkStrategies extends QueryPlanner[SparkPlan] {
             tableDesc,
             mode,
             query)
-        ExecutedCommandExec(cmd) :: Nil
+        ExecutedCommandExec(cmd, cmd.children.map(planLater)) :: Nil
 
-      case c: CreateTempViewUsing => ExecutedCommandExec(c) :: Nil
+      case c: CreateTempViewUsing => ExecutedCommandExec(c, c.children.map(planLater)) :: Nil
 
       case _ => Nil
     }

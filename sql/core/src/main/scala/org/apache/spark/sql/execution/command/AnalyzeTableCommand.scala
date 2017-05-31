@@ -27,6 +27,7 @@ import org.apache.spark.sql.catalyst.TableIdentifier
 import org.apache.spark.sql.catalyst.analysis.EliminateSubqueryAliases
 import org.apache.spark.sql.catalyst.catalog.{CatalogRelation, CatalogTable}
 import org.apache.spark.sql.catalyst.plans.logical.Statistics
+import org.apache.spark.sql.execution.SQLExecution
 import org.apache.spark.sql.execution.datasources.LogicalRelation
 import org.apache.spark.sql.internal.SessionState
 
@@ -71,7 +72,9 @@ case class AnalyzeTableCommand(
       // 2. when total size is changed, `oldRowCount` becomes invalid.
       // This is to make sure that we only record the right statistics.
       if (!noscan) {
-        val newRowCount = Dataset.ofRows(sparkSession, relation).count()
+        val newRowCount = SQLExecution.ignoreNestedExecutionId(sparkSession) {
+          Dataset.ofRows(sparkSession, relation).count()
+        }
         if (newRowCount >= 0 && newRowCount != oldRowCount) {
           newStats = if (newStats.isDefined) {
             newStats.map(_.copy(rowCount = Some(BigInt(newRowCount))))

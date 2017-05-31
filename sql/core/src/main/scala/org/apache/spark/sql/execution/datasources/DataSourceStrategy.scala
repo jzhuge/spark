@@ -364,7 +364,8 @@ object DataSourceStrategy extends Strategy with Logging {
 
     case i @ logical.InsertIntoTable(l @ LogicalRelation(t: InsertableRelation, _, _),
       part, query, overwrite, false, _) if part.isEmpty =>
-      ExecutedCommandExec(InsertIntoDataSourceCommand(l, query, overwrite)) :: Nil
+      val cmd = InsertIntoDataSourceCommand(l, query, overwrite)
+      ExecutedCommandExec(cmd, cmd.children.map(planLater)) :: Nil
 
     case _ => Nil
   }

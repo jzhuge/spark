@@ -227,6 +227,8 @@ case class InsertIntoHiveTable(
    * Note: this is run once and then kept to avoid double insertions.
    */
   protected[sql] lazy val sideEffectResult: Seq[InternalRow] = {
+    assert(children.length == 1)
+
     // Have to pass the TableDesc object to RDD.mapPartitions and then instantiate new serializer
     // instances within the closure, since Serializer is not serializable while TableDesc is.
     val tableDesc = table.tableDesc

@@ -117,16 +117,16 @@ class QueryExecution(val sparkSession: SparkSession, val logical: LogicalPlan) {
    * execution is simply passed back to Hive.
    */
   def hiveResultString(): Seq[String] = executedPlan match {
-    case ExecutedCommandExec(desc: DescribeTableCommand) =>
+    case ExecutedCommandExec(desc: DescribeTableCommand, _) =>
+      // If it is a describe command for a Hive table, we want to have the output format
+      // be similar with Hive.
       SQLExecution.withNewExecutionId(sparkSession, this) {
-        // If it is a describe command for a Hive table, we want to have the output format
-        // be similar with Hive.
         desc.run(sparkSession).map {
           case Row(name: String, dataType: String, comment) =>
             Seq(name, dataType,
               Option(comment.asInstanceOf[String]).getOrElse(""))
-              .map(s => String.format(s"%-20s", s))
-              .mkString("\t")
+                .map(s => String.format(s"%-20s", s))
+                .mkString("\t")
         }
       }
     // SHOW TABLES in Hive only output table names, while ours outputs database, table name, isTemp.

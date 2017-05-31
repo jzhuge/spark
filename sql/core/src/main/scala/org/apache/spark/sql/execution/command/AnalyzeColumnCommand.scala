@@ -25,6 +25,7 @@ import org.apache.spark.sql.catalyst.catalog.{CatalogRelation, CatalogTable}
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.expressions.aggregate._
 import org.apache.spark.sql.catalyst.plans.logical._
+import org.apache.spark.sql.execution.{QueryExecution, SQLExecution}
 import org.apache.spark.sql.execution.datasources.LogicalRelation
 
 
@@ -118,11 +119,14 @@ object AnalyzeColumnCommand extends Logging {
         attributesToAnalyze.map(ColumnStat.statExprs(_, ndvMaxErr))
 
     val namedExpressions = expressions.map(e => Alias(e, e.toString)())
-    val statsRow = Dataset.ofRows(sparkSession, Aggregate(Nil, namedExpressions, relation)).head()
+    val statsRow = SQLExecution.ignoreNestedExecutionId(sparkSession) {
+      Dataset.ofRows(sparkSession, Aggregate(Nil, namedExpressions, relation)).head()
+    }
 
     val rowCount = statsRow.getLong(0)
-    val columnStats = attributesToAnalyze.zipWithIndex.map { case (expr, i) =>
-      (expr.name, ColumnStat.rowToColumnStat(statsRow.getStruct(i + 1)))
+    val columnStats = attributesToAnalyze.zipWithIndex.map { case (attr, i) =>
+      // according to `ColumnStat.statExprs`, the stats struct always have 6 fields.
+      (attr.name, ColumnStat.rowToColumnStat(statsRow.getStruct(i + 1)))
     }.toMap
     (rowCount, columnStats)
   }

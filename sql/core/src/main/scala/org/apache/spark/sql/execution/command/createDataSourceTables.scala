@@ -127,7 +127,7 @@ case class CreateDataSourceTableAsSelectCommand(
     query: LogicalPlan)
   extends RunnableCommand {
 
-  override protected def innerChildren: Seq[LogicalPlan] = Seq(query)
+  override def innerChildren: Seq[LogicalPlan] = Seq(query)
 
   override def run(sparkSession: SparkSession): Seq[Row] = {
     assert(table.tableType != CatalogTableType.VIEW)
@@ -260,7 +260,7 @@ case class CreateDataSourceTableAsSelectCommand(
       catalogTable = Some(table))
 
     val result = try {
-      dataSource.writeAndRead(mode, df)
+      dataSource.writeAndRead(mode, df.logicalPlan)
     } catch {
       case ex: AnalysisException =>
         logError(s"Failed to write to table $tableName in $mode mode", ex)

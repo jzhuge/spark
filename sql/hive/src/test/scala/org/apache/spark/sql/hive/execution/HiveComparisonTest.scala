@@ -30,6 +30,7 @@ import org.apache.spark.sql.catalyst.SQLBuilder
 import org.apache.spark.sql.catalyst.planning.PhysicalOperation
 import org.apache.spark.sql.catalyst.plans.logical._
 import org.apache.spark.sql.catalyst.util._
+import org.apache.spark.sql.execution.SQLExecution
 import org.apache.spark.sql.execution.command._
 import org.apache.spark.sql.hive.test.{TestHive, TestHiveQueryExecution}
 
@@ -389,7 +390,10 @@ abstract class HiveComparisonTest
               }
             }
 
-            (query, prepareAnswer(query, query.hiveResultString()))
+            def getResult(): Seq[String] = {
+              query.hiveResultString()
+            }
+            (query, prepareAnswer(query, getResult()))
           } catch {
             case e: Throwable =>
               val errorMessage =

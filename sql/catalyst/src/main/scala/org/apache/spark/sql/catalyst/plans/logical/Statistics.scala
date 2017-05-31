@@ -203,9 +203,9 @@ object ColumnStat extends Logging {
     }
 
     col.dataType match {
-      case _: IntegralType => fixedLenTypeStruct(LongType)
+      case dt: IntegralType => fixedLenTypeStruct(dt)
       case _: DecimalType => fixedLenTypeStruct(col.dataType)
-      case DoubleType | FloatType => fixedLenTypeStruct(DoubleType)
+      case dt @ (DoubleType | FloatType) => fixedLenTypeStruct(dt)
       case BooleanType => fixedLenTypeStruct(col.dataType)
       case DateType => fixedLenTypeStruct(col.dataType)
       case TimestampType => fixedLenTypeStruct(col.dataType)
@@ -227,7 +227,7 @@ object ColumnStat extends Logging {
   def rowToColumnStat(row: Row): ColumnStat = {
     ColumnStat(
       distinctCount = BigInt(row.getLong(0)),
-      min = Option(row.get(1)),  // for string/binary min/max, get should return null
+      min = Option(row.get(1)), // for string/binary min/max, get should return null
       max = Option(row.get(2)),
       nullCount = BigInt(row.getLong(3)),
       avgLen = row.getLong(4),

@@ -20,11 +20,13 @@ package org.apache.spark.sql.util
 import scala.collection.mutable.ArrayBuffer
 
 import org.apache.spark._
-import org.apache.spark.sql.{functions, AnalysisException, QueryTest}
+import org.apache.spark.sql.{AnalysisException, QueryTest}
 import org.apache.spark.sql.catalyst.analysis.UnresolvedRelation
 import org.apache.spark.sql.catalyst.plans.logical.{Aggregate, InsertIntoTable, LogicalPlan, Project}
 import org.apache.spark.sql.execution.{QueryExecution, WholeStageCodegenExec}
-import org.apache.spark.sql.execution.datasources.SaveIntoDataSourceCommand
+import org.apache.spark.sql.execution.datasources.InsertIntoHadoopFsRelationCommand
+import org.apache.spark.sql.execution.datasources.json.JsonFileFormat
+import org.apache.spark.sql.functions
 import org.apache.spark.sql.test.SharedSQLContext
 
 class DataFrameCallbackSuite extends QueryTest with SharedSQLContext {
@@ -178,19 +180,21 @@ class DataFrameCallbackSuite extends QueryTest with SharedSQLContext {
       spark.range(10).write.format("json").save(path.getCanonicalPath)
       assert(commands.length == 1)
       assert(commands.head._1 == "save")
-      assert(commands.head._2.isInstanceOf[SaveIntoDataSourceCommand])
-      assert(commands.head._2.asInstanceOf[SaveIntoDataSourceCommand].provider == "json")
+      assert(commands.head._2.isInstanceOf[InsertIntoHadoopFsRelationCommand])
+      assert(commands.head._2.asInstanceOf[InsertIntoHadoopFsRelationCommand]
+        .fileFormat.isInstanceOf[JsonFileFormat])
     }
 
     withTable("tab") {
-      sql("CREATE TABLE tab(i long) using parquet")
+      sql("CREATE TABLE tab(i long) using parquet") // adds commands(1) via onSuccess
       spark.range(10).write.insertInto("tab")
-      assert(commands.length == 2)
-      assert(commands(1)._1 == "insertInto")
-      assert(commands(1)._2.isInstanceOf[InsertIntoTable])
-      assert(commands(1)._2.asInstanceOf[InsertIntoTable].table
+      assert(commands.length == 3)
+      assert(commands(2)._1 == "insertInto")
+      assert(commands(2)._2.isInstanceOf[InsertIntoTable])
+      assert(commands(2)._2.asInstanceOf[InsertIntoTable].table
         .asInstanceOf[UnresolvedRelation].tableIdentifier.table == "tab")
     }
+    // exiting withTable adds commands(3) via onSuccess (drops tab)
 
     withTable("tab") {
       sql("CREATE TABLE tab(i long) using parquet")

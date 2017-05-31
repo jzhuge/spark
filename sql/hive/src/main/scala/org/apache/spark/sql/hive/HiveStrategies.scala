@@ -71,7 +71,7 @@ private[hive] trait HiveStrategies {
           newTableDesc.copy(identifier = tableDesc.identifier.copy(database = Some(dbName))),
           query,
           mode == SaveMode.Ignore)
-        ExecutedCommandExec(cmd) :: Nil
+        ExecutedCommandExec(cmd, cmd.children.map(planLater)) :: Nil
 
       case _ => Nil
     }
