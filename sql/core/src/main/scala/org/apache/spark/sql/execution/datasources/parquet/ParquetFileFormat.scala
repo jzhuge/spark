@@ -35,6 +35,7 @@ import org.apache.parquet.filter2.predicate.FilterApi
 import org.apache.parquet.format.converter.ParquetMetadataConverter.SKIP_ROW_GROUPS
 import org.apache.parquet.hadoop._
 import org.apache.parquet.hadoop.codec.CodecConfig
+import org.apache.parquet.hadoop.metadata.FileMetaData
 import org.apache.parquet.hadoop.util.ContextUtil
 import org.apache.parquet.schema.MessageType
 
@@ -345,18 +346,6 @@ class ParquetFileFormat
     (file: PartitionedFile) => {
       assert(file.partitionValues.numFields == partitionSchema.size)
 
-      // Try to push down filters when filter push-down is enabled.
-      val pushed = if (enableParquetFilterPushDown) {
-        filters
-          // Collects all converted Parquet filter predicates. Notice that not all predicates can be
-          // converted (`ParquetFilters.createFilter` returns an `Option`). That's why a `flatMap`
-          // is used here.
-          .flatMap(ParquetFilters.createFilter(requiredSchema, _))
-          .reduceOption(FilterApi.and)
-      } else {
-        None
-      }
-
       val fileSplit =
         new FileSplit(new Path(new URI(file.filePath)), file.start, file.length, Array.empty)
 
@@ -386,8 +375,30 @@ class ParquetFileFormat
         }
 
       val attemptId = new TaskAttemptID(new TaskID(new JobID(), TaskType.MAP, 0), 0)
-      val hadoopAttemptContext =
-        new TaskAttemptContextImpl(broadcastedHadoopConf.value.value, attemptId)
+      val conf = broadcastedHadoopConf.value.value
+      val hadoopAttemptContext = new TaskAttemptContextImpl(conf, attemptId)
+
+      // Try to push down filters when filter push-down is enabled.
+      val pushed = if (enableParquetFilterPushDown) {
+        // read the file schema to create Parquet filters that match case
+        val fileReader = ParquetFileReader.open(conf, fileSplit.getPath)
+        val fileSchema = try {
+          new ParquetToSparkSchemaConverter(conf).convert(
+            ParquetReadSupport.clipParquetSchema(
+              fileReader.getFileMetaData.getSchema, requiredSchema))
+        } finally {
+          fileReader.close()
+        }
+
+        filters
+            // Collects all converted Parquet filter predicates. Notice that not all predicates can
+            // be converted (`ParquetFilters.createFilter` returns an `Option`). That's why a
+            // `flatMap` is used here.
+            .flatMap(ParquetFilters.createFilter(fileSchema, _))
+            .reduceOption(FilterApi.and)
+      } else {
+        None
+      }
 
       // Try to push down filters when filter push-down is enabled.
       // Notice: This push-down is RowGroups level, not individual records.
@@ -633,13 +644,18 @@ object ParquetFileFormat extends Logging {
    */
   def readSchemaFromFooter(
       footer: Footer, converter: ParquetToSparkSchemaConverter): StructType = {
-    val fileMetaData = footer.getParquetMetadata.getFileMetaData
+    readSchemaFromFileMetadata(footer.getParquetMetadata.getFileMetaData, converter)
+  }
+
+  def readSchemaFromFileMetadata(
+      fileMetaData: FileMetaData,
+      converter: ParquetToSparkSchemaConverter): StructType = {
     fileMetaData
-      .getKeyValueMetaData
-      .asScala.toMap
-      .get(ParquetReadSupport.SPARK_METADATA_KEY)
-      .flatMap(deserializeSchemaString)
-      .getOrElse(converter.convert(fileMetaData.getSchema))
+        .getKeyValueMetaData
+        .asScala.toMap
+        .get(ParquetReadSupport.SPARK_METADATA_KEY)
+        .flatMap(deserializeSchemaString)
+        .getOrElse(converter.convert(fileMetaData.getSchema))
   }
 
   private def deserializeSchemaString(schemaString: String): Option[StructType] = {

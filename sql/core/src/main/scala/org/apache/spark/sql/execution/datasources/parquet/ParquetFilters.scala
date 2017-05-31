@@ -153,27 +153,38 @@ private[parquet] object ParquetFilters {
   /**
    * Returns a map from name of the column to the data type, if predicate push down applies.
    */
-  private def getFieldMap(dataType: DataType): Map[String, DataType] = dataType match {
-    case StructType(fields) =>
-      // Here we don't flatten the fields in the nested schema but just look up through
-      // root fields. Currently, accessing to nested fields does not push down filters
-      // and it does not support to create filters for them.
-      fields.map(f => f.name -> f.dataType).toMap
-    case _ => Map.empty[String, DataType]
+  private def getFieldMap(dataType: DataType): Map[String, (String, DataType)] = {
+    dataType match {
+      case StructType(fields) =>
+        // Here we don't flatten the fields in the nested schema but just look up through
+        // root fields. Currently, accessing to nested fields does not push down filters
+        // and it does not support to create filters for them.
+        fields.map(f => (f.name.toLowerCase, (f.name, f.dataType))).toMap
+      case _ => Map.empty[String, (String, DataType)]
+    }
   }
 
   /**
    * Converts data sources filters to Parquet filter predicates.
    */
   def createFilter(schema: StructType, predicate: sources.Filter): Option[FilterPredicate] = {
-    val nameToType = getFieldMap(schema)
+    val fieldMap = getFieldMap(schema)
+
+    def nameToType(name: String): DataType = {
+      fieldMap.get(name.toLowerCase).map(_._2).get
+    }
+
+    def fieldName(name: String): String = {
+      fieldMap.get(name.toLowerCase).map(_._1).get
+    }
 
     // Parquet does not allow dots in the column name because dots are used as a column path
     // delimiter. Since Parquet 1.8.2 (PARQUET-389), Parquet accepts the filter predicates
     // with missing columns. The incorrect results could be got from Parquet when we push down
     // filters for the column having dots in the names. Thus, we do not push down such filters.
     // See SPARK-20364.
-    def canMakeFilterOn(name: String): Boolean = nameToType.contains(name) && !name.contains(".")
+    def canMakeFilterOn(name: String): Boolean =
+      fieldMap.contains(name.toLowerCase) && !name.contains(".")
 
     // NOTE:
     //
@@ -192,29 +203,29 @@ private[parquet] object ParquetFilters {
 
     predicate match {
       case sources.IsNull(name) if canMakeFilterOn(name) =>
-        makeEq.lift(nameToType(name)).map(_(name, null))
+        makeEq.lift(nameToType(name)).map(_(fieldName(name), null))
       case sources.IsNotNull(name) if canMakeFilterOn(name) =>
-        makeNotEq.lift(nameToType(name)).map(_(name, null))
+        makeNotEq.lift(nameToType(name)).map(_(fieldName(name), null))
 
       case sources.EqualTo(name, value) if canMakeFilterOn(name) =>
-        makeEq.lift(nameToType(name)).map(_(name, value))
+        makeEq.lift(nameToType(name)).map(_(fieldName(name), value))
       case sources.Not(sources.EqualTo(name, value)) if canMakeFilterOn(name) =>
-        makeNotEq.lift(nameToType(name)).map(_(name, value))
+        makeNotEq.lift(nameToType(name)).map(_(fieldName(name), value))
 
       case sources.EqualNullSafe(name, value) if canMakeFilterOn(name) =>
-        makeEq.lift(nameToType(name)).map(_(name, value))
+        makeEq.lift(nameToType(name)).map(_(fieldName(name), value))
       case sources.Not(sources.EqualNullSafe(name, value)) if canMakeFilterOn(name) =>
-        makeNotEq.lift(nameToType(name)).map(_(name, value))
+        makeNotEq.lift(nameToType(name)).map(_(fieldName(name), value))
 
       case sources.LessThan(name, value) if canMakeFilterOn(name) =>
-        makeLt.lift(nameToType(name)).map(_(name, value))
+        makeLt.lift(nameToType(name)).map(_(fieldName(name), value))
       case sources.LessThanOrEqual(name, value) if canMakeFilterOn(name) =>
-        makeLtEq.lift(nameToType(name)).map(_(name, value))
+        makeLtEq.lift(nameToType(name)).map(_(fieldName(name), value))
 
       case sources.GreaterThan(name, value) if canMakeFilterOn(name) =>
-        makeGt.lift(nameToType(name)).map(_(name, value))
+        makeGt.lift(nameToType(name)).map(_(fieldName(name), value))
       case sources.GreaterThanOrEqual(name, value) if canMakeFilterOn(name) =>
-        makeGtEq.lift(nameToType(name)).map(_(name, value))
+        makeGtEq.lift(nameToType(name)).map(_(fieldName(name), value))
 
       case sources.And(lhs, rhs) =>
         // At here, it is not safe to just convert one side if we do not understand the
