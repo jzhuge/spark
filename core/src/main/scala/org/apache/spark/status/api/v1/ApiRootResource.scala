@@ -207,6 +207,12 @@ private[v1] class ApiRootResource extends ApiRequestContext {
     }
   }
 
+  @Path("applications/{appId}/env")
+  def getEnvironment(
+      @PathParam("appId") appId: String): EnvironmentResource = {
+    new EnvironmentResource(uiRoot, appId)
+  }
+
   @Path("version")
   def getVersion(): VersionResource = {
     new VersionResource(uiRoot)

@@ -249,3 +249,6 @@ class AccumulableInfo private[spark](
 
 class VersionInfo private[spark](
   val spark: String)
+
+class EnvironmentInfo private[spark](
+  val conf: Map[String, String])
