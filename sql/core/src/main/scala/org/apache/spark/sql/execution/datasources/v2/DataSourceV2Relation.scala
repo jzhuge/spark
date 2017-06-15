@@ -27,7 +27,8 @@ case class DataSourceV2Relation(
 
   override def canEqual(other: Any): Boolean = other.isInstanceOf[DataSourceV2Relation]
 
-  override def computeStats(): Statistics = reader match {
+  // this overrides computeStats added in b1d719e7c9faeb5661a7e712b3ecefca56bf356f (not backported)
+  def computeStats(): Statistics = reader match {
     case r: SupportsReportStatistics =>
       Statistics(sizeInBytes = r.getStatistics.sizeInBytes().orElse(conf.defaultSizeInBytes))
     case _ =>

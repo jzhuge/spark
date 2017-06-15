@@ -102,7 +102,7 @@ object ReorderJoin extends Rule[LogicalPlan] with PredicateHelper {
  *
  * This rule should be executed before pushing down the Filter
  */
-case class EliminateOuterJoin(conf: CatalystConf) extends Rule[LogicalPlan] with PredicateHelper {
+object EliminateOuterJoin extends Rule[LogicalPlan] with PredicateHelper {
 
   /**
    * Returns whether the expression returns null or false when all inputs are nulls.
@@ -118,8 +118,7 @@ case class EliminateOuterJoin(conf: CatalystConf) extends Rule[LogicalPlan] with
   }
 
   private def buildNewJoinType(filter: Filter, join: Join): JoinType = {
-    val conditions = splitConjunctivePredicates(filter.condition) ++
-      filter.getConstraints(conf.constraintPropagationEnabled)
+    val conditions = splitConjunctivePredicates(filter.condition) ++ filter.constraints
     val leftConditions = conditions.filter(_.references.subsetOf(join.left.outputSet))
     val rightConditions = conditions.filter(_.references.subsetOf(join.right.outputSet))
 

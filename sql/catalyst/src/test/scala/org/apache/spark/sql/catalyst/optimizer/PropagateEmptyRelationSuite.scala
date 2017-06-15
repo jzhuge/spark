@@ -34,7 +34,7 @@ class PropagateEmptyRelationSuite extends PlanTest {
         ReplaceExceptWithAntiJoin,
         ReplaceIntersectWithSemiJoin,
         PushDownPredicate,
-        PruneFilters(SimpleCatalystConf(caseSensitiveAnalysis = true)),
+        PruneFilters,
         PropagateEmptyRelation) :: Nil
   }
 
@@ -46,7 +46,7 @@ class PropagateEmptyRelationSuite extends PlanTest {
         ReplaceExceptWithAntiJoin,
         ReplaceIntersectWithSemiJoin,
         PushDownPredicate,
-        PruneFilters(SimpleCatalystConf(caseSensitiveAnalysis = true))) :: Nil
+        PruneFilters) :: Nil
   }
 
   val testRelation1 = LocalRelation.fromExternalRows(Seq('a.int), data = Seq(Row(1)))
