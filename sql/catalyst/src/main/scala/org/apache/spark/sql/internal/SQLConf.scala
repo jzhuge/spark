@@ -233,6 +233,12 @@ object SQLConf {
     .booleanConf
     .createWithDefault(true)
 
+  val PARQUET_HIVE_FILTER_PUSHDOWN_ENABLED =
+    SQLConfigBuilder("spark.sql.hive.parquet.filterPushdown")
+      .doc("Enables Parquet filter push-down optimization for the Hive read path when set to true.")
+      .booleanConf
+      .createWithDefault(false)
+
   val PARQUET_WRITE_LEGACY_FORMAT = SQLConfigBuilder("spark.sql.parquet.writeLegacyFormat")
     .doc("Whether to follow Parquet's format specification when converting Parquet schema to " +
       "Spark SQL schema and vice versa.")
