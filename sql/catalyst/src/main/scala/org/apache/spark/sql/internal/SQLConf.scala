@@ -367,6 +367,11 @@ object SQLConf {
     .booleanConf
     .createWithDefault(false)
 
+  val PARQUET_HIVE_FILTER_PUSHDOWN_ENABLED = buildConf("spark.sql.hive.parquet.filterPushdown")
+    .doc("Enables Parquet filter push-down optimization for the Hive read path when set to true.")
+    .booleanConf
+    .createWithDefault(false)
+
   val PARQUET_OUTPUT_COMMITTER_CLASS = buildConf("spark.sql.parquet.output.committer.class")
     .doc("The output committer class used by Parquet. The specified class needs to be a " +
       "subclass of org.apache.hadoop.mapreduce.OutputCommitter. Typically, it's also a subclass " +

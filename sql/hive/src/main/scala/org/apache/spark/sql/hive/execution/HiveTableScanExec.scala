@@ -118,7 +118,8 @@ case class HiveTableScanExec(
   // This is adapted from ParquetFileFormat:
   // Try to push down filters when filter push-down is enabled.
   private lazy val parquetFilters = {
-    if (sparkSession.conf.get(SQLConf.PARQUET_FILTER_PUSHDOWN_ENABLED.key).toBoolean) {
+    if (sparkSession.conf.get(SQLConf.PARQUET_FILTER_PUSHDOWN_ENABLED.key).toBoolean &&
+        sparkSession.conf.get(SQLConf.PARQUET_HIVE_FILTER_PUSHDOWN_ENABLED.key).toBoolean) {
       val dataSchema = StructType.fromAttributes(requestedAttributes)
       dataFilters.flatMap { filters =>
         // Collects all converted Parquet filter predicates. Notice that not all predicates can be
