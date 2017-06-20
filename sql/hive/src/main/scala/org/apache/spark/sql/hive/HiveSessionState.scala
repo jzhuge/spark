@@ -18,6 +18,7 @@
 package org.apache.spark.sql.hive
 
 import org.apache.hadoop.conf.Configuration
+import org.apache.hadoop.fs.Path
 
 import org.apache.spark.sql._
 import org.apache.spark.sql.catalyst.analysis.Analyzer
@@ -41,6 +42,25 @@ private[hive] class HiveSessionState(sparkSession: SparkSession)
    * @param hadoopConf a Hadoop Configuration
    */
   private[sql] class HiveSQLConf(@transient hadoopConf: Configuration) extends SQLConf {
+    private def ensureS3Loaded(): Unit = {
+      // temporarily work around for add jar. load the file system with the current classloader to
+      // avoid any problems with commons logging.
+      if (hadoopConf.get("fs.s3.impl") != null) {
+        val p = new Path("s3://netflix-dataoven-prod/genie/jars/dataoven-hive-tools.jar")
+        val fs = p.getFileSystem(hadoopConf)
+        if (fs.exists(p)) {
+          val in = fs.open(p)
+          try {
+            in.read()
+          } finally {
+            in.close()
+          }
+        }
+      }
+    }
+
+    ensureS3Loaded()
+
     sparkSession.sparkContext.getConf.getAll
         .filter {
           case (key: String, value: String) => key.startsWith("spark.session.")
