@@ -1211,9 +1211,13 @@ class StatisticsSuite extends StatisticsCollectionTestBase with TestHiveSingleto
     "data source table created in HiveExternalCatalog",
     "CREATE TABLE parquetTable (key STRING, value STRING) USING PARQUET")
 
-  testUpdatingTableStats(
-    "partitioned data source table",
-    "CREATE TABLE parquetTable (key STRING, value STRING) USING PARQUET PARTITIONED BY (key)")
+  // This test relies on the analyzer reordering the selected columns to put the partition column
+  // at the end. This conflicts with SPARK-16037 tests in InsertIntoHiveTableSuite, where the names
+  // of columns should not change the results in an INSERT INTO query. Because these two conflict,
+  // this test is disabled.
+//  testUpdatingTableStats(
+//    "partitioned data source table",
+//    "CREATE TABLE parquetTable (key STRING, value STRING) USING PARQUET PARTITIONED BY (key)")
 
   /** Used to test refreshing cached metadata once table stats are updated. */
   private def getStatsBeforeAfterUpdate(isAnalyzeColumns: Boolean)
