@@ -35,6 +35,38 @@ def getenv(name, required=True):
     return value
 
 
+def get_property_value_from_xml(xml_path, property_name, required):
+    tree = xml_parser.parse(xml_path).getroot()
+    for yarn_property in tree.findall('property'):
+        name = yarn_property.find('name').text
+        value = yarn_property.find('value').text  # host:port
+        if name == property_name:
+            return value
+    if required:
+        raise Exception('Cannot find %s properties in %s' % (property_name,xml_path))
+    else:
+        return None
+
+def get_value(args, arg_key):
+    """Returns an argument's value from the list of args
+
+    The return value is the value and the list of other args
+    """
+    remaining = []
+    value = None
+    i = 0
+    while i < len(args):
+        if arg_key == args[i]:
+            i += 1
+            value = args[i]
+        else:
+            remaining.append(args[i])
+
+        i += 1
+
+    return (value, remaining)
+
+
 class SparkSubmitEnvironment(object):
     """Extracts the required environment variables/configs for spark-submit"""
     def __init__(self):
@@ -45,18 +77,16 @@ class SparkSubmitEnvironment(object):
         self.hadoop_conf_dir = getenv('HADOOP_CONF_DIR')
         self.current_job_tmp_dir = getenv('CURRENT_JOB_TMP_DIR')
         self.current_job_working_dir = getenv('CURRENT_JOB_WORKING_DIR')
-        self.resource_manager_address = self._parse_resource_manager_address()
+        self.history_server_address = self._parse_history_server_address()
 
-    def _parse_resource_manager_address(self):
-        """Return the resource manager address from yarn-site.xml"""
-        yarn_site_file = '%s/yarn-site.xml' % self.hadoop_conf_dir
-        tree = xml_parser.parse(yarn_site_file).getroot()
-        for yarn_property in tree.findall('property'):
-            name = yarn_property.find('name').text
-            value = yarn_property.find('value').text  # host:port
-            if name == 'yarn.resourcemanager.address' or name == 'yarn.resourcemanager.hostname':
-                return value.split(':')[0]
-        return None
+    def _parse_history_server_address(self):
+        """Return the history server from yarn-site.xml"""
+        yarn_site_file = '%s/mapred-site.xml' % self.hadoop_conf_dir
+        history_server_address = get_property_value_from_xml(yarn_site_file, 'mapreduce.jobhistory.address', False)
+        if history_server_address:
+            return history_server_address.split(':')[0]
+        else:
+            return None
 
     def get_genie_job_id(self):
         """Return genie job id. Supports both genie 2 and 3"""
@@ -67,18 +97,20 @@ class SparkSubmitEnvironment(object):
         else:
             return os.path.basename(self.current_job_working_dir)
 
+    def is_spinnaker_cluster(self):
+        """Returns true if the command is invoked for a Spinnaker cluster, false otherwise."""
+        yarn_site_file = '%s/yarn-site.xml' % self.hadoop_conf_dir
+        return get_property_value_from_xml(yarn_site_file, 'aws.jobflowid', False) is None
+
     def get_all_jars_to_ship(self, args):
         """Return all jars to ship (user's jars + default jars shipped with all jobs)"""
         default_jars = ','.join(["s3://atlas.us-east-1.prod.netflix.net/jars/atlas-hive.jar",
                                  "%s/hive-site.xml" % self.spark_conf_dir])
-        for index, arg in enumerate(args):
-            try:
-                if arg == '--jars':
-                    user_jars = args[index + 1]
-                    return '%s,%s' % (default_jars, user_jars)
-            except IndexError:
-                raise Exception('Missing value for --jars')
-        return default_jars
+        user_jars, remaining = get_value(args, '--jars')
+        if user_jars:
+            return ('%s,%s' % (default_jars, user_jars), remaining)
+        else:
+            return (default_jars, remaining)
 
     def __str__(self):
         return 'SparkSubmitEnvironment = {spark_home=%s,' \
@@ -88,7 +120,7 @@ class SparkSubmitEnvironment(object):
                'hadoop_conf_dir=%s,' \
                'current_job_tmp_dir=%s,' \
                'current_job_working_dir=%s,' \
-               'resource_manager_address=%s}' \
+               'history_server_address=%s}' \
                % (self.spark_home,
                   self.spark_conf_dir,
                   self.spark_config_options,
@@ -96,7 +128,7 @@ class SparkSubmitEnvironment(object):
                   self.hadoop_conf_dir,
                   self.current_job_tmp_dir,
                   self.current_job_working_dir,
-                  self.resource_manager_address)
+                  self.history_server_address)
 
 DEFAULT_DRIVER_MEM_MB = 5120
 
@@ -127,19 +159,29 @@ def main(command_args):
         spark_submit_args.append(spark_env.spark_config_options)
 
     # set default command line args
-    if spark_env.resource_manager_address:
+    if spark_env.history_server_address:
         spark_submit_args.append('--conf')
         spark_submit_args.append('spark.yarn.historyServer.address=%s:18080'
-                                 % spark_env.resource_manager_address)
+                                 % spark_env.history_server_address)
 
     spark_submit_args.append('--conf')
     spark_submit_args.append('spark.genie.id=%s' % spark_env.get_genie_job_id())
 
+    if spark_env.is_spinnaker_cluster():
+        yarn_site_file = '%s/yarn-site.xml' % getenv('HADOOP_CONF_DIR')
+        node_labels_enabled = get_property_value_from_xml(yarn_site_file, 'yarn.node-labels.enabled', False)
+        if node_labels_enabled == 'true':
+             spark_submit_args.append('--conf')
+             spark_submit_args.append('spark.yarn.am.nodeLabelExpression=datanode')
+             spark_submit_args.append('--conf')
+             spark_submit_args.append('spark.yarn.executor.nodeLabelExpression=datanode||nodemanager')
+
     spark_submit_args.append('--conf')
     spark_submit_args.append('spark.s3.use.instance.credentials=true')
 
+    jars, command_args = spark_env.get_all_jars_to_ship(command_args)
     spark_submit_args.append('--jars')
-    spark_submit_args.append(spark_env.get_all_jars_to_ship(command_args))
+    spark_submit_args.append(jars)
 
     spark_submit_args.append('--deploy-mode')
     spark_submit_args.append('cluster')

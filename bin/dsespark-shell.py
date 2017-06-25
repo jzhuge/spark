@@ -35,6 +35,18 @@ def getenv(name, required=True, default=None):
     return value
 
 
+def get_property_value_from_xml(xml_path, property_name, required):
+    tree = xml_parser.parse(xml_path).getroot()
+    for yarn_property in tree.findall('property'):
+        name = yarn_property.find('name').text
+        value = yarn_property.find('value').text  # host:port
+        if name == property_name:
+            return value
+    if required:
+        raise Exception('Cannot find %s properties in %s' % (property_name,xml_path))
+    else:
+        return None
+
 class SparkSubmitEnvironment(object):
     """Extracts the required environment variables/configs for spark-submit"""
 
@@ -46,19 +58,21 @@ class SparkSubmitEnvironment(object):
         self.hadoop_conf_dir = getenv('HADOOP_CONF_DIR')
         self.current_job_tmp_dir = getenv('CURRENT_JOB_TMP_DIR')
         self.current_job_working_dir = getenv('CURRENT_JOB_WORKING_DIR')
-        self.resource_manager_address = self._parse_resource_manager_address()
+        self.history_server_address = self._parse_history_server_address()
 
-    def _parse_resource_manager_address(self):
-        """Return the resource manager address from yarn-site.xml"""
+    def _parse_history_server_address(self):
+        """Return the history server from yarn-site.xml"""
+        yarn_site_file = '%s/mapred-site.xml' % self.hadoop_conf_dir
+        history_server_address = get_property_value_from_xml(yarn_site_file, 'mapreduce.jobhistory.address', False)
+        if history_server_address:
+            return history_server_address.split(':')[0]
+        else:
+            return None
+
+    def is_spinnaker_cluster(self):
+        """Returns true if the command is invoked for a Spinnaker cluster, false otherwise."""
         yarn_site_file = '%s/yarn-site.xml' % self.hadoop_conf_dir
-        tree = xml_parser.parse(yarn_site_file).getroot()
-        for yarn_property in tree.findall('property'):
-            name = yarn_property.find('name').text
-            value = yarn_property.find('value').text  # host:port
-            if name == 'yarn.resourcemanager.address' or name == 'yarn.resourcemanager.hostname':
-                return value.split(':')[0]
-        raise Exception('Cannot find yarn.resourcemanager.address/yarn.resourcemanager.hostname '
-                        'properties in %s' % yarn_site_file)
+        return get_property_value_from_xml(yarn_site_file, 'aws.jobflowid', False) is None
 
     def get_all_jars_to_ship(self, args):
         """Return all jars to ship (user's jars + default jars shipped with all jobs)"""
@@ -103,7 +117,7 @@ class SparkSubmitEnvironment(object):
                'hadoop_conf_dir=%s,' \
                'current_job_tmp_dir=%s,' \
                'current_job_working_dir=%s,' \
-               'resource_manager_address=%s}' \
+               'history_server_address=%s}' \
                % (self.spark_home,
                   self.spark_conf_dir,
                   self.spark_config_options,
@@ -111,7 +125,7 @@ class SparkSubmitEnvironment(object):
                   self.hadoop_conf_dir,
                   self.current_job_tmp_dir,
                   self.current_job_working_dir,
-                  self.resource_manager_address)
+                  self.history_server_address)
 
 
 DEFAULT_DRIVER_MEM_MB = 3072
@@ -140,18 +154,22 @@ def main(command_args):
         spark_shell_args.append(spark_env.spark_config_options)
 
     # set default command line args
-    spark_shell_args.append('--conf')
-    spark_shell_args.append('spark.yarn.historyServer.address=%s:18080'
-                             % spark_env.resource_manager_address)
+    if spark_env.history_server_address:
+        spark_shell_args.append('--conf')
+        spark_shell_args.append('spark.yarn.historyServer.address=%s:18080'
+                                 % spark_env.history_server_address)
 
     spark_shell_args.append('--conf')
     spark_shell_args.append('spark.genie.id=%s' % getenv('GENIE_JOB_ID', False))
 
-    # spark_shell_args.append('--conf')
-    # spark_shell_args.append('spark.netflix.environment=%s' % getenv('NETFLIX_ENVIRONMENT', False))
-    #
-    # spark_shell_args.append('--conf')
-    # spark_shell_args.append('spark.netflix.stack=%s' % getenv('NETFLIX_STACK', False))
+    if spark_env.is_spinnaker_cluster():
+        yarn_site_file = '%s/yarn-site.xml' % getenv('HADOOP_CONF_DIR')
+        node_labels_enabled = get_property_value_from_xml(yarn_site_file, 'yarn.node-labels.enabled', False)
+        if node_labels_enabled == 'true':
+             spark_shell_args.append('--conf')
+             spark_shell_args.append('spark.yarn.am.nodeLabelExpression=datanode')
+             spark_shell_args.append('--conf')
+             spark_shell_args.append('spark.yarn.executor.nodeLabelExpression=datanode||nodemanager') 
 
     jars = spark_env.get_all_jars_to_ship(command_args)
     if '--jars' in command_args:
