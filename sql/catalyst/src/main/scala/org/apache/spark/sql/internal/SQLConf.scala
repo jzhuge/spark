@@ -615,6 +615,12 @@ object SQLConf {
       .booleanConf
       .createWithDefault(true)
 
+  val METACAT_CATALOG =
+    buildConf("spark.sql.metacat.write.catalog")
+      .doc("The Metacat catalog to update when writing." +
+           "If not set, \"${spark.sql.hive.env}hive\" is used.")
+      .stringConf.createOptional
+
   val PARALLEL_PARTITION_DISCOVERY_THRESHOLD =
     buildConf("spark.sql.sources.parallelPartitionDiscovery.threshold")
       .doc("The maximum number of paths allowed for listing files at driver side. If the number " +
@@ -1467,6 +1473,8 @@ class SQLConf extends Serializable with Logging {
   def useS3OutputCommitter: Boolean = getConf(SQLConf.USE_S3_OUTPUT_COMMITTER)
 
   def useS3BatchOutputCommitter: Boolean = getConf(SQLConf.USE_S3_BATCH_OUTPUT_COMMITTER)
+
+  def metacatCatalog: Option[String] = getConf(SQLConf.METACAT_CATALOG)
 
   def parallelPartitionDiscoveryThreshold: Int =
     getConf(SQLConf.PARALLEL_PARTITION_DISCOVERY_THRESHOLD)
