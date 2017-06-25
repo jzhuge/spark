@@ -98,7 +98,7 @@ case class InsertIntoHadoopFsRelationCommand(
       val committerOptions: mutable.Map[String, String] = new mutable.HashMap[String, String]()
       committerOptions.put("spark.sql.commit-protocol.append", isAppend.toString)
 
-      val useS3Committer = sparkSession.conf.get(SQLConf.USE_S3_OUTPUT_COMMITTER)
+      val useS3Committer = sparkSession.sessionState.conf.useS3OutputCommitter
       val isS3 = Option(outputPath.toUri.getScheme).exists(_.startsWith("s3"))
       val committerClass = if (useS3Committer && isS3) {
         committerOptions.put(
@@ -108,7 +108,8 @@ case class InsertIntoHadoopFsRelationCommand(
         catalogTable match {
           case Some(table) =>
             val hiveEnv = hadoopConf.get("spark.sql.hive.env", "prod")
-            committerOptions.put("s3.multipart.committer.catalog", s"${hiveEnv}hive")
+            committerOptions.put("s3.multipart.committer.catalog",
+              sparkSession.sessionState.conf.metacatCatalog.getOrElse(s"${hiveEnv}hive"))
             committerOptions.put("s3.multipart.committer.database",
               table.identifier.database.getOrElse("default"))
             committerOptions.put("s3.multipart.committer.table", table.identifier.table)

@@ -334,7 +334,8 @@ case class InsertIntoHiveTable(
 
       val tableIdentifier = table.catalogTable.identifier
         val hiveEnv = hadoopConf.get("spark.sql.hive.env", "prod")
-        committerOptions.put("s3.multipart.committer.catalog", s"${hiveEnv}hive")
+        committerOptions.put("s3.multipart.committer.catalog",
+          sessionState.conf.metacatCatalog.getOrElse(s"${hiveEnv}hive"))
         committerOptions.put("s3.multipart.committer.database",
           tableIdentifier.database.getOrElse("default"))
         committerOptions.put("s3.multipart.committer.table", tableIdentifier.table)
