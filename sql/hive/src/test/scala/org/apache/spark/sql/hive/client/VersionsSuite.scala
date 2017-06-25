@@ -651,8 +651,13 @@ class VersionsSuite extends SparkFunSuite with Logging {
           }
           // expect 2 files left: `.part-00000-random-uuid.crc` and `part-00000-random-uuid`
           // 0.12, 0.13, 1.0 and 1.1 also has another two more files ._SUCCESS.crc and _SUCCESS
-          val metadataFiles = Seq("._SUCCESS.crc", "_SUCCESS")
-          assert(listFiles(tmpDir).filterNot(metadataFiles.contains).length == 2)
+          listFiles(tmpDir).foreach(file =>
+            assert(file.matches("""\.part-00000-(.*)\.crc""") ||
+              file.matches("part-00000-(.*)") ||
+              file.matches("""\.\.part-00000-(.*)\.metrics.crc""") ||
+              file.matches("""\.part-00000-(.*)\.metrics""") ||
+              file.matches("._SUCCESS.crc") ||
+              file.matches("_SUCCESS")))
         }
       }
     }
