@@ -19,6 +19,9 @@ package org.apache.spark.sql.hive.execution
 
 import scala.collection.JavaConverters._
 
+import com.netflix.dse.mds.PartitionMetrics
+import com.netflix.dse.mds.data.{DataField, DataTuple}
+import org.apache.commons.configuration.{BaseConfiguration => CommonsConf}
 import org.apache.hadoop.fs.{FileStatus, Path}
 import org.apache.hadoop.hive.ql.exec.Utilities
 import org.apache.hadoop.hive.ql.io.{HiveFileFormatUtils, HiveOutputFormat}
@@ -32,11 +35,13 @@ import org.apache.hadoop.mapreduce.{Job, TaskAttemptContext}
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.InternalRow
+import org.apache.spark.sql.catalyst.util.DateTimeUtils
 import org.apache.spark.sql.execution.datasources.{FileFormat, OutputWriter, OutputWriterFactory}
-import org.apache.spark.sql.hive.{HiveInspectors, HiveTableUtil}
+import org.apache.spark.sql.hive._
 import org.apache.spark.sql.hive.HiveShim.{ShimFileSinkDesc => FileSinkDesc}
 import org.apache.spark.sql.sources.DataSourceRegister
-import org.apache.spark.sql.types.StructType
+import org.apache.spark.sql.types._
+import org.apache.spark.unsafe.types.{CalendarInterval, UTF8String}
 import org.apache.spark.util.SerializableJobConf
 
 /**
@@ -140,17 +145,98 @@ class HiveOutputWriter(
   private val wrappers = fieldOIs.zip(dataTypes).map { case (f, dt) => wrapperFor(f, dt) }
   private val outputData = new Array[Any](fieldOIs.length)
 
+  private def deSerializeValue(value: String, dataType: DataType): Object = {
+    if (value == null) return null
+    dataType match {
+      case _: NullType =>
+        null
+      case _: BooleanType =>
+        java.lang.Boolean.valueOf(value)
+      case _: ByteType =>
+        java.lang.Byte.valueOf(value)
+      case _: ShortType =>
+        java.lang.Short.valueOf(value)
+      case _: IntegerType =>
+        java.lang.Integer.valueOf(value)
+      case _: LongType | TimestampType =>
+        java.lang.Long.valueOf(value)
+      case _: FloatType =>
+        java.lang.Float.valueOf(value)
+      case _: DoubleType =>
+        java.lang.Double.valueOf(value)
+      case _: DecimalType =>
+        java.lang.Double.valueOf(value)
+      case _: DateType =>
+        DateTimeUtils.stringToTime(value)
+      case _: BinaryType =>
+        value.getBytes
+      case _: StringType =>
+        UTF8String.fromString(value)
+      case _: CalendarIntervalType =>
+        CalendarInterval.fromString(value)
+      case _ =>
+        throw new UnsupportedOperationException("Unsupported data type " + dataType.simpleString)
+    }
+  }
+
+  val tableProperties = fileSinkConf.getTableInfo.getProperties
+  val storeDefaults = jobConf.getBoolean("dse.store.default", false)
+  val fieldDefaultValues: Array[Object] = dataSchema.map { field =>
+    deSerializeValue(tableProperties.getProperty(s"dse.field.default.${field.name}"),
+      field.dataType)
+  }.toArray
+
+  import HivePartitionMetricHelper._
+
+  @transient protected lazy val metricClasses = PartitionMetrics
+    .metricClasses(jobConf.get("dse.storage.partition.metrics"))
+  @transient protected lazy val fieldMetricClasses = PartitionMetrics
+    .fieldMetricClasses(jobConf.get("dse.storage.field.metrics"))
+  @transient protected lazy val metricHelper = new HivePartitionMetricHelper()
+
+  private def toCommonsConf(conf: JobConf): CommonsConf = {
+    val commonsConf = new CommonsConf()
+    conf.iterator.asScala.foreach(entry => commonsConf.addProperty(entry.getKey, entry.getValue))
+    commonsConf
+  }
+
+  private def newMetrics(schema: StructType): PartitionMetrics = {
+    if (jobConf.getBoolean("spark.sql.partition.metrics.enabled", true)) {
+      val pm = new PartitionMetrics(metricClasses, fieldMetricClasses, metricHelper)
+      pm.setSchema(schema.map(c => new DataField(c.name, c.dataType.simpleString)).asJava)
+      pm.initialize(toCommonsConf(jobConf))
+      pm
+    } else {
+      new DummyMetrics()
+    }
+  }
+
+  val pm = newMetrics(dataSchema)
+
   override def write(row: InternalRow): Unit = {
     var i = 0
     while (i < fieldOIs.length) {
-      outputData(i) = if (row.isNullAt(i)) null else wrappers(i)(row.get(i, dataTypes(i)))
+      outputData(i) = if (row.isNullAt(i)) {
+        if (storeDefaults) fieldDefaultValues(i) else null
+      } else {
+        wrappers(i)(row.get(i, dataTypes(i)))
+      }
       i += 1
     }
     hiveWriter.write(serializer.serialize(outputData, standardOI))
+
+    pm.update(HiveDataTuple.wrap(row, dataSchema.toAttributes))
   }
 
   override def close(): Unit = {
+    // write metrics before calling close because close will commit
+    writeMetrics(pm, metricsPath(new Path(path)), jobConf)
+
     // Seems the boolean value passed into close does not matter.
     hiveWriter.close(false)
   }
+}
+
+private class DummyMetrics extends PartitionMetrics {
+  override def update(t: DataTuple): Unit = {}
 }

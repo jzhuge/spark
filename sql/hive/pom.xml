@@ -115,6 +115,11 @@
           <artifactId>hive-shims</artifactId>
         </dependency>
     -->
+    <dependency>
+      <groupId>netflix</groupId>
+      <artifactId>dse-metric</artifactId>
+      <version>1.8.0</version>
+    </dependency>
     <!-- hive-serde already depends on avro, but this brings in customized config of avro deps from parent -->
     <dependency>
       <groupId>org.apache.avro</groupId>

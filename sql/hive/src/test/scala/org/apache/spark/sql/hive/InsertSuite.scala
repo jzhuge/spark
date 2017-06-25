@@ -37,6 +37,7 @@ case class ThreeCloumntable(key: Int, value: String, key1: String)
 class InsertSuite extends QueryTest with TestHiveSingleton with BeforeAndAfter
     with SQLTestUtils {
   import spark.implicits._
+  import functions._
 
   override lazy val testData = spark.sparkContext.parallelize(
     (1 to 100).map(i => TestData(i, i.toString))).toDF()
@@ -965,6 +966,26 @@ class InsertSuite extends QueryTest with TestHiveSingleton with BeforeAndAfter
       sql("CREATE TABLE destBigint (id bigint)")
       val intData = (1 to 10).toDF("id")
       intData.write.insertInto("destBigint")
+    }
+  }
+
+  test("Repro reused partition key bug") {
+    withSQLConf(("hive.exec.dynamic.partition.mode", "nonstrict")) {
+      sql("CREATE TABLE source (genie_jobs bigint, hadoop_jobs bigint, dateint int)")
+      sql("CREATE TABLE dest (genie_jobs bigint, hadoop_jobs bigint) PARTITIONED BY (dateint int)")
+      val data = Seq((2117, 5844, 20160910), (2144, 5249, 20160911))
+          .toDF("genie_jobs", "hadoop_jobs", "dateint")
+      data.write.insertInto("source")
+      checkAnswer(sql("SELECT * FROM source"), data)
+
+      // scalastyle:on
+      spark.table("source").groupBy("dateint")
+          .agg(sum("genie_jobs") as "genie_jobs", sum("hadoop_jobs") as "hadoop_jobs")
+          .select("genie_jobs", "hadoop_jobs", "dateint")
+          .sort("dateint").limit(14)
+          .write.insertInto("dest")
+
+      checkAnswer(spark.sql("select * from dest"), data)
     }
   }
 }

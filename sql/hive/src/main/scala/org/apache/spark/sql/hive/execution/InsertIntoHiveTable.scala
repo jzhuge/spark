@@ -17,6 +17,8 @@
 
 package org.apache.spark.sql.hive.execution
 
+import scala.collection.mutable
+
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
 import org.apache.hadoop.hive.ql.ErrorMsg
@@ -96,7 +98,8 @@ case class InsertIntoHiveTable(
     val tmpLocation = getExternalTmpPath(sparkSession, hadoopConf, tableLocation)
 
     try {
-      processInsert(sparkSession, externalCatalog, hadoopConf, tableDesc, tmpLocation, child)
+      processInsert(sparkSession, externalCatalog, hadoopConf, tableDesc, tmpLocation,
+        tableLocation, child)
     } finally {
       // Attempt to delete the staging directory and the inclusive files. If failed, the files are
       // expected to be dropped at the normal termination of VM since deleteOnExit is used.
@@ -122,8 +125,12 @@ case class InsertIntoHiveTable(
       hadoopConf: Configuration,
       tableDesc: TableDesc,
       tmpLocation: Path,
+      tableLocation: Path,
       child: SparkPlan): Unit = {
-    val fileSinkConf = new FileSinkDesc(tmpLocation.toString, tableDesc, false)
+    val isS3 = Option(tableLocation.toUri.getScheme).exists(_.startsWith("s3"))
+    val useS3Committer = isS3 && sparkSession.sessionState.conf.useS3BatchOutputCommitter
+    val outputLocation = if (useS3Committer) tableLocation else tmpLocation
+    val fileSinkConf = new FileSinkDesc(outputLocation.toString, tableDesc, false)
 
     val numDynamicPartitions = partition.values.count(_.isEmpty)
     val numStaticPartitions = partition.values.count(_.nonEmpty)
@@ -192,15 +199,39 @@ case class InsertIntoHiveTable(
       }.asInstanceOf[Attribute]
     }
 
+    val committerOptions: mutable.Map[String, String] = new mutable.HashMap[String, String]()
+    committerOptions.put("spark.sql.commit-protocol.append", if (overwrite) "false" else "true")
+
+    val committerClass = if (useS3Committer) {
+      committerOptions.put(
+        "spark.sql.s3committer.is-partitioned",
+        partitionColumns.nonEmpty.toString)
+
+      val hiveEnv = hadoopConf.get("spark.sql.hive.env", "prod")
+      committerOptions.put("s3.multipart.committer.catalog", s"${hiveEnv}hive")
+      committerOptions.put("s3.multipart.committer.database",
+        table.identifier.database.getOrElse("default"))
+      committerOptions.put("s3.multipart.committer.table", table.identifier.table)
+      committerOptions.put("spark.sql.s3committer.use-batch", "true")
+
+      Some(sparkSession.sessionState.conf.s3CommitProtocolClass)
+    } else {
+      None
+    }
+
     saveAsHiveFile(
       sparkSession = sparkSession,
       plan = child,
       hadoopConf = hadoopConf,
       fileSinkConf = fileSinkConf,
-      outputLocation = tmpLocation.toString,
-      partitionAttributes = partitionAttributes)
+      outputLocation = outputLocation.toString,
+      partitionAttributes = partitionAttributes,
+      committerClass = committerClass,
+      committerOptions = committerOptions.toMap)
 
-    if (partition.nonEmpty) {
+    if (useS3Committer) {
+      // do nothing
+    } else if (partition.nonEmpty) {
       if (numDynamicPartitions > 0) {
         externalCatalog.loadDynamicPartitions(
           db = table.database,
