@@ -417,6 +417,11 @@ object SQLConf {
       .booleanConf
       .createWithDefault(true)
 
+  val USE_S3_BATCH_OUTPUT_COMMITTER = SQLConfigBuilder("spark.sql.batch.s3committer.enabled")
+      .doc("When true, use the S3 batch output committer for S3 tables.")
+      .booleanConf
+      .createWithDefault(true)
+
   val PARALLEL_PARTITION_DISCOVERY_THRESHOLD =
     SQLConfigBuilder("spark.sql.sources.parallelPartitionDiscovery.threshold")
       .doc("The maximum number of files allowed for listing files at driver side. If the number " +
@@ -832,6 +837,8 @@ class SQLConf extends Serializable with Logging {
   def s3CommitProtocolClass: String = getConf(SQLConf.S3_COMMIT_PROTOCOL_CLASS)
 
   def useS3OutputCommitter: Boolean = getConf(SQLConf.USE_S3_OUTPUT_COMMITTER)
+
+  def useS3BatchOutputCommitter: Boolean = getConf(SQLConf.USE_S3_BATCH_OUTPUT_COMMITTER)
 
   def parallelPartitionDiscoveryThreshold: Int =
     getConf(SQLConf.PARALLEL_PARTITION_DISCOVERY_THRESHOLD)

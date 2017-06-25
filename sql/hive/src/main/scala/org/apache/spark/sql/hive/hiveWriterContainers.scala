@@ -21,7 +21,11 @@ import java.text.NumberFormat
 import java.util.{Date, Locale}
 
 import scala.collection.JavaConverters._
+import scala.collection.mutable
 
+import com.netflix.dse.mds.PartitionMetrics
+import com.netflix.dse.mds.data.DataField
+import org.apache.commons.configuration.{BaseConfiguration => CommonsConf}
 import org.apache.hadoop.fs.Path
 import org.apache.hadoop.hive.common.FileUtils
 import org.apache.hadoop.hive.conf.HiveConf.ConfVars
@@ -36,27 +40,90 @@ import org.apache.hadoop.mapred._
 import org.apache.hadoop.mapreduce.TaskType
 
 import org.apache.spark._
+import org.apache.spark.deploy.SparkHadoopUtil
+import org.apache.spark.executor.OutputMetrics
 import org.apache.spark.internal.Logging
-import org.apache.spark.mapred.SparkHadoopMapRedUtil
+import org.apache.spark.internal.io.FileCommitProtocol
+import org.apache.spark.internal.io.FileCommitProtocol.TaskCommitMessage
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions._
+import org.apache.spark.sql.catalyst.util.DateTimeUtils
 import org.apache.spark.sql.execution.UnsafeKVExternalSorter
 import org.apache.spark.sql.hive.HiveShim.{ShimFileSinkDesc => FileSinkDesc}
 import org.apache.spark.sql.types._
+import org.apache.spark.unsafe.types.{CalendarInterval, UTF8String}
 import org.apache.spark.util.SerializableJobConf
+import org.apache.spark.util.Utils.tryWithSafeFinallyAndFailureCallbacks
 import org.apache.spark.util.collection.unsafe.sort.UnsafeExternalSorter
+
+private[hive] trait HiveWriterContainer {
+  def newSerializer(table: TableDesc): Serializer
+
+  def driverSideSetup(): Unit
+
+  def commitJob(taskCommits: Seq[TaskCommitMessage]): Unit
+
+  def abortJob(): Unit
+
+  def executorSideSetup(jobId: Int, splitId: Int, attemptId: Int): Unit
+
+  def writeToFile(
+      context: TaskContext,
+      iterator: Iterator[InternalRow]
+  ): (TaskCommitMessage, Set[String])
+
+  def close(): Unit
+
+  private[hive] def deSerializeValue(value: String, dataType: DataType): Object = {
+    if (value == null) return null
+    dataType match {
+      case _: NullType =>
+        null
+      case _: BooleanType =>
+        java.lang.Boolean.valueOf(value)
+      case _: ByteType =>
+        java.lang.Byte.valueOf(value)
+      case _: ShortType =>
+        java.lang.Short.valueOf(value)
+      case _: IntegerType =>
+        java.lang.Integer.valueOf(value)
+      case _: LongType | TimestampType =>
+        java.lang.Long.valueOf(value)
+      case _: FloatType =>
+        java.lang.Float.valueOf(value)
+      case _: DoubleType =>
+        java.lang.Double.valueOf(value)
+      case _: DecimalType =>
+        java.lang.Double.valueOf(value)
+      case _: DateType =>
+        DateTimeUtils.stringToTime(value)
+      case _: BinaryType =>
+        value.getBytes
+      case _: StringType =>
+        UTF8String.fromString(value)
+      case _: CalendarIntervalType =>
+        CalendarInterval.fromString(value)
+      case _ =>
+        throw new UnsupportedOperationException("Unsupported data type " + dataType.simpleString)
+    }
+  }
+}
 
 /**
  * Internal helper class that saves an RDD using a Hive OutputFormat.
- * It is based on `SparkHadoopWriter`.
+ * It is based on [[SparkHadoopWriter]].
  */
 private[hive] class SparkHiveWriterContainer(
     @transient private val jobConf: JobConf,
     fileSinkConf: FileSinkDesc,
-    inputSchema: Seq[Attribute])
+    inputSchema: Seq[Attribute],
+    committer: FileCommitProtocol)
   extends Logging
   with HiveInspectors
-  with Serializable {
+  with Serializable
+  with HiveWriterContainer {
+
+  import HivePartitionMetricHelper._
 
   private val now = new Date()
   private val tableDesc: TableDesc = fileSinkConf.getTableInfo
@@ -74,12 +141,31 @@ private[hive] class SparkHiveWriterContainer(
   private var jID: SerializableWritable[JobID] = null
   private var taID: SerializableWritable[TaskAttemptID] = null
 
+  val tableProperties = fileSinkConf.getTableInfo.getProperties
+  val storeDefaults = conf.value.getBoolean("dse.store.default", false)
+  val fieldDefaultValues: Array[Object] = inputSchema.map { attr =>
+    deSerializeValue(tableProperties.getProperty(s"dse.field.default.${attr.name}"), attr.dataType)
+  }.toArray
+
   @transient private var writer: FileSinkOperator.RecordWriter = null
-  @transient protected lazy val committer = conf.value.getOutputCommitter
+  @transient private var path: Path = null
   @transient protected lazy val jobContext = new JobContextImpl(conf.value, jID.value)
-  @transient private lazy val taskContext = new TaskAttemptContextImpl(conf.value, taID.value)
+  @transient protected lazy val taskContext = new TaskAttemptContextImpl(conf.value, taID.value)
   @transient private lazy val outputFormat =
     conf.value.getOutputFormat.asInstanceOf[HiveOutputFormat[AnyRef, Writable]]
+
+  @transient protected lazy val metricClasses = PartitionMetrics
+      .metricClasses(conf.value.get("dse.storage.partition.metrics"))
+  @transient protected lazy val fieldMetricClasses = PartitionMetrics
+      .fieldMetricClasses(conf.value.get("dse.storage.field.metrics"))
+  @transient protected lazy val metricHelper = new HivePartitionMetricHelper()
+
+  protected def newMetrics(schema: Seq[Attribute]): PartitionMetrics = {
+    val pm = new PartitionMetrics(metricClasses, fieldMetricClasses, metricHelper)
+    pm.setSchema(schema.map(c => new DataField(c.name, c.dataType.simpleString)).asJava)
+    pm.initialize(SparkHadoopWriterUtils.toCommonsConf(conf.value))
+    pm
+  }
 
   def driverSideSetup() {
     setIDs(0, 0, 0)
@@ -94,6 +180,9 @@ private[hive] class SparkHiveWriterContainer(
     initWriters()
   }
 
+  protected lazy val extension: String = Utilities.getFileExtension(
+    conf.value, fileSinkConf.getCompressed, outputFormat)
+
   protected def getOutputName: String = {
     val numberFormat = NumberFormat.getInstance(Locale.US)
     numberFormat.setMinimumIntegerDigits(5)
@@ -106,35 +195,38 @@ private[hive] class SparkHiveWriterContainer(
     // Seems the boolean value passed into close does not matter.
     if (writer != null) {
       writer.close(false)
-      commit()
     }
   }
 
-  def commitJob() {
-    committer.commitJob(jobContext)
+  def commitJob(taskCommits: Seq[TaskCommitMessage]) {
+    committer.commitJob(jobContext, taskCommits)
+  }
+
+  def abortJob(): Unit = {
+    committer.abortJob(jobContext)
   }
 
   protected def initWriters() {
     // NOTE this method is executed at the executor side.
     // For Hive tables without partitions or with only static partitions, only 1 writer is needed.
+    path = new Path(committer.newTaskTempFile(taskContext, None, extension))
     writer = HiveFileFormatUtils.getHiveRecordWriter(
       conf.value,
       fileSinkConf.getTableInfo,
       conf.value.getOutputValueClass.asInstanceOf[Class[Writable]],
       fileSinkConf,
-      FileOutputFormat.getTaskOutputPath(conf.value, getOutputName),
+      path,
       Reporter.NULL)
   }
 
-  protected def commit() {
-    SparkHadoopMapRedUtil.commitTask(committer, taskContext, jobID, splitID)
+  protected def commit(): TaskCommitMessage = {
+    // TODO: Make sure SparkHadoopMapRedUtil.commitTask is called somewhere?
+    // SparkHadoopMapRedUtil.commitTask(committer, taskContext, jobID, splitID)
+    committer.commitTask(taskContext)
   }
 
   def abortTask(): Unit = {
-    if (committer != null) {
-      committer.abortTask(taskContext)
-    }
-    logError(s"Task attempt $taskContext aborted.")
+    committer.abortTask(taskContext)
   }
 
   private def setIDs(jobId: Int, splitId: Int, attemptId: Int) {
@@ -173,24 +265,66 @@ private[hive] class SparkHiveWriterContainer(
     val dataTypes = inputSchema.map(_.dataType)
     val wrappers = fieldOIs.zip(dataTypes).map { case (f, dt) => wrapperFor(f, dt) }
     val outputData = new Array[Any](fieldOIs.length)
-    (serializer, standardOI, fieldOIs, dataTypes, wrappers, outputData)
+
+    val serializeFunc = (data: InternalRow) => {
+      var i = 0
+      while (i < fieldOIs.length) {
+        outputData(i) = if (data.isNullAt(i)) {
+          if (storeDefaults) fieldDefaultValues(i) else null
+        } else {
+          wrappers(i)(data.get(i, dataTypes(i)))
+        }
+        i += 1
+      }
+      serializer.serialize(outputData, standardOI)
+    }
+
+    (serializeFunc, fieldOIs)
   }
 
   // this function is executed on executor side
-  def writeToFile(context: TaskContext, iterator: Iterator[InternalRow]): Unit = {
-    val (serializer, standardOI, fieldOIs, dataTypes, wrappers, outputData) = prepareForWrite()
+  def writeToFile(
+      context: TaskContext,
+      iterator: Iterator[InternalRow]
+  ): (TaskCommitMessage, Set[String]) = {
     executorSideSetup(context.stageId, context.partitionId, context.attemptNumber)
 
-    iterator.foreach { row =>
-      var i = 0
-      while (i < fieldOIs.length) {
-        outputData(i) = if (row.isNullAt(i)) null else wrappers(i)(row.get(i, dataTypes(i)))
-        i += 1
-      }
-      writer.write(serializer.serialize(outputData, standardOI))
+    if (!iterator.hasNext) {
+      return (commit(), Set.empty)
     }
 
-    close()
+    val outputMetricsAndBytesWrittenCallback: Option[(OutputMetrics, () => Long)] =
+      SparkHadoopWriterUtils.initHadoopOutputMetrics(context)
+    var recordsWritten = 0
+
+    val (serialize, _) = prepareForWrite()
+    val pm = newMetrics(inputSchema)
+
+    tryWithSafeFinallyAndFailureCallbacks(block = {
+      iterator.foreach { row =>
+        pm.update(HiveDataTuple.wrap(row, inputSchema))
+        writer.write(serialize(row))
+
+        // Update bytes written metric every few records
+        SparkHadoopWriterUtils.maybeUpdateOutputMetrics(
+          outputMetricsAndBytesWrittenCallback, recordsWritten)
+        recordsWritten += 1
+      }
+
+      // write metrics before calling close because close will commit
+      writeMetrics(pm, metricsPath(path), conf.value)
+      close()
+
+      (commit(), Set.empty[String])
+
+    })(catchBlock = {
+      abortTask()
+      logError(s"Job ${taskContext.getTaskAttemptID} aborted.")
+    }, finallyBlock = {
+      // Update bytes written metric every few records
+      SparkHadoopWriterUtils.maybeUpdateOutputMetrics(
+        outputMetricsAndBytesWrittenCallback, recordsWritten, force = true)
+    })
   }
 }
 
@@ -215,11 +349,15 @@ private[spark] object SparkHiveDynamicPartitionWriterContainer {
 private[spark] class SparkHiveDynamicPartitionWriterContainer(
     jobConf: JobConf,
     fileSinkConf: FileSinkDesc,
+    staticPartitionPart: Option[String],
     dynamicPartColNames: Array[String],
-    inputSchema: Seq[Attribute])
-  extends SparkHiveWriterContainer(jobConf, fileSinkConf, inputSchema) {
+    isSorted: Boolean,
+    inputSchema: Seq[Attribute],
+    committer: FileCommitProtocol)
+  extends SparkHiveWriterContainer(jobConf, fileSinkConf, inputSchema, committer) {
 
   import SparkHiveDynamicPartitionWriterContainer._
+  import HivePartitionMetricHelper._
 
   private val defaultPartName = jobConf.get(
     ConfVars.DEFAULTPARTITIONNAME.varname, ConfVars.DEFAULTPARTITIONNAME.defaultStrVal)
@@ -232,7 +370,7 @@ private[spark] class SparkHiveDynamicPartitionWriterContainer(
     // do nothing
   }
 
-  override def commitJob(): Unit = {
+  override def commitJob(taskCommits: Seq[TaskCommitMessage]): Unit = {
     // This is a hack to avoid writing _SUCCESS mark file. In lower versions of Hadoop (e.g. 1.0.4),
     // semantics of FileSystem.globStatus() is different from higher versions (e.g. 2.4.1) and will
     // include _SUCCESS file when glob'ing for dynamic partition data files.
@@ -242,13 +380,20 @@ private[spark] class SparkHiveDynamicPartitionWriterContainer(
     // load it with loadDynamicPartitions/loadPartition/loadTable.
     val oldMarker = conf.value.getBoolean(SUCCESSFUL_JOB_OUTPUT_DIR_MARKER, true)
     conf.value.setBoolean(SUCCESSFUL_JOB_OUTPUT_DIR_MARKER, false)
-    super.commitJob()
+    super.commitJob(taskCommits)
     conf.value.setBoolean(SUCCESSFUL_JOB_OUTPUT_DIR_MARKER, oldMarker)
   }
 
   // this function is executed on executor side
-  override def writeToFile(context: TaskContext, iterator: Iterator[InternalRow]): Unit = {
-    val (serializer, standardOI, fieldOIs, dataTypes, wrappers, outputData) = prepareForWrite()
+  override def writeToFile(
+      context: TaskContext,
+      iterator: Iterator[InternalRow]
+  ): (TaskCommitMessage, Set[String]) = {
+    val outputMetricsAndBytesWrittenCallback: Option[(OutputMetrics, () => Long)] =
+      SparkHadoopWriterUtils.initHadoopOutputMetrics(context)
+    var recordsWritten = 0
+
+    val (serialize, fieldOIs) = prepareForWrite()
     executorSideSetup(context.stageId, context.partitionId, context.attemptNumber)
 
     val partitionOutput = inputSchema.takeRight(dynamicPartColNames.length)
@@ -272,8 +417,7 @@ private[spark] class SparkHiveDynamicPartitionWriterContainer(
     val getPartitionString =
       UnsafeProjection.create(Concat(partitionStringExpression) :: Nil, partitionOutput)
 
-    // If anything below fails, we should abort the task.
-    try {
+    def sortAndWrite(iterator: Iterator[InternalRow]): Set[String] = {
       val sorter: UnsafeKVExternalSorter = new UnsafeKVExternalSorter(
         StructType.fromAttributes(partitionOutput),
         StructType.fromAttributes(dataOutput),
@@ -293,43 +437,101 @@ private[spark] class SparkHiveDynamicPartitionWriterContainer(
       val sortedIterator = sorter.sortedIterator()
       var currentKey: InternalRow = null
       var currentWriter: FileSinkOperator.RecordWriter = null
+      var currentMetrics: PartitionMetrics = null
+      var currentMetricsPath: Path = null
       try {
+        val updatedPartitions = mutable.Set[String]()
         while (sortedIterator.next()) {
           if (currentKey != sortedIterator.getKey) {
             if (currentWriter != null) {
               currentWriter.close(false)
+              writeMetrics(currentMetrics, currentMetricsPath, conf.value)
             }
             currentKey = sortedIterator.getKey.copy()
             logDebug(s"Writing partition: $currentKey")
-            currentWriter = newOutputWriter(currentKey)
+            val (partition, path) = partitionAndPath(currentKey)
+            updatedPartitions.add(partition)
+            currentWriter = newOutputWriter(partition, path)
+            currentMetricsPath = metricsPath(path)
+            currentMetrics = newMetrics(dataOutput)
           }
 
-          var i = 0
-          while (i < fieldOIs.length) {
-            outputData(i) = if (sortedIterator.getValue.isNullAt(i)) {
-              null
-            } else {
-              wrappers(i)(sortedIterator.getValue.get(i, dataTypes(i)))
-            }
-            i += 1
-          }
-          currentWriter.write(serializer.serialize(outputData, standardOI))
+          val outputRow = sortedIterator.getValue
+          currentWriter.write(serialize(outputRow))
+          currentMetrics.update(HiveDataTuple.wrap(outputRow, dataOutput))
+
+          // Update bytes written metric every few records
+          SparkHadoopWriterUtils.maybeUpdateOutputMetrics(
+            outputMetricsAndBytesWrittenCallback, recordsWritten)
+          recordsWritten += 1
         }
+        updatedPartitions.toSet
       } finally {
         if (currentWriter != null) {
           currentWriter.close(false)
+          writeMetrics(currentMetrics, currentMetricsPath, conf.value)
         }
       }
-      commit()
-    } catch {
-      case cause: Throwable =>
-        logError("Aborting task.", cause)
-        abortTask()
-        throw new SparkException("Task failed while writing rows.", cause)
     }
-    /** Open and returns a new OutputWriter given a partition key. */
-    def newOutputWriter(key: InternalRow): FileSinkOperator.RecordWriter = {
+
+    def sortedWrite(iterator: Iterator[InternalRow]): Set[String] = {
+      var currentKey: InternalRow = null
+      var currentWriter: FileSinkOperator.RecordWriter = null
+      var currentMetrics: PartitionMetrics = null
+      var currentMetricsPath: Path = null
+      try {
+        val updatedPartitions = mutable.Set[String]()
+        while (iterator.hasNext) {
+          val inputRow = iterator.next()
+          val rowKey = getPartitionKey(inputRow)
+          if (currentKey != rowKey) {
+            if (currentWriter != null) {
+              currentWriter.close(false)
+              writeMetrics(currentMetrics, currentMetricsPath, conf.value)
+            }
+            currentKey = rowKey.copy()
+            logDebug(s"Writing partition: $currentKey")
+            val (partition, path) = partitionAndPath(currentKey)
+            updatedPartitions.add(partition)
+            currentWriter = newOutputWriter(partition, path)
+            currentMetricsPath = metricsPath(path)
+            currentMetrics = newMetrics(dataOutput)
+          }
+
+          val outputRow = getOutputRow(inputRow)
+          currentWriter.write(serialize(outputRow))
+          currentMetrics.update(HiveDataTuple.wrap(outputRow, dataOutput))
+
+          // Update bytes written metric every few records
+          SparkHadoopWriterUtils.maybeUpdateOutputMetrics(
+            outputMetricsAndBytesWrittenCallback, recordsWritten)
+          recordsWritten += 1
+        }
+        updatedPartitions.toSet
+      } finally {
+        if (currentWriter != null) {
+          currentWriter.close(false)
+          writeMetrics(currentMetrics, currentMetricsPath, conf.value)
+        }
+      }
+    }
+
+    def partitionAndPath(key: InternalRow): (String, Path) = {
       val partitionPath = getPartitionString(key).getString(0)
+      val partPath = staticPartitionPart match {
+        case Some(staticPart) => staticPart + Path.SEPARATOR_CHAR + partitionPath
+        case None => partitionPath
+      }
+      val path = new Path(committer.newTaskTempFile(
+        taskContext, if (partPath.nonEmpty) Some(partPath) else None, extension))
+
+      (partitionPath, path)
+    }
+
+    /** Open and returns a new OutputWriter given a partition key. */
+    def newOutputWriter(
+        partitionPath: String,
+        filePath: Path): FileSinkOperator.RecordWriter = {
       val newFileSinkDesc = new FileSinkDesc(
         fileSinkConf.getDirName + partitionPath,
         fileSinkConf.getTableInfo,
@@ -337,19 +539,64 @@ private[spark] class SparkHiveDynamicPartitionWriterContainer(
       newFileSinkDesc.setCompressCodec(fileSinkConf.getCompressCodec)
       newFileSinkDesc.setCompressType(fileSinkConf.getCompressType)
 
-      // use the path like ${hive_tmp}/_temporary/${attemptId}/
-      // to avoid write to the same file when `spark.speculation=true`
-      val path = FileOutputFormat.getTaskOutputPath(
-        conf.value,
-        partitionPath.stripPrefix("/") + "/" + getOutputName)
-
       HiveFileFormatUtils.getHiveRecordWriter(
         conf.value,
         fileSinkConf.getTableInfo,
         conf.value.getOutputValueClass.asInstanceOf[Class[Writable]],
         newFileSinkDesc,
-        path,
+        filePath,
         Reporter.NULL)
+    }
+
+    // If anything below fails, we should abort the task.
+    tryWithSafeFinallyAndFailureCallbacks(block = {
+      val partitions = if (isSorted) {
+        sortedWrite(iterator)
+      } else {
+        sortAndWrite(iterator)
+      }
+      (commit(), partitions)
+    })(catchBlock = {
+      abortTask()
+      logError(s"Job ${taskContext.getTaskAttemptID} aborted.")
+    }, finallyBlock = {
+      // Update bytes written metric every few records
+      SparkHadoopWriterUtils.maybeUpdateOutputMetrics(
+        outputMetricsAndBytesWrittenCallback, recordsWritten, force = true)
+    })
+  }
+}
+
+// from 9c419698fe110a805570031cac3387a51957d9d1
+private[spark]
+object SparkHadoopWriterUtils {
+
+  private val RECORDS_BETWEEN_BYTES_WRITTEN_METRIC_UPDATES = 1024
+
+  def toCommonsConf(conf: JobConf): CommonsConf = {
+    val commonsConf = new CommonsConf()
+    conf.iterator.asScala.foreach(entry => commonsConf.addProperty(entry.getKey, entry.getValue))
+    commonsConf
+  }
+
+  // return type: (output metrics, bytes written callback), defined only if the latter is defined
+  def initHadoopOutputMetrics(
+      context: TaskContext): Option[(OutputMetrics, () => Long)] = {
+    val bytesWrittenCallback = SparkHadoopUtil.get.getFSBytesWrittenOnThreadCallback()
+    bytesWrittenCallback.map { b =>
+      (context.taskMetrics().outputMetrics, b)
+    }
+  }
+
+  def maybeUpdateOutputMetrics(
+      outputMetricsAndBytesWrittenCallback: Option[(OutputMetrics, () => Long)],
+      recordsWritten: Long, force: Boolean = false): Unit = {
+    if (force || recordsWritten % RECORDS_BETWEEN_BYTES_WRITTEN_METRIC_UPDATES == 0) {
+      outputMetricsAndBytesWrittenCallback.foreach {
+        case (om, callback) =>
+          om.setBytesWritten(callback())
+          om.setRecordsWritten(recordsWritten)
+      }
     }
   }
 }

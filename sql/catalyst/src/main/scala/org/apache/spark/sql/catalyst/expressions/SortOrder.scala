@@ -20,6 +20,7 @@ package org.apache.spark.sql.catalyst.expressions
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.expressions.codegen.{CodegenContext, ExprCode}
+import org.apache.spark.sql.catalyst.plans.physical.{AllTuples, ClusteredDistribution, Distribution}
 import org.apache.spark.sql.types._
 import org.apache.spark.util.collection.unsafe.sort.PrefixComparators._
 
@@ -80,6 +81,19 @@ case class SortOrder(child: Expression, direction: SortDirection, nullOrdering: 
 object SortOrder {
   def apply(child: Expression, direction: SortDirection): SortOrder = {
     new SortOrder(child, direction, direction.defaultNullOrdering)
+  }
+
+  def satisfies(order: Seq[SortOrder], distribution: Distribution): Boolean = {
+    distribution match {
+      case c @ ClusteredDistribution(exprs) =>
+        // Zip discards extra order by expressions
+        (order.size >= exprs.size) && exprs.zip(order.map(_.child)).forall {
+          case (clusterExpr, orderExpr) => clusterExpr.semanticEquals(orderExpr)
+          case _ => false
+        }
+      case AllTuples => true
+      case _ => false
+    }
   }
 }
 

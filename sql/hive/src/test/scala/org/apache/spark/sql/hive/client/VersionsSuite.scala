@@ -563,8 +563,16 @@ class VersionsSuite extends SparkFunSuite with SQLTestUtils with TestHiveSinglet
             val filePaths = dir.map(_.getName).toList
             folders.flatMap(listFiles) ++: filePaths
           }
-          val expectedFiles = ".part-00000.crc" :: "part-00000" :: Nil
-          assert(listFiles(tmpDir).sorted == expectedFiles)
+          val files = listFiles(tmpDir).sorted
+          assert(files.size == 2) // data file and CRC file
+          val dataFile = files.last
+
+          val NamePattern = """part-00000-(.*)""".r
+          dataFile match {
+            case NamePattern(uuid) =>
+              assert(files.head == s".part-00000-$uuid.crc")
+            case _ => fail(s"Data file name did not match part-00000-(UUID): $dataFile")
+          }
         }
       }
     }

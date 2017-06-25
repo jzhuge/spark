@@ -20,8 +20,9 @@ package org.apache.spark.sql.hive.execution
 import java.io.IOException
 import java.net.URI
 import java.text.SimpleDateFormat
-import java.util.{Date, Locale, Random}
+import java.util.{Date, Locale, Random, UUID}
 
+import scala.collection.mutable
 import scala.util.control.NonFatal
 
 import org.apache.hadoop.fs.{FileSystem, Path}
@@ -33,12 +34,13 @@ import org.apache.hadoop.mapred.{FileOutputFormat, JobConf}
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.AnalysisException
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.Attribute
-import org.apache.spark.sql.catalyst.plans.physical.Partitioning
+import org.apache.spark.sql.catalyst.expressions.{Attribute, SortOrder}
+import org.apache.spark.sql.catalyst.plans.physical.{AllTuples, ClusteredDistribution, Distribution, Partitioning}
 import org.apache.spark.sql.execution.{SparkPlan, UnaryExecNode}
 import org.apache.spark.sql.hive._
 import org.apache.spark.sql.hive.HiveShim.{ShimFileSinkDesc => FileSinkDesc}
 import org.apache.spark.SparkException
+import org.apache.spark.internal.io.FileCommitProtocol
 import org.apache.spark.util.SerializableJobConf
 
 
@@ -207,8 +209,14 @@ case class InsertIntoHiveTable(
       SparkHiveWriterContainer.createPathFromString(fileSinkConf.getDirName(), conf.value))
     log.debug("Saving as hadoop file of type " + valueClass.getSimpleName)
     writerContainer.driverSideSetup()
-    sqlContext.sparkContext.runJob(rdd, writerContainer.writeToFile _)
-    writerContainer.commitJob()
+    try {
+      val taskCommits = sqlContext.sparkContext.runJob(
+        rdd, writerContainer.writeToFile _).map(_._1)
+      writerContainer.commitJob(taskCommits)
+    } catch {
+      case t: Throwable =>
+        writerContainer.abortJob()
+    }
   }
 
   /**
@@ -223,8 +231,14 @@ case class InsertIntoHiveTable(
     // instances within the closure, since Serializer is not serializable while TableDesc is.
     val tableDesc = table.tableDesc
     val tableLocation = table.hiveQlTable.getDataLocation
-    val tmpLocation = getExternalTmpPath(tableLocation)
-    val fileSinkConf = new FileSinkDesc(tmpLocation.toString, tableDesc, false)
+    val isS3 = Option(tableLocation.toUri.getScheme).exists(_.startsWith("s3"))
+    val useS3Committer = isS3 && sessionState.conf.useS3BatchOutputCommitter
+    val fileSinkConf = if (useS3Committer) {
+      // use the real output location because files are created locally and uploaded to S3
+      new FileSinkDesc(tableLocation.toString, tableDesc, false)
+    } else {
+      new FileSinkDesc(getExternalTmpPath(tableLocation).toString, tableDesc, false)
+    }
     val isCompressed = hadoopConf.get("hive.exec.compress.output", "false").toBoolean
 
     if (isCompressed) {
@@ -292,91 +306,140 @@ case class InsertIntoHiveTable(
       logWarning(warningMessage)
     }
 
-    val writerContainer = if (numDynamicPartitions > 0) {
-      val dynamicPartColNames = partitionColumnNames.takeRight(numDynamicPartitions)
+    val staticPartitionPart = if (numStaticPartitions > 0) {
+      Some(partitionColumnNames.flatMap { name =>
+        partition(name).map(value => s"$name=$value")
+      }.mkString(Path.SEPARATOR_CHAR.toString))
+    } else {
+      None
+    }
+
+    val dynamicPartColNames = partitionColumnNames.takeRight(numDynamicPartitions)
+    val partitionClustering = if (numDynamicPartitions > 0) {
+      ClusteredDistribution(child.output.takeRight(numDynamicPartitions))
+    } else {
+      AllTuples
+    }
+    val isSorted = SortOrder.satisfies(child.outputOrdering, partitionClustering)
+
+    val isPartitioned = partitionColumnNames.nonEmpty
+
+    val committerOptions: mutable.Map[String, String] = new mutable.HashMap[String, String]()
+    committerOptions.put("spark.sql.commit-protocol.append", if (overwrite) "false" else "true")
+
+    val committerClass = if (useS3Committer) {
+      committerOptions.put(
+        "spark.sql.s3committer.is-partitioned",
+        partitionColumns.nonEmpty.toString)
+
+      val tableIdentifier = table.catalogTable.identifier
+        val hiveEnv = hadoopConf.get("spark.sql.hive.env", "prod")
+        committerOptions.put("s3.multipart.committer.catalog", s"${hiveEnv}hive")
+        committerOptions.put("s3.multipart.committer.database",
+          tableIdentifier.database.getOrElse("default"))
+        committerOptions.put("s3.multipart.committer.table", tableIdentifier.table)
+        committerOptions.put("spark.sql.s3committer.use-batch", "true")
+
+      sessionState.conf.s3CommitProtocolClass
+    } else {
+      sessionState.conf.fileCommitProtocolClass
+    }
+
+    val committer = FileCommitProtocol.instantiate(
+      committerClass,
+      jobId = java.util.UUID.randomUUID().toString,
+      outputPath = tableLocation.toString,
+      committerOptions.toMap)
+
+    val writerContainer = if (isPartitioned) {
       new SparkHiveDynamicPartitionWriterContainer(
         jobConf,
         fileSinkConf,
+        if (useS3Committer) staticPartitionPart else None,
         dynamicPartColNames,
-        child.output)
+        isSorted,
+        child.output,
+        committer)
     } else {
       new SparkHiveWriterContainer(
         jobConf,
         fileSinkConf,
-        child.output)
+        child.output,
+        committer)
     }
 
     @transient val outputClass = writerContainer.newSerializer(table.tableDesc).getSerializedClass
     saveAsHiveFile(child.execute(), outputClass, fileSinkConf, jobConfSer, writerContainer)
 
-    val outputPath = FileOutputFormat.getOutputPath(jobConf)
-    // TODO: Correctly set holdDDLTime.
-    // In most of the time, we should have holdDDLTime = false.
-    // holdDDLTime will be true when TOK_HOLD_DDLTIME presents in the query as a hint.
-    val holdDDLTime = false
-    if (partition.nonEmpty) {
-      if (numDynamicPartitions > 0) {
-        externalCatalog.loadDynamicPartitions(
-          db = table.catalogTable.database,
-          table = table.catalogTable.identifier.table,
-          outputPath.toString,
-          partitionSpec,
-          overwrite,
-          numDynamicPartitions,
-          holdDDLTime = holdDDLTime)
-      } else {
-        // scalastyle:off
-        // ifNotExists is only valid with static partition, refer to
-        // https://cwiki.apache.org/confluence/display/Hive/LanguageManual+DML#LanguageManualDML-InsertingdataintoHiveTablesfromqueries
-        // scalastyle:on
-        val oldPart =
-          externalCatalog.getPartitionOption(
+    if (!useS3Committer) {
+      val outputPath = FileOutputFormat.getOutputPath(jobConf)
+      // TODO: Correctly set holdDDLTime.
+      // In most of the time, we should have holdDDLTime = false.
+      // holdDDLTime will be true when TOK_HOLD_DDLTIME presents in the query as a hint.
+      val holdDDLTime = false
+      if (partition.nonEmpty) {
+        if (numDynamicPartitions > 0) {
+          externalCatalog.loadDynamicPartitions(
+            db = table.catalogTable.database,
+            table = table.catalogTable.identifier.table,
+            outputPath.toString,
+            partitionSpec,
+            overwrite,
+            numDynamicPartitions,
+            holdDDLTime = holdDDLTime)
+        } else {
+          // scalastyle:off
+          // ifNotExists is only valid with static partition, refer to
+          // https://cwiki.apache.org/confluence/display/Hive/LanguageManual+DML#LanguageManualDML-InsertingdataintoHiveTablesfromqueries
+          // scalastyle:on
+          val oldPart = externalCatalog.getPartitionOption(
             table.catalogTable.database,
             table.catalogTable.identifier.table,
             partitionSpec)
 
-        var doHiveOverwrite = overwrite
+          var doHiveOverwrite = overwrite
 
-        if (oldPart.isEmpty || !ifNotExists) {
-          // SPARK-18107: Insert overwrite runs much slower than hive-client.
-          // Newer Hive largely improves insert overwrite performance. As Spark uses older Hive
-          // version and we may not want to catch up new Hive version every time. We delete the
-          // Hive partition first and then load data file into the Hive partition.
-          if (oldPart.nonEmpty && overwrite) {
-            oldPart.get.storage.locationUri.foreach { uri =>
-              val partitionPath = new Path(uri)
-              val fs = partitionPath.getFileSystem(hadoopConf)
-              if (fs.exists(partitionPath)) {
-                if (!fs.delete(partitionPath, true)) {
-                  throw new RuntimeException(
-                    "Cannot remove partition directory '" + partitionPath.toString)
+          if (oldPart.isEmpty || !ifNotExists) {
+            // SPARK-18107: Insert overwrite runs much slower than hive-client.
+            // Newer Hive largely improves insert overwrite performance. As Spark uses older Hive
+            // version and we may not want to catch up new Hive version every time. We delete the
+            // Hive partition first and then load data file into the Hive partition.
+            if (oldPart.nonEmpty && overwrite) {
+              oldPart.get.storage.locationUri.foreach { uri =>
+                val partitionPath = new Path(uri)
+                val fs = partitionPath.getFileSystem(hadoopConf)
+                if (fs.exists(partitionPath)) {
+                  if (!fs.delete(partitionPath, true)) {
+                    throw new RuntimeException(
+                      "Cannot remove partition directory '" + partitionPath.toString)
+                  }
+                  // Don't let Hive do overwrite operation since it is slower.
+                  doHiveOverwrite = false
                 }
-                // Don't let Hive do overwrite operation since it is slower.
-                doHiveOverwrite = false
               }
             }
-          }
 
-          // inheritTableSpecs is set to true. It should be set to false for an IMPORT query
-          // which is currently considered as a Hive native command.
-          val inheritTableSpecs = true
-          externalCatalog.loadPartition(
-            table.catalogTable.database,
-            table.catalogTable.identifier.table,
-            outputPath.toString,
-            partitionSpec,
-            isOverwrite = doHiveOverwrite,
-            holdDDLTime = holdDDLTime,
-            inheritTableSpecs = inheritTableSpecs)
+            // inheritTableSpecs is set to true. It should be set to false for an IMPORT query
+            // which is currently considered as a Hive native command.
+            val inheritTableSpecs = true
+            externalCatalog.loadPartition(
+              table.catalogTable.database,
+              table.catalogTable.identifier.table,
+              outputPath.toString,
+              partitionSpec,
+              isOverwrite = doHiveOverwrite,
+              holdDDLTime = holdDDLTime,
+              inheritTableSpecs = inheritTableSpecs)
+          }
         }
+      } else {
+        externalCatalog.loadTable(
+          table.catalogTable.database,
+          table.catalogTable.identifier.table,
+          outputPath.toString, // TODO: URI
+          overwrite,
+          holdDDLTime)
       }
-    } else {
-      externalCatalog.loadTable(
-        table.catalogTable.database,
-        table.catalogTable.identifier.table,
-        outputPath.toString, // TODO: URI
-        overwrite,
-        holdDDLTime)
     }
 
     // Attempt to delete the staging directory and the inclusive files. If failed, the files are
