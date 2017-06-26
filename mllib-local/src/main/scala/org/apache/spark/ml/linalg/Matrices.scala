@@ -161,6 +161,9 @@ sealed trait Matrix extends Serializable {
    */
   @Since("2.0.0")
   def numActives: Int
+
+  @Since("2.1.1")
+  def toSparse: SparseMatrix
 }
 
 /**
@@ -295,7 +298,7 @@ class DenseMatrix @Since("2.0.0") (
    * set to false.
    */
   @Since("2.0.0")
-  def toSparse: SparseMatrix = {
+  override def toSparse: SparseMatrix = {
     val spVals: MArrayBuilder[Double] = new MArrayBuilder.ofDouble
     val colPtrs: Array[Int] = new Array[Int](numCols + 1)
     val rowIndices: MArrayBuilder[Int] = new MArrayBuilder.ofInt
@@ -631,6 +634,8 @@ class SparseMatrix @Since("2.0.0") (
       }
     }
   }
+
+  override def toSparse: SparseMatrix = this
 }
 
 /**
