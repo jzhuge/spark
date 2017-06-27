@@ -77,8 +77,7 @@ class SparkSubmitEnvironment(object):
     def get_all_jars_to_ship(self, args):
         """Return all jars to ship (user's jars + default jars shipped with all jobs)"""
 
-        default_jars = ','.join(["s3://atlas.us-east-1.prod.netflix.net/jars/atlas-hive.jar",
-                                 "%s/hive-site.xml" % self.spark_conf_dir])
+        default_jars = ','.join(["s3://atlas.us-east-1.prod.netflix.net/jars/atlas-hive.jar"])
 
         for index, arg in enumerate(args):
             try:
