@@ -22,11 +22,12 @@ import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.expressions.aggregate.AggregateExpression
 import org.apache.spark.sql.catalyst.plans.logical._
 import org.apache.spark.sql.catalyst.util._
+import org.apache.spark.sql.internal.SQLConf
 
 /**
  * Provides helper methods for comparing plans.
  */
-abstract class PlanTest extends SparkFunSuite with PredicateHelper {
+trait PlanTest extends SparkFunSuite with PredicateHelper {
   /**
    * Since attribute references are given globally unique ids during analysis,
    * we must normalize them to check if two different queries are identical.
@@ -103,5 +104,30 @@ abstract class PlanTest extends SparkFunSuite with PredicateHelper {
   /** Fails the test if the two expressions do not match */
   protected def compareExpressions(e1: Expression, e2: Expression): Unit = {
     comparePlans(Filter(e1, OneRowRelation), Filter(e2, OneRowRelation))
+  }
+
+  /**
+   * Sets all SQL configurations specified in `pairs`, calls `f`, and then restore all SQL
+   * configurations.
+   */
+  protected def withSQLConf(pairs: (String, String)*)(f: => Unit): Unit = {
+    val conf = SQLConf.get
+    val (keys, values) = pairs.unzip
+    val currentValues = keys.map { key =>
+      if (conf.contains(key)) {
+        Some(conf.getConfString(key))
+      } else {
+        None
+      }
+    }
+    (keys, values).zipped.foreach { (k, v) =>
+      conf.setConfString(k, v)
+    }
+    try f finally {
+      keys.zip(currentValues).foreach {
+        case (key, Some(value)) => conf.setConfString(key, value)
+        case (key, None) => conf.unsetConf(key)
+      }
+    }
   }
 }
