@@ -76,6 +76,9 @@ mkdir -p ${WORKSPACE}/spark-${BUILD_VERSION}/conf
 cp netflix/spark-defaults.conf ${WORKSPACE}/spark-${BUILD_VERSION}/conf/
 cp netflix/spark-env.sh ${WORKSPACE}/spark-${BUILD_VERSION}/conf/
 
+# Add run.py
+cp netflix/run.py ${WORKSPACE}/spark-${BUILD_VERSION}/bin/run.py
+
 # Overwrite dsespark-shell and dsespark-submit
 cp bin/dsespark-* spark-${BUILD_VERSION}/bin/
 
