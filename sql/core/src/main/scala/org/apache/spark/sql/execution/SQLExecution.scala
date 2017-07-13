@@ -80,7 +80,7 @@ object SQLExecution {
       } finally {
         sc.setLocalProperty(EXECUTION_ID_KEY, null)
       }
-    } else if (sc.getLocalProperty(IGNORE_NESTED_EXECUTION_ID) != null) {
+    } else if (!testing || sc.getLocalProperty(IGNORE_NESTED_EXECUTION_ID) != null) {
       // If `IGNORE_NESTED_EXECUTION_ID` is set, just ignore the execution id while evaluating the
       // `body`, so that Spark jobs issued in the `body` won't be tracked.
       try {
