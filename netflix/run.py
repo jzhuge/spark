@@ -110,8 +110,7 @@ def get_genie_job_id(current_job_working_dir):
 
 def get_jars(spark_conf_dir, args):
     """Return all jars to ship (user's jars + default jars shipped with all jobs)"""
-    default_jars = ','.join(["s3://atlas.us-east-1.prod.netflix.net/jars/atlas-hive.jar",
-                             "%s/hive-site.xml" % spark_conf_dir])
+    default_jars = ','.join(["s3://atlas.us-east-1.prod.netflix.net/jars/atlas-hive.jar"])
     user_jars, remaining = get_value(args, '--jars')
     if user_jars:
         return ('%s,%s' % (default_jars, user_jars), remaining)
