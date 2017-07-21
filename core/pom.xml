@@ -44,11 +44,6 @@
       <version>0.2.5</version>
     </dependency>
     <dependency>
-      <groupId>com.netflix.bdp</groupId>
-      <artifactId>metrics</artifactId>
-      <version>0.1.19</version>
-    </dependency>
-    <dependency>
       <groupId>org.apache.avro</groupId>
       <artifactId>avro-mapred</artifactId>
       <classifier>${avro.mapred.classifier}</classifier>
