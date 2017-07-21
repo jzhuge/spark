@@ -46,7 +46,7 @@ cp netflix/metrics-site.xml core/src/main/resources/
 # avoid stale compile servers causing problems
 build/zinc-0.3.9/bin/zinc -shutdown || echo "No zinc server running."
 
-dev/make-distribution.sh --tgz -P${HADOOP_VERSION_PROFILE} -Pyarn -Phive-thriftserver -Psparkr -Pkinesis-asl -Phadoop-provided -Dmaven.repo.local=${WORKSPACE}/.m2/repository 
+dev/make-distribution.sh --tgz -P${HADOOP_VERSION_PROFILE} -Pmesos -Pyarn -Phive-thriftserver -Psparkr -Pkinesis-asl -Phadoop-provided -Dmaven.repo.local=${WORKSPACE}/.m2/repository 
 
 rm -rf spark-*-bin-${HADOOP_VERSION}
 tar -xf spark-${SPARK_VERSION}-bin-${HADOOP_VERSION}.tgz
