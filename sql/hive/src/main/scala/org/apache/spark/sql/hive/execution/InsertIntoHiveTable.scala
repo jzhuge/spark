@@ -360,7 +360,7 @@ case class InsertIntoHiveTable(
         fileSinkConf,
         if (useS3Committer) staticPartitionPart else None,
         dynamicPartColNames,
-        isSorted,
+        isSorted || sessionState.conf.hiveForceSortedWrite,
         child.output,
         committer)
     } else {
