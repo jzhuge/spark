@@ -1238,6 +1238,12 @@ object SQLConf {
       .booleanConf
       .createWithDefault(false)
 
+  val HIVE_FORCE_SORTED_WRITE =
+    buildConf("spark.sql.hive.force-sorted-write")
+      .doc("Whether to always assume data is sorted by partition when writing")
+      .booleanConf
+      .createWithDefault(false)
+
   object Deprecated {
     val MAPRED_REDUCE_TASKS = "mapred.reduce.tasks"
   }
@@ -1523,6 +1529,8 @@ class SQLConf extends Serializable with Logging {
   def groupByOrdinal: Boolean = getConf(GROUP_BY_ORDINAL)
 
   def groupByAliases: Boolean = getConf(GROUP_BY_ALIASES)
+
+  def hiveForceSortedWrite: Boolean = getConf(HIVE_FORCE_SORTED_WRITE)
 
   def crossJoinEnabled: Boolean = getConf(SQLConf.CROSS_JOINS_ENABLED)
 
