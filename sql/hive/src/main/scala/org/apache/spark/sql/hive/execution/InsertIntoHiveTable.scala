@@ -205,7 +205,7 @@ case class InsertIntoHiveTable(
     val committerClass = if (useS3Committer) {
       committerOptions.put(
         "spark.sql.s3committer.is-partitioned",
-        partitionColumns.nonEmpty.toString)
+        partitionColumnNames.nonEmpty.toString)
 
       val hiveEnv = hadoopConf.get("spark.sql.hive.env", "prod")
       committerOptions.put("s3.multipart.committer.catalog",
