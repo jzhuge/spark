@@ -18,11 +18,18 @@
 package org.apache.spark.sql.execution.datasources
 
 import java.net.URI
+import java.util.concurrent.{LinkedBlockingQueue, ThreadPoolExecutor, TimeUnit}
 
+import scala.collection.parallel.ThreadPoolTaskSupport
+
+import com.google.common.cache.{CacheBuilder, CacheLoader, LoadingCache}
+import com.google.common.util.concurrent.ThreadFactoryBuilder
 import org.apache.hadoop.conf.Configuration
-import org.apache.hadoop.fs.Path
+import org.apache.hadoop.fs.{FileStatus, Path, PathFilter}
+import org.apache.hadoop.mapred.{FileInputFormat, JobConf}
 
-import org.apache.spark.sql.SparkSession
+import org.apache.spark.internal.Logging
+import org.apache.spark.sql.{BatchIdPathFilter, Filters, HiddenPathFilter, SparkSession}
 import org.apache.spark.sql.catalyst.catalog.CatalogTable
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.types.StructType
@@ -67,7 +74,7 @@ class CatalogFileIndex(
    *
    * @param filters partition-pruning filters
    */
-  def filterPartitions(filters: Seq[Expression]): InMemoryFileIndex = {
+  def filterPartitions(filters: Seq[Expression]): FileIndex = {
     if (table.partitionColumnNames.nonEmpty) {
       val startTime = System.nanoTime()
       val selectedPartitions = sparkSession.sessionState.catalog.listPartitionsByFilter(
@@ -81,8 +88,7 @@ class CatalogFileIndex(
       }
       val partitionSpec = PartitionSpec(partitionSchema, partitions)
       val timeNs = System.nanoTime() - startTime
-      new PrunedInMemoryFileIndex(
-        sparkSession, new Path(baseLocation.get), fileStatusCache, partitionSpec, Option(timeNs))
+      new PrunedInMemoryFileIndex(sparkSession, partitionSpec, Option(timeNs))
     } else {
       new InMemoryFileIndex(
         sparkSession, rootPaths, table.storage.properties, partitionSchema = None)
@@ -106,18 +112,92 @@ class CatalogFileIndex(
  * An override of the standard HDFS listing based catalog, that overrides the partition spec with
  * the information from the metastore.
  *
- * @param tableBasePath The default base path of the Hive metastore table
  * @param partitionSpec The partition specifications from Hive metastore
  */
 private class PrunedInMemoryFileIndex(
     sparkSession: SparkSession,
-    tableBasePath: Path,
-    fileStatusCache: FileStatusCache,
-    override val partitionSpec: PartitionSpec,
+    partitionSpec: PartitionSpec,
     override val metadataOpsTimeNs: Option[Long])
-  extends InMemoryFileIndex(
-    sparkSession,
-    partitionSpec.partitions.map(_.path),
-    Map.empty,
-    Some(partitionSpec.partitionColumns),
-    fileStatusCache)
+  extends FileIndex with Logging {
+
+  import PrunedInMemoryFileIndex.parallelizeIfLarge
+
+  /** Schema of the partitioning columns, or the empty schema if the table is not partitioned. */
+  override def partitionSchema: StructType = partitionSpec.partitionColumns
+
+  private val maybeBatchIdFilter = if (sparkSession.sqlContext.conf.ignoreBatchIdFolders) {
+    Some(BatchIdPathFilter.get)
+  } else {
+    None
+  }
+
+  private val maybeCustomFilter = Option(FileInputFormat.getInputPathFilter(
+    new JobConf(sparkSession.sparkContext.hadoopConfiguration)))
+
+  private val filter: PathFilter = Filters.from(HiddenPathFilter.get)
+      .and(maybeCustomFilter)
+      .and(maybeBatchIdFilter)
+
+  private val listingCache: LoadingCache[Path, Seq[FileStatus]] = CacheBuilder.newBuilder()
+      .maximumSize(sparkSession.sqlContext.conf.filesourcePartitionFileCacheSize)
+      .build(new CacheLoader[Path, Seq[FileStatus]]() {
+        override def load(path: Path): Seq[FileStatus] = {
+          path.getFileSystem(sparkSession.sparkContext.hadoopConfiguration)
+              .listStatus(path, filter)
+              .toSeq
+        }
+      })
+
+  /**
+   * Returns the list of root input paths from which the catalog will get files. There may be a
+   * single root path from which partitions are discovered, or individual partitions may be
+   * specified by each path.
+   */
+  override def rootPaths: Seq[Path] = partitionSpec.partitions.map(_.path)
+
+  /**
+   * Returns all valid files grouped into partitions when the data is partitioned. If the data is
+   * unpartitioned, this will return a single partition with no partition values.
+   *
+   * @param filters The filters used to prune which partitions are returned.  These filters must
+   *                only refer to partition columns and this method will only return files
+   *                where these predicates are guaranteed to evaluate to `true`.  Thus, these
+   *                filters will not need to be evaluated again on the returned data.
+   */
+  override def listFiles(filters: Seq[Expression],
+                         dataFilters: Seq[Expression]): Seq[PartitionDirectory] = {
+    val partitions = PartitioningAwareFileIndex.prunePartitions(filters, partitionSpec)
+    parallelizeIfLarge(partitions).map { partition =>
+      PartitionDirectory(partition.values, listingCache.get(partition.path))
+    }.seq
+  }
+
+  /** Refresh the file listing */
+  override def refresh(): Unit = {
+    listingCache.invalidateAll()
+  }
+
+  override def inputFiles: Array[String] = {
+    listFiles(Seq(), Nil).flatMap(_.files).map(_.getPath.toString).toArray
+  }
+
+  /** Sum of table file sizes, in bytes */
+  override def sizeInBytes: Long = 0L
+}
+
+private object PrunedInMemoryFileIndex {
+  val PARALLEL_LISTING_THRESH = 16 // about 1 second of work for S3
+  val WORKER_POOL: ThreadPoolTaskSupport = new ThreadPoolTaskSupport(new ThreadPoolExecutor(
+    4, 16, 30, TimeUnit.SECONDS, new LinkedBlockingQueue[Runnable](),
+    new ThreadFactoryBuilder().setNameFormat("hive-liststatus-%s").setDaemon(true).build))
+
+  private def parallelizeIfLarge[E](seq: Seq[E]) = {
+    if (seq.size > PARALLEL_LISTING_THRESH) {
+      val parSeq = seq.par
+      parSeq.tasksupport = WORKER_POOL
+      parSeq
+    } else {
+      seq
+    }
+  }
+}
