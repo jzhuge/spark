@@ -17,13 +17,15 @@
 
 package org.apache.spark.sql.execution.datasources
 
+import java.util.Date
+
 import com.netflix.bdp.Committers
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
-import org.apache.hadoop.mapreduce.{JobContext, OutputCommitter, TaskAttemptContext}
+import org.apache.hadoop.mapreduce.{JobContext, OutputCommitter, TaskAttemptContext, TaskAttemptID, TaskID, TaskType}
 
 import org.apache.spark.internal.Logging
-import org.apache.spark.internal.io.{FileCommitProtocol, HadoopMapReduceCommitProtocol}
+import org.apache.spark.internal.io.{FileCommitProtocol, HadoopMapReduceCommitProtocol, SparkHadoopWriterUtils}
 
 class S3MapReduceCommitProtocol(jobId: String, path: String, options: Map[String, String])
   extends HadoopMapReduceCommitProtocol(jobId, path) with Serializable with Logging {
@@ -65,6 +67,19 @@ class S3MapReduceCommitProtocol(jobId: String, path: String, options: Map[String
 
   override protected def setupCommitter(context: JobContext): OutputCommitter = {
     val conf = context.getConfiguration
+
+    // Setup IDs
+    val jobId = SparkHadoopWriterUtils.createJobID(new Date(batchId), 0)
+    val taskId = new TaskID(jobId, TaskType.MAP, 0)
+    val taskAttemptId = new TaskAttemptID(taskId, 0)
+
+    // Set up the configuration object
+    conf.set("mapred.job.id", jobId.toString)
+    conf.set("mapred.tip.id", taskAttemptId.getTaskID.toString)
+    conf.set("mapred.task.id", taskAttemptId.toString)
+    conf.setBoolean("mapred.task.is.map", true)
+    conf.setInt("mapred.task.partition", 0)
+
     addCommitterOptions(conf)
 
     val committer = if (useBatch) {
