@@ -17,18 +17,20 @@
 
 package org.apache.spark.sql.execution.datasources
 
+import java.io.FileNotFoundException
 import java.net.URI
 import java.util.concurrent.{LinkedBlockingQueue, ThreadPoolExecutor, TimeUnit}
 
 import scala.collection.parallel.ThreadPoolTaskSupport
 
-import com.google.common.cache.{CacheBuilder, CacheLoader, LoadingCache}
+import com.google.common.cache.{Cache, CacheBuilder, CacheLoader, LoadingCache}
 import com.google.common.util.concurrent.ThreadFactoryBuilder
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FileStatus, Path, PathFilter}
 import org.apache.hadoop.mapred.{FileInputFormat, JobConf}
 
 import org.apache.spark.internal.Logging
+import org.apache.spark.metrics.source.HiveCatalogMetrics
 import org.apache.spark.sql.{BatchIdPathFilter, Filters, HiddenPathFilter, SparkSession}
 import org.apache.spark.sql.catalyst.catalog.CatalogTable
 import org.apache.spark.sql.catalyst.expressions._
@@ -76,7 +78,6 @@ class CatalogFileIndex(
    */
   def filterPartitions(filters: Seq[Expression]): FileIndex = {
     if (table.partitionColumnNames.nonEmpty) {
-      val startTime = System.nanoTime()
       val selectedPartitions = sparkSession.sessionState.catalog.listPartitionsByFilter(
         table.identifier, filters)
       val partitions = selectedPartitions.map { p =>
@@ -87,8 +88,8 @@ class CatalogFileIndex(
           path.makeQualified(fs.getUri, fs.getWorkingDirectory))
       }
       val partitionSpec = PartitionSpec(partitionSchema, partitions)
-      val timeNs = System.nanoTime() - startTime
-      new PrunedInMemoryFileIndex(sparkSession, partitionSpec, Option(timeNs))
+      new PrunedInMemoryFileIndex(
+        sparkSession, new Path(baseLocation.get), fileStatusCache, partitionSpec)
     } else {
       new InMemoryFileIndex(
         sparkSession, rootPaths, table.storage.properties, partitionSchema = None)
@@ -106,47 +107,68 @@ class CatalogFileIndex(
   }
 
   override def hashCode(): Int = table.identifier.hashCode()
+
+  private lazy val maybeBatchIdFilter = if (sparkSession.sqlContext.conf.ignoreBatchIdFolders) {
+    Some(BatchIdPathFilter.get)
+  } else {
+    None
+  }
+
+  private lazy val maybeCustomFilter = Option(FileInputFormat.getInputPathFilter(
+    new JobConf(sparkSession.sparkContext.hadoopConfiguration)))
+
+  private lazy val filter: PathFilter = Filters.from(HiddenPathFilter.get)
+    .and(maybeCustomFilter)
+    .and(maybeBatchIdFilter)
+
+  private lazy val listingCache: LoadingCache[Path, Seq[FileStatus]] = CacheBuilder.newBuilder()
+    .maximumSize(sparkSession.sqlContext.conf.filesourcePartitionFileCacheSize)
+    .build(new CacheLoader[Path, Seq[FileStatus]]() {
+      override def load(path: Path): Seq[FileStatus] = {
+        try {
+          val files = path.getFileSystem(sparkSession.sparkContext.hadoopConfiguration)
+            .listStatus(path, filter)
+            .toSeq
+          HiveCatalogMetrics.incrementFilesDiscovered(files.size)
+          files
+        } catch {
+          case e: FileNotFoundException =>
+            Seq.empty
+        }
+      }
+    })
 }
 
 /**
  * An override of the standard HDFS listing based catalog, that overrides the partition spec with
  * the information from the metastore.
  *
+ * @param tableBasePath The default base path of the Hive metastore table
  * @param partitionSpec The partition specifications from Hive metastore
  */
 private class PrunedInMemoryFileIndex(
     sparkSession: SparkSession,
+    tableBasePath: Path,
+    fileStatusCache: FileStatusCache,
+    override val partitionSpec: PartitionSpec)
+  extends InMemoryFileIndex(
+    sparkSession,
+    partitionSpec.partitions.map(_.path),
+    Map.empty,
+    Some(partitionSpec.partitionColumns),
+    fileStatusCache)
+
+private class PartitionSpecFileIndex(
+    sparkSession: SparkSession,
     partitionSpec: PartitionSpec,
-    override val metadataOpsTimeNs: Option[Long])
+    listingCache: LoadingCache[Path, Seq[FileStatus]])
   extends FileIndex with Logging {
 
-  import PrunedInMemoryFileIndex.parallelizeIfLarge
+  import PartitionSpecFileIndex.parallelizeIfLarge
 
   /** Schema of the partitioning columns, or the empty schema if the table is not partitioned. */
   override def partitionSchema: StructType = partitionSpec.partitionColumns
 
-  private val maybeBatchIdFilter = if (sparkSession.sqlContext.conf.ignoreBatchIdFolders) {
-    Some(BatchIdPathFilter.get)
-  } else {
-    None
-  }
-
-  private val maybeCustomFilter = Option(FileInputFormat.getInputPathFilter(
-    new JobConf(sparkSession.sparkContext.hadoopConfiguration)))
-
-  private val filter: PathFilter = Filters.from(HiddenPathFilter.get)
-      .and(maybeCustomFilter)
-      .and(maybeBatchIdFilter)
-
-  private val listingCache: LoadingCache[Path, Seq[FileStatus]] = CacheBuilder.newBuilder()
-      .maximumSize(sparkSession.sqlContext.conf.filesourcePartitionFileCacheSize)
-      .build(new CacheLoader[Path, Seq[FileStatus]]() {
-        override def load(path: Path): Seq[FileStatus] = {
-          path.getFileSystem(sparkSession.sparkContext.hadoopConfiguration)
-              .listStatus(path, filter)
-              .toSeq
-        }
-      })
 
   /**
    * Returns the list of root input paths from which the catalog will get files. There may be a
@@ -168,7 +190,9 @@ private class PrunedInMemoryFileIndex(
                          dataFilters: Seq[Expression]): Seq[PartitionDirectory] = {
     val partitions = PartitioningAwareFileIndex.prunePartitions(filters, partitionSpec)
     parallelizeIfLarge(partitions).map { partition =>
-      PartitionDirectory(partition.values, listingCache.get(partition.path))
+      val maybeFiles = Option(listingCache.getIfPresent(partition.path))
+      maybeFiles.foreach(files => HiveCatalogMetrics.incrementFileCacheHits(files.size))
+      PartitionDirectory(partition.values, maybeFiles.getOrElse(listingCache.get(partition.path)))
     }.seq
   }
 
@@ -185,7 +209,7 @@ private class PrunedInMemoryFileIndex(
   override def sizeInBytes: Long = 0L
 }
 
-private object PrunedInMemoryFileIndex {
+private object PartitionSpecFileIndex {
   val PARALLEL_LISTING_THRESH = 16 // about 1 second of work for S3
   val WORKER_POOL: ThreadPoolTaskSupport = new ThreadPoolTaskSupport(new ThreadPoolExecutor(
     4, 16, 30, TimeUnit.SECONDS, new LinkedBlockingQueue[Runnable](),
