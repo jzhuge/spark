@@ -70,7 +70,7 @@ class HiveClientSuite(version: String)
     client = init(true)
   }
 
-  test(s"getPartitionsByFilter returns all partitions when $tryDirectSqlKey=false") {
+  ignore(s"getPartitionsByFilter returns all partitions when $tryDirectSqlKey=false") {
     val client = init(false)
     val filteredPartitions = client.getPartitionsByFilter(client.getTable("default", "test"),
       Seq(parseExpression("ds=20170101")))
