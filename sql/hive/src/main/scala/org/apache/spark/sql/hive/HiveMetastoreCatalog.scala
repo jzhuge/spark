@@ -290,7 +290,7 @@ private[hive] class HiveMetastoreCatalog(sparkSession: SparkSession) extends Log
                 userSpecifiedSchema = Option(dataSchema),
                 bucketSpec = bucketSpec,
                 options = options,
-                className = fileType).resolveRelation(),
+                className = fileType).resolveRelation(checkFilesExist = false),
               catalogTable = Some(updatedTable))
 
           cachedDataSourceTables.put(tableIdentifier, created)
