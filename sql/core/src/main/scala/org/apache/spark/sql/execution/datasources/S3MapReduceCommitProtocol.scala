@@ -23,6 +23,7 @@ import com.netflix.bdp.Committers
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
 import org.apache.hadoop.mapreduce.{JobContext, OutputCommitter, TaskAttemptContext, TaskAttemptID, TaskID, TaskType}
+import org.apache.hadoop.mapreduce.task.JobContextImpl
 
 import org.apache.spark.SparkHadoopWriter
 import org.apache.spark.internal.Logging
@@ -75,6 +76,11 @@ class S3MapReduceCommitProtocol(jobId: String, path: String, options: Map[String
     val taskAttemptId = new TaskAttemptID(taskId, 0)
 
     // Set up the configuration object
+    context match {
+      case impl: JobContextImpl =>
+        impl.setJobID(jobId)
+      case _ =>
+    }
     conf.set("mapred.job.id", jobId.toString)
     conf.set("mapred.tip.id", taskAttemptId.getTaskID.toString)
     conf.set("mapred.task.id", taskAttemptId.toString)
