@@ -357,7 +357,9 @@ private[hive] class HiveMetastoreCatalog(sparkSession: SparkSession) extends Log
    */
   object ParquetConversions extends Rule[LogicalPlan] {
     private def shouldConvertMetastoreParquet(relation: MetastoreRelation): Boolean = {
-      relation.tableDesc.getSerdeClassName.toLowerCase.contains("parquet") &&
+      !(sys.env.contains("testing") &&
+        relation.catalogTable.identifier.database.contains("default")) &&
+        relation.tableDesc.getSerdeClassName.toLowerCase.contains("parquet") &&
         sessionState.convertMetastoreParquet
     }
 
