@@ -38,7 +38,12 @@ class S3MapReduceCommitProtocol(jobId: String, path: String, options: Map[String
 
   private def addCommitterOptions(conf: Configuration): Unit = {
     conf.set("s3.multipart.committer.uuid", jobId)
-    conf.set("s3.multipart.committer.conflict-mode", if (isAppend) "append" else "replace")
+    options.get("s3.multipart.committer.conflict-mode") match {
+      case Some(mode) =>
+        conf.set("s3.multipart.committer.conflict-mode", mode)
+      case _ =>
+        conf.set("s3.multipart.committer.conflict-mode", if (isAppend) "append" else "replace")
+    }
   }
 
   private def addBatchCommitterOptions(conf: Configuration): Unit = {

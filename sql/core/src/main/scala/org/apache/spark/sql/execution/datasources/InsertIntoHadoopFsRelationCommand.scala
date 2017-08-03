@@ -115,12 +115,22 @@ case class InsertIntoHadoopFsRelationCommand(
       dynamicPartitionOverwrite.toString)
 
     val committerClass = if (useS3Committer && isS3) {
+      mode match {
+        case SaveMode.ErrorIfExists =>
+          committerOptions.put("s3.multipart.committer.conflict-mode", "fail")
+        case SaveMode.Append | SaveMode.Ignore =>
+          committerOptions.put("s3.multipart.committer.conflict-mode", "append")
+        case SaveMode.Overwrite =>
+          committerOptions.put("s3.multipart.committer.conflict-mode", "replace")
+        case _ =>
+      }
+
       committerOptions.put(
         "spark.sql.s3committer.is-partitioned",
         partitionColumns.nonEmpty.toString)
 
       catalogTable match {
-        case Some(table) =>
+        case Some(table) if sparkSession.sessionState.catalog.tableExists(table.identifier) =>
           val hiveEnv = hadoopConf.get("spark.sql.hive.env", "prod")
           committerOptions.put("s3.multipart.committer.catalog",
             sparkSession.sessionState.conf.metacatCatalog.getOrElse(s"${hiveEnv}hive"))
@@ -153,7 +163,10 @@ case class InsertIntoHadoopFsRelationCommand(
           // For dynamic partition overwrite, do not delete partition directories ahead.
           true
         } else {
-          deleteMatchingPartitions(fs, qualifiedOutputPath, customPartitionLocations, committer)
+          if (!isS3 || !useS3Committer) {
+            // the batch committer doesn't need to remove partitions
+            deleteMatchingPartitions(fs, qualifiedOutputPath, customPartitionLocations, committer)
+          }
           true
         }
       case (SaveMode.Append, _) | (SaveMode.Overwrite, _) | (SaveMode.ErrorIfExists, false) =>
