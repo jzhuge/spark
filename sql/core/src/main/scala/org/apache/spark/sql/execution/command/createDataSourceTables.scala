@@ -17,6 +17,8 @@
 
 package org.apache.spark.sql.execution.command
 
+import org.apache.hadoop.fs.Path
+
 import org.apache.spark.sql._
 import org.apache.spark.sql.catalyst.catalog._
 import org.apache.spark.sql.catalyst.expressions.NamedExpression
@@ -135,10 +137,22 @@ case class CreateDataSourceTableAsSelectCommand(
     assert(table.schema.isEmpty)
 
     val provider = table.provider.get
+    val specifiedProvider = DataSource.lookupDataSource(provider)
     val sessionState = sparkSession.sessionState
     val db = table.identifier.database.getOrElse(sessionState.catalog.getCurrentDatabase)
     val tableIdentWithDB = table.identifier.copy(database = Some(db))
     val tableName = tableIdentWithDB.unquotedString
+
+    val tableLocation = if (table.tableType == CatalogTableType.MANAGED) {
+      Some(sessionState.catalog.defaultTablePath(table.identifier))
+    } else {
+      table.storage.locationUri
+    }
+
+    val isS3 = tableLocation.map(new Path(_).toUri)
+        .flatMap(uri => Option(uri.getScheme))
+        .exists(_.startsWith("s3"))
+    val willUseS3Committer = isS3 && sparkSession.sessionState.conf.useS3OutputCommitter
 
     var createMetastoreTable = false
     // We may need to reorder the columns of the query to match the existing table.
@@ -165,7 +179,6 @@ case class CreateDataSourceTableAsSelectCommand(
 
           // Check if the specified data source match the data source of the existing table.
           val existingProvider = DataSource.lookupDataSource(existingTable.provider.get)
-          val specifiedProvider = DataSource.lookupDataSource(table.provider.get)
           // TODO: Check that options from the resolved relation match the relation that we are
           // inserting into (i.e. using the same compression).
           if (existingProvider != specifiedProvider) {
@@ -227,9 +240,12 @@ case class CreateDataSourceTableAsSelectCommand(
           }
 
         case SaveMode.Overwrite =>
-          sessionState.catalog.dropTable(tableIdentWithDB, ignoreIfNotExists = true, purge = false)
-          // Need to create the table again.
-          createMetastoreTable = true
+          if (!willUseS3Committer) {
+            sessionState.catalog.dropTable(
+              tableIdentWithDB, ignoreIfNotExists = true, purge = false)
+            // Need to create the table again.
+            createMetastoreTable = true
+          }
       }
     } else {
       // The table does not exist. We need to create it in metastore.
@@ -243,12 +259,6 @@ case class CreateDataSourceTableAsSelectCommand(
       case None => data
     }
 
-    val tableLocation = if (table.tableType == CatalogTableType.MANAGED) {
-      Some(sessionState.catalog.defaultTablePath(table.identifier))
-    } else {
-      table.storage.locationUri
-    }
-
     // Create the relation based on the data of df.
     val pathOption = tableLocation.map("path" -> _)
     val dataSource = DataSource(
@@ -259,6 +269,20 @@ case class CreateDataSourceTableAsSelectCommand(
       options = table.storage.properties ++ pathOption,
       catalogTable = Some(table))
 
+    val finalSchema = specifiedProvider.newInstance() match {
+      case format: FileFormat =>
+        df.schema.asNullable
+      case _ =>
+        df.schema
+    }
+
+    if (createMetastoreTable && willUseS3Committer) {
+      val newTable = table.copy(
+        storage = table.storage.copy(locationUri = tableLocation),
+        schema = finalSchema)
+      sessionState.catalog.createTable(newTable, ignoreIfExists = false)
+    }
+
     val result = try {
       dataSource.writeAndRead(mode, df.logicalPlan)
     } catch {
@@ -266,7 +290,11 @@ case class CreateDataSourceTableAsSelectCommand(
         logError(s"Failed to write to table $tableName in $mode mode", ex)
         throw ex
     }
-    if (createMetastoreTable) {
+
+    // if not using the S3 committer, the table must be created after the insert runs.
+    // this is because it uses InsertIntoHadoopFsRelationCommand because the call to
+    // writeAndRead passes the logical plan.
+    if (createMetastoreTable && !willUseS3Committer) {
       val newTable = table.copy(
         storage = table.storage.copy(locationUri = tableLocation),
         // We will use the schema of resolved.relation as the schema of the table (instead of
@@ -278,7 +306,8 @@ case class CreateDataSourceTableAsSelectCommand(
 
     result match {
       case fs: HadoopFsRelation if table.partitionColumnNames.nonEmpty &&
-          sparkSession.sqlContext.conf.manageFilesourcePartitions =>
+          sparkSession.sqlContext.conf.manageFilesourcePartitions &&
+          !willUseS3Committer =>
         // Need to recover partitions into the metastore so our saved data is visible.
         sparkSession.sessionState.executePlan(
           AlterTableRecoverPartitionsCommand(table.identifier)).toRdd
