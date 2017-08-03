@@ -203,6 +203,12 @@ case class InsertIntoHiveTable(
     committerOptions.put("spark.sql.commit-protocol.append", if (overwrite) "false" else "true")
 
     val committerClass = if (useS3Committer) {
+      if (overwrite) {
+        committerOptions.put("s3.multipart.committer.conflict-mode", "replace")
+      } else {
+        committerOptions.put("s3.multipart.committer.conflict-mode", "append")
+      }
+
       committerOptions.put(
         "spark.sql.s3committer.is-partitioned",
         partitionColumnNames.nonEmpty.toString)
