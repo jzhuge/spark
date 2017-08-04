@@ -55,7 +55,7 @@ import org.slf4j.Logger
 import org.apache.spark._
 import org.apache.spark.deploy.SparkHadoopUtil
 import org.apache.spark.internal.Logging
-import org.apache.spark.internal.config.{DYN_ALLOCATION_INITIAL_EXECUTORS, DYN_ALLOCATION_MIN_EXECUTORS, EXECUTOR_INSTANCES}
+import org.apache.spark.internal.config.{ConfigBuilder, DYN_ALLOCATION_INITIAL_EXECUTORS, DYN_ALLOCATION_MIN_EXECUTORS, EXECUTOR_INSTANCES}
 import org.apache.spark.network.util.JavaUtils
 import org.apache.spark.serializer.{DeserializationStream, SerializationStream, SerializerInstance}
 import org.apache.spark.util.logging.RollingFileAppender
@@ -2302,6 +2302,26 @@ private[spark] object Utils extends Logging {
   // Limit of bytes for total size of results (default is 1GB)
   def getMaxResultSize(conf: SparkConf): Long = {
     memoryStringToMb(conf.get("spark.driver.maxResultSize", "1g")).toLong << 20
+  }
+
+  // The maximum number of bytes to pack into a single partition when reading files.
+  // Default is 128MB (parquet.block.size).
+  // Note: The defaults for this parameter are also defined in the sql module. The
+  // default values here should be kept in sync with the defaults in the sql module.
+  def getMaxPartitionBytes(conf: SparkConf): Long = {
+    val maxPartitionBytesDefault = 128*1024*1024L
+    conf.getLong("spark.sql.files.maxPartitionBytes", maxPartitionBytesDefault)
+  }
+
+  // The estimated cost to open a file, measured by the number of bytes could be scanned in
+  // the same time. This is used when putting multiple files into a partition. It's better to
+  // over estimated, then the partitions with small files will be faster than partitions with
+  // bigger files (which is scheduled first. Default is 4MB
+  // Note: The defaults for this parameter are also defined in the sql module. The
+  // default values here should be kept in sync with the defaults in the sql module.
+  def getFileOpenCostBytes(conf: SparkConf): Long = {
+    val fileOpenCostBytesDefault = 4*1024*1024L;
+    conf.getLong("spark.sql.files.openCostInBytes", fileOpenCostBytesDefault)
   }
 
   /**
