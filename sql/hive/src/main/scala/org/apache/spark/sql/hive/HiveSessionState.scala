@@ -41,6 +41,13 @@ private[hive] class HiveSessionState(sparkSession: SparkSession)
    * @param hadoopConf a Hadoop Configuration
    */
   private[sql] class HiveSQLConf(@transient hadoopConf: Configuration) extends SQLConf {
+    sparkSession.sparkContext.getConf.getAll
+        .filter {
+          case (key: String, value: String) => key.startsWith("spark.session.")
+        }.foreach {
+          case (key, value) => setConfString(key.replaceFirst("spark.session.", ""), value)
+        }
+
     /** Return the value of Spark SQL configuration property for the given key. */
     override def getConfString(
         key: String): String = {
