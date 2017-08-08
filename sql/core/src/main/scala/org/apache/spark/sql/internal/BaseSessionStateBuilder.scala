@@ -75,6 +75,9 @@ abstract class BaseSessionStateBuilder(
     sparkConf.getAll.foreach { case (k, v) =>
       sqlConf.setConfString(k, v)
     }
+    sparkConf.getAllWithPrefix("spark.session.").foreach { case (k, v) =>
+      sqlConf.setConfString(k, v)
+    }
   }
 
   /**
