@@ -204,7 +204,7 @@ def main(command_args):
     deploy_mode, command_args = get_value(command_args, '--deploy-mode')
     if not deploy_mode:
         deploy_mode = getenv('DEPLOY_MODE', required=False)
-    if not deploy_mode:
+    if not deploy_mode and command in DEFAULT_DEPLOY_MODE:
         deploy_mode = DEFAULT_DEPLOY_MODE[command]
     if not deploy_mode:
         deploy_mode = 'client'
