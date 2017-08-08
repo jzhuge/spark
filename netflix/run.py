@@ -175,6 +175,10 @@ def main(command_args):
     spark_args.append('--conf')
     spark_args.append('spark.genie.id=%s' % get_genie_job_id(current_job_working_dir))
 
+    # add a default log path
+    spark_args.append('--conf')
+    spark_args.append('spark.log.path=spark.log')
+
     # DEPRECATED: remove this when spark-cluster.properties contains these values.
     # set default command line args
     history_server_address = get_history_server_address(mapred_site)
