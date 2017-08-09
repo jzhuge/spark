@@ -85,4 +85,5 @@ cp bin/dsespark-* spark-${BUILD_VERSION}/bin/
 # Update tarball
 tar -czf spark-${BUILD_VERSION}.tgz spark-${BUILD_VERSION}
 s3cp -k BDP_JENKINS_KEY spark-${BUILD_VERSION}.tgz s3://netflix-bigdataplatform/spark-builds/${BUILD_VERSION}/
+s3cp -k BDP_JENKINS_KEY spark-${BUILD_VERSION}.tgz s3://netflix-bigdataplatform/spark-builds/${BUILD_VERSION}/spark-${BUILD_VERSION}-${BUILD_NUMBER}.tgz
 
