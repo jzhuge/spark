@@ -156,6 +156,13 @@ def main(command_args):
     # args should start with the name of the executable
     spark_args = [spark_command]
 
+    # this is special handling for the hacky way pyspark-kernel works
+    # it doesn't pass the script name as the first arg to spark-shell
+    # instead, it runs its own python script.
+    if command.startswith('../../../../../../../../'):
+        spark_executable = '%s/bin/%s' % (spark_home, command)
+        spark_args = [command]
+
     # add the Spark properties file
     spark_args.append('--properties-file')
     spark_args.append(os.path.join(spark_home, 'conf', 'spark-defaults.conf'))
