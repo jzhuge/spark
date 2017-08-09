@@ -225,7 +225,7 @@ object SQLConf {
       "uncompressed, snappy, gzip, lzo.")
     .stringConf
     .transform(_.toLowerCase())
-    .checkValues(Set("uncompressed", "snappy", "gzip", "lzo"))
+    .checkValues(Set("uncompressed", "snappy", "gzip", "lzo", "brotli"))
     .createWithDefault("snappy")
 
   val PARQUET_FILTER_PUSHDOWN_ENABLED = SQLConfigBuilder("spark.sql.parquet.filterPushdown")
