@@ -36,6 +36,7 @@ import org.apache.spark.sql.execution.datasources.parquet.{ParquetFileFormat, Pa
 import org.apache.spark.sql.hive.orc.OrcFileFormat
 import org.apache.spark.sql.internal.SQLConf.HiveCaseSensitiveInferenceMode._
 import org.apache.spark.sql.types._
+import org.apache.spark.util.Utils
 
 /**
  * Legacy catalog for interacting with the Hive metastore.
@@ -357,8 +358,12 @@ private[hive] class HiveMetastoreCatalog(sparkSession: SparkSession) extends Log
    */
   object ParquetConversions extends Rule[LogicalPlan] {
     private def shouldConvertMetastoreParquet(relation: MetastoreRelation): Boolean = {
-      !(sys.env.contains("testing") &&
-        relation.catalogTable.identifier.database.contains("default")) &&
+      (Utils.isTesting ||
+        (relation.catalogTable.identifier.database match {
+        case Some("default") => false
+        case Some("ursula") => false
+        case _ => true
+      })) &&
         relation.tableDesc.getSerdeClassName.toLowerCase.contains("parquet") &&
         sessionState.convertMetastoreParquet
     }
