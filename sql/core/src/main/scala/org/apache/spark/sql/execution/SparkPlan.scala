@@ -221,7 +221,7 @@ abstract class SparkPlan extends QueryPlan[SparkPlan] with Logging with Serializ
    * UnsafeRow is highly compressible (at least 8 bytes for any column), the byte array is also
    * compressed.
    */
-  private def getByteArrayRdd(n: Int = -1): RDD[Array[Byte]] = {
+  private def getByteArrayRdd(n: Int = -1): RDD[(Long, Array[Byte])] = {
     execute().mapPartitionsInternal { iter =>
       var count = 0
       val buffer = new Array[Byte](4 << 10)  // 4K
@@ -237,7 +237,7 @@ abstract class SparkPlan extends QueryPlan[SparkPlan] with Logging with Serializ
       out.writeInt(-1)
       out.flush()
       out.close()
-      Iterator(bos.toByteArray)
+      Iterator((count, bos.toByteArray))
     }
   }
 
@@ -269,7 +269,7 @@ abstract class SparkPlan extends QueryPlan[SparkPlan] with Logging with Serializ
    * Runs this query returning the result as an array.
    */
   def executeCollect(): Array[InternalRow] = {
-    val byteArrayRdd = getByteArrayRdd()
+    val byteArrayRdd = getByteArrayRdd().map(_._2)
 
     val results = ArrayBuffer[InternalRow]()
     byteArrayRdd.collect().foreach { bytes =>
@@ -278,13 +278,20 @@ abstract class SparkPlan extends QueryPlan[SparkPlan] with Logging with Serializ
     results.toArray
   }
 
+  def executeCollectIterator(): (Long, Iterator[InternalRow]) = {
+    val countsAndBytes = getByteArrayRdd().collect()
+    val total = countsAndBytes.map(_._1).sum
+    val rows = countsAndBytes.iterator.map(_._2).flatMap(decodeUnsafeRows)
+    (total, rows)
+  }
+
   /**
    * Runs this query returning the result as an iterator of InternalRow.
    *
    * Note: this will trigger multiple jobs (one for each partition).
    */
   def executeToIterator(): Iterator[InternalRow] = {
-    getByteArrayRdd().toLocalIterator.flatMap(decodeUnsafeRows)
+    getByteArrayRdd().toLocalIterator.map(_._2).flatMap(decodeUnsafeRows)
   }
 
   /**
@@ -305,7 +312,7 @@ abstract class SparkPlan extends QueryPlan[SparkPlan] with Logging with Serializ
       return new Array[InternalRow](0)
     }
 
-    val childRDD = getByteArrayRdd(n)
+    val childRDD = getByteArrayRdd(n).map(_._2)
 
     val buf = new ArrayBuffer[InternalRow]
     val totalParts = childRDD.partitions.length

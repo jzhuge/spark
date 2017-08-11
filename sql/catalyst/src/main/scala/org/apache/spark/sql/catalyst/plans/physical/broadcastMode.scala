@@ -26,6 +26,8 @@ import org.apache.spark.sql.catalyst.InternalRow
 trait BroadcastMode {
   def transform(rows: Array[InternalRow]): Any
 
+  def transform(rows: Iterator[InternalRow], sizeHint: Option[Long]): Any
+
   /**
    * Returns true iff this [[BroadcastMode]] generates the same result as `other`.
    */
@@ -38,6 +40,10 @@ trait BroadcastMode {
 case object IdentityBroadcastMode extends BroadcastMode {
   // TODO: pack the UnsafeRows into single bytes array.
   override def transform(rows: Array[InternalRow]): Array[InternalRow] = rows
+
+  override def transform(
+      rows: Iterator[InternalRow],
+      sizeHint: Option[Long]): Array[InternalRow] = rows.toArray
 
   override def compatibleWith(other: BroadcastMode): Boolean = {
     this eq other

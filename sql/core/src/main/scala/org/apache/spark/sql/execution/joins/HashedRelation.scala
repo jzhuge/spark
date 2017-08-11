@@ -829,7 +829,18 @@ private[execution] case class HashedRelationBroadcastMode(key: Seq[Expression])
   extends BroadcastMode {
 
   override def transform(rows: Array[InternalRow]): HashedRelation = {
-    HashedRelation(rows.iterator, canonicalizedKey, rows.length)
+    transform(rows.iterator, Some(rows.length))
+  }
+
+  override def transform(
+      rows: Iterator[InternalRow],
+      sizeHint: Option[Long]): HashedRelation = {
+    sizeHint match {
+      case Some(numRows) =>
+        HashedRelation(rows, canonicalizedKey, numRows.toInt)
+      case None =>
+        HashedRelation(rows, canonicalizedKey)
+    }
   }
 
   private lazy val canonicalizedKey: Seq[Expression] = {
