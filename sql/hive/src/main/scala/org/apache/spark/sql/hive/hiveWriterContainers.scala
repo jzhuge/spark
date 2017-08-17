@@ -24,7 +24,7 @@ import scala.collection.JavaConverters._
 import scala.collection.mutable
 
 import com.netflix.dse.mds.PartitionMetrics
-import com.netflix.dse.mds.data.DataField
+import com.netflix.dse.mds.data.{DataField, DataTuple}
 import org.apache.commons.configuration.{BaseConfiguration => CommonsConf}
 import org.apache.hadoop.fs.Path
 import org.apache.hadoop.hive.common.FileUtils
@@ -161,10 +161,14 @@ private[hive] class SparkHiveWriterContainer(
   @transient protected lazy val metricHelper = new HivePartitionMetricHelper()
 
   protected def newMetrics(schema: Seq[Attribute]): PartitionMetrics = {
-    val pm = new PartitionMetrics(metricClasses, fieldMetricClasses, metricHelper)
-    pm.setSchema(schema.map(c => new DataField(c.name, c.dataType.simpleString)).asJava)
-    pm.initialize(SparkHadoopWriterUtils.toCommonsConf(conf.value))
-    pm
+    if (conf.value.getBoolean("spark.sql.partition.metrics.enabled", true)) {
+      val pm = new PartitionMetrics(metricClasses, fieldMetricClasses, metricHelper)
+      pm.setSchema(schema.map(c => new DataField(c.name, c.dataType.simpleString)).asJava)
+      pm.initialize(SparkHadoopWriterUtils.toCommonsConf(conf.value))
+      pm
+    } else {
+      new DummyMetrics()
+    }
   }
 
   def driverSideSetup() {
@@ -565,6 +569,10 @@ private[spark] class SparkHiveDynamicPartitionWriterContainer(
         outputMetricsAndBytesWrittenCallback, recordsWritten, force = true)
     })
   }
+}
+
+private class DummyMetrics extends PartitionMetrics {
+  override def update(t: DataTuple): Unit = {}
 }
 
 // from 9c419698fe110a805570031cac3387a51957d9d1
