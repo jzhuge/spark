@@ -22,6 +22,8 @@ import java.util.{Date, Locale, Properties, UUID}
 
 import scala.collection.JavaConverters._
 
+import org.apache.hadoop.fs.Path
+
 import org.apache.spark.annotation.InterfaceStability
 import org.apache.spark.sql.catalyst.TableIdentifier
 import org.apache.spark.sql.catalyst.analysis.{EliminateSubqueryAliases, UnresolvedRelation}
@@ -462,16 +464,58 @@ final class DataFrameWriter[T] private[sql](ds: Dataset[T]) {
 
         // Drop the existing table
         catalog.dropTable(tableIdentWithDB, ignoreIfNotExists = true, purge = false)
-        createTable(tableIdentWithDB)
+        createTable(tableIdentWithDB, tableExists)
         // Refresh the cache of the table in the catalog.
         catalog.refreshTable(tableIdentWithDB)
 
-      case _ => createTable(tableIdent)
+      case _ => createTable(tableIdent, tableExists)
     }
   }
 
-  private def createTable(tableIdent: TableIdentifier): Unit = {
-    val storage = DataSource.buildStorageFormatFromOptions(extraOptions.toMap)
+  def isHiveDefaultSource(sparkSession: SparkSession): Boolean = {
+    sparkSession.sessionState.conf.defaultDataSourceName == DDLUtils.HIVE_PROVIDER
+  }
+
+  private def createTable(tableIdent: TableIdentifier, tableExists: Boolean): Unit = {
+    // whether to make Parquet tables use the Hive provider
+    val convertParquet = isHiveDefaultSource(df.sparkSession) && source.toLowerCase == "parquet"
+    val isHive = source.toLowerCase == DDLUtils.HIVE_PROVIDER
+    if (isHive || convertParquet) {
+      assertNotBucketed("saveAsTable")
+    }
+
+    val existingTable = if (tableExists) {
+      Some(df.sparkSession.sessionState.catalog.getTableMetadata(tableIdent))
+    } else {
+      None
+    }
+
+    val storage = if (tableExists) {
+      existingTable.get.storage
+    } else if (isHive || convertParquet) {
+      // when hive is the source, the data format is still Parquet
+      source = "hive" // signals HiveStrategies to create the physical plan
+      DataSource.buildStorageFormatFromOptions(extraOptions.toMap).copy(
+        inputFormat = Some("org.apache.hadoop.hive.ql.io.parquet.MapredParquetInputFormat"),
+        outputFormat = Some("org.apache.hadoop.hive.ql.io.parquet.MapredParquetOutputFormat"),
+        serde = Some("org.apache.hadoop.hive.ql.io.parquet.serde.ParquetHiveSerDe")
+      )
+    } else {
+      DataSource.buildStorageFormatFromOptions(extraOptions.toMap)
+    }
+
+    val hasLocation = storage.locationUri.isDefined
+    val isS3 = storage.locationUri
+      .map(new Path(_))
+      .flatMap(p => Option(p.toUri.getScheme))
+      .exists(_.startsWith("s3"))
+    val isPartitioned = partitioningColumns.exists(_.nonEmpty)
+    if ((isHive || convertParquet) && isPartitioned && hasLocation && !isS3) {
+      // saveAsTable only works with the S3 committer to update partitions
+      throw new AnalysisException(
+        "Cannot create partitioned hive serde table with saveAsTable API")
+    }
+
     val tableType = if (storage.locationUri.isDefined) {
       CatalogTableType.EXTERNAL
     } else {
