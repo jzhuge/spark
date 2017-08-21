@@ -52,7 +52,8 @@ private[hive] trait HiveStrategies {
 
         val location = table.hiveQlTable.getDataLocation
         val staticParts = partition.filter(kv => kv._2.isDefined).mapValues(_.get)
-        val partitionAttrs = table.catalogTable.partitionSchema.toAttributes
+        val partitionAttrs = child.resolve(
+          table.catalogTable.partitionSchema, sparkSession.sessionState.conf.resolver)
         val mode = if (overwrite.enabled) SaveMode.Overwrite else SaveMode.Append
         val refreshFunc = (arg: Any) => {
           sparkSession.catalog.refreshTable(table.catalogTable.identifier.toString)
