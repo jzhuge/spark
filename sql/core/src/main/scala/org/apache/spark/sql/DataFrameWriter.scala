@@ -430,12 +430,13 @@ final class DataFrameWriter[T] private[sql](ds: Dataset[T]) {
           CatalogTableType.MANAGED
         }
 
+        val hasLocation = storage.locationUri.isDefined
         val isS3 = storage.locationUri
             .map(new Path(_))
             .flatMap(p => Option(p.toUri.getScheme))
             .exists(_.startsWith("s3"))
         val isPartitioned = partitioningColumns.exists(_.nonEmpty)
-        if ((isHive || convertParquet) && isPartitioned && !isS3) {
+        if ((isHive || convertParquet) && isPartitioned && hasLocation && !isS3) {
           // saveAsTable only works with the S3 committer to update partitions
           throw new AnalysisException(
             "Cannot create partitioned hive serde table with saveAsTable API")
