@@ -17,6 +17,8 @@
 
 package org.apache.spark.sql.hive
 
+import org.apache.hadoop.fs.Path
+
 import org.apache.spark.sql._
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.planning._
@@ -82,7 +84,7 @@ private[hive] trait HiveStrategies {
         // Currently we will never hit this branch, as SQL string API can only use `Ignore` or
         // `ErrorIfExists` mode, and `DataFrameWriter.saveAsTable` doesn't support hive serde
         // tables yet.
-        if (mode == SaveMode.Append || mode == SaveMode.Overwrite) {
+        if ((mode == SaveMode.Append || mode == SaveMode.Overwrite) && !isS3(tableDesc.location)) {
           throw new AnalysisException(
             "CTAS for hive serde tables does not support append or overwrite semantics.")
         }
@@ -99,6 +101,10 @@ private[hive] trait HiveStrategies {
 
     private def isS3(table: MetastoreRelation): Boolean = {
       Option(table.hiveQlTable.getDataLocation.toUri.getScheme).exists(_.startsWith("s3"))
+    }
+
+    private def isS3(location: String): Boolean = {
+      Option(new Path(location).toUri.getScheme).exists(_.startsWith("s3"))
     }
 
     def isParquet(table: MetastoreRelation): Boolean = {
