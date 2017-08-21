@@ -1183,7 +1183,7 @@ class MetastoreDataSourcesSuite extends QueryTest with SQLTestUtils with TestHiv
     }
   }
 
-  test("saveAsTable API - format hive") {
+  ignore("saveAsTable API - format hive") {
     val tableName = "tab1"
     withTable(tableName) {
       val e = intercept[AnalysisException] {
