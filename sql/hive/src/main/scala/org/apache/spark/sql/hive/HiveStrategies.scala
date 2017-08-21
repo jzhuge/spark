@@ -24,7 +24,8 @@ import org.apache.spark.sql.catalyst.plans._
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
 import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.command.ExecutedCommandExec
-import org.apache.spark.sql.execution.datasources.CreateTable
+import org.apache.spark.sql.execution.datasources.{CreateTable, InsertIntoHadoopFsRelationCommand}
+import org.apache.spark.sql.execution.datasources.parquet.ParquetFileFormat
 import org.apache.spark.sql.hive.execution._
 
 private[hive] trait HiveStrategies {
@@ -43,7 +44,26 @@ private[hive] trait HiveStrategies {
   }
 
   object DataSinks extends Strategy {
+
     def apply(plan: LogicalPlan): Seq[SparkPlan] = plan match {
+      case logical.InsertIntoTable(
+          table: MetastoreRelation, partition, child, overwrite, _, options)
+          if isS3(table) && isParquet(table) && isHiveDefaultSource(sparkSession) =>
+
+        val location = table.hiveQlTable.getDataLocation
+        val staticParts = partition.filter(kv => kv._2.isDefined).mapValues(_.get)
+        val partitionAttrs = table.catalogTable.partitionSchema.toAttributes
+        val mode = if (overwrite.enabled) SaveMode.Overwrite else SaveMode.Append
+        val refreshFunc = (arg: Any) => {
+          sparkSession.catalog.refreshTable(table.catalogTable.identifier.toString)
+        }
+
+        val cmd = InsertIntoHadoopFsRelationCommand(
+          location, staticParts, Map.empty, partitionAttrs, None, new ParquetFileFormat(),
+          refreshFunc, options, child, mode, Some(table.catalogTable))
+
+        ExecutedCommandExec(cmd, cmd.children.map(planLater)) :: Nil
+
       case logical.InsertIntoTable(
           table: MetastoreRelation, partition, child, overwrite, ifNotExists, _) =>
         InsertIntoHiveTable(
@@ -74,6 +94,18 @@ private[hive] trait HiveStrategies {
         ExecutedCommandExec(cmd, cmd.children.map(planLater)) :: Nil
 
       case _ => Nil
+    }
+
+    private def isS3(table: MetastoreRelation): Boolean = {
+      Option(table.hiveQlTable.getDataLocation.toUri.getScheme).exists(_.startsWith("s3"))
+    }
+
+    def isParquet(table: MetastoreRelation): Boolean = {
+      table.tableDesc.getSerdeClassName.toLowerCase.contains("parquet")
+    }
+
+    def isHiveDefaultSource(sparkSession: SparkSession): Boolean = {
+      sparkSession.sessionState.conf.defaultDataSourceName == "hive"
     }
   }
 
