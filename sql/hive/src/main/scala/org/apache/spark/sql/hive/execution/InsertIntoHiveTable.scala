@@ -192,7 +192,9 @@ case class InsertIntoHiveTable(
       case _ => // do nothing since table has no bucketing
     }
 
-    val partitionAttributes = partitionColumnNames.takeRight(numDynamicPartitions).map { name =>
+    val numPartitions =
+      if (useS3Committer) numStaticPartitions + numDynamicPartitions else numDynamicPartitions
+    val partitionAttributes = partitionColumnNames.takeRight(numPartitions).map { name =>
       query.resolve(name :: Nil, sparkSession.sessionState.analyzer.resolver).getOrElse {
         throw new AnalysisException(
           s"Unable to resolve $name given [${query.output.map(_.name).mkString(", ")}]")
