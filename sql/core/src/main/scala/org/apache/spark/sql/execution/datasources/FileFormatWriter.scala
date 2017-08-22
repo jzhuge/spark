@@ -148,7 +148,7 @@ object FileFormatWriter extends Logging {
     committer.setupJob(job)
 
     try {
-      val rdd = if (orderingMatched) {
+      val rdd = if (orderingMatched || sparkSession.sqlContext.conf.hiveForceSortedWrite) {
         plan.execute()
       } else {
         SortExec(
