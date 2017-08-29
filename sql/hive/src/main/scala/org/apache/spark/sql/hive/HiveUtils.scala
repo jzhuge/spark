@@ -87,6 +87,13 @@ private[spark] object HiveUtils extends Logging {
     .booleanConf
     .createWithDefault(true)
 
+  val CONVERT_METASTORE_PARQUET_WRITE = SQLConfigBuilder(
+    "spark.sql.hive.write.convertMetastoreParquet")
+      .doc("When set to true, Spark SQL will use the native write path for parquet tables " +
+          "instead of Hive.")
+      .booleanConf
+      .createWithDefault(true)
+
   val CONVERT_METASTORE_PARQUET_WITH_SCHEMA_MERGING =
     SQLConfigBuilder("spark.sql.hive.convertMetastoreParquet.mergeSchema")
       .doc("When true, also tries to merge possibly different but compatible Parquet schemas in " +

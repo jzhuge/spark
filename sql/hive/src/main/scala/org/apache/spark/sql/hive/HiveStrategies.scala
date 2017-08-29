@@ -50,7 +50,7 @@ private[hive] trait HiveStrategies {
     def apply(plan: LogicalPlan): Seq[SparkPlan] = plan match {
       case logical.InsertIntoTable(
           table: MetastoreRelation, partition, child, overwrite, _, options)
-          if isS3(table) && isParquet(table) && isHiveDefaultSource(sparkSession) =>
+          if isS3(table) && isParquet(table) && convertHiveParquetWrite(sparkSession) =>
 
         val location = table.hiveQlTable.getDataLocation
         val staticParts = partition.filter(kv => kv._2.isDefined).mapValues(_.get)
@@ -111,8 +111,8 @@ private[hive] trait HiveStrategies {
       table.tableDesc.getSerdeClassName.toLowerCase.contains("parquet")
     }
 
-    def isHiveDefaultSource(sparkSession: SparkSession): Boolean = {
-      sparkSession.sessionState.conf.defaultDataSourceName == "hive"
+    def convertHiveParquetWrite(sparkSession: SparkSession): Boolean = {
+      sparkSession.sessionState.conf.getConf(HiveUtils.CONVERT_METASTORE_PARQUET_WRITE)
     }
   }
 
