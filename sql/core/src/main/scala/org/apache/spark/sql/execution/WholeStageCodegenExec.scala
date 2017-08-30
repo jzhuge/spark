@@ -609,8 +609,10 @@ case class WholeStageCodegenExec(child: SparkPlan)(val codegenStageId: Int)
 
     val rdds = child.asInstanceOf[CodegenSupport].inputRDDs()
     assert(rdds.size <= 2, "Up to two input RDDs can be supported")
+    val logMsg = s"Compiling stage for plan: $child"
     if (rdds.length == 1) {
       rdds.head.mapPartitionsWithIndex { (index, iter) =>
+        log.info(logMsg)
         val (clazz, _) = CodeGenerator.compile(cleanedSource)
         val buffer = clazz.generate(references).asInstanceOf[BufferedRowIterator]
         buffer.init(index, Array(iter))
@@ -629,6 +631,7 @@ case class WholeStageCodegenExec(child: SparkPlan)(val codegenStageId: Int)
         Iterator((leftIter, rightIter))
         // a small hack to obtain the correct partition index
       }.mapPartitionsWithIndex { (index, zippedIter) =>
+        log.info(logMsg)
         val (leftIter, rightIter) = zippedIter.next()
         val (clazz, _) = CodeGenerator.compile(cleanedSource)
         val buffer = clazz.generate(references).asInstanceOf[BufferedRowIterator]
