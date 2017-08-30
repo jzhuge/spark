@@ -108,15 +108,6 @@ def get_genie_job_id(current_job_working_dir):
         return os.path.basename(current_job_working_dir)
 
 
-def get_jars(spark_conf_dir, args):
-    """Return all jars to ship (user's jars + default jars shipped with all jobs)"""
-    default_jars = ','.join(["s3://atlas.us-east-1.prod.netflix.net/jars/atlas-hive.jar"])
-    user_jars, remaining = get_value(args, '--jars')
-    if user_jars:
-        return ('%s,%s' % (default_jars, user_jars), remaining)
-    else:
-        return (default_jars, remaining)
-
 def get_driver_memory(mode):
     mem_mb = DEFAULT_DRIVER_MEM_MB[mode]
 
@@ -201,11 +192,6 @@ def main(command_args):
              spark_args.append('spark.yarn.am.nodeLabelExpression=datanode')
              spark_args.append('--conf')
              spark_args.append('spark.yarn.executor.nodeLabelExpression=datanode||nodemanager')
-
-    # add Jars
-    jars, command_args = get_jars(spark_conf_dir, command_args)
-    spark_args.append('--jars')
-    spark_args.append(jars)
 
     # set deploy mode
     deploy_mode, command_args = get_value(command_args, '--deploy-mode')

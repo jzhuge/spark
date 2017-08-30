@@ -74,20 +74,6 @@ class SparkSubmitEnvironment(object):
         yarn_site_file = '%s/yarn-site.xml' % self.hadoop_conf_dir
         return get_property_value_from_xml(yarn_site_file, 'aws.jobflowid', False) is None
 
-    def get_all_jars_to_ship(self, args):
-        """Return all jars to ship (user's jars + default jars shipped with all jobs)"""
-
-        default_jars = ','.join(["s3://atlas.us-east-1.prod.netflix.net/jars/atlas-hive.jar"])
-
-        for index, arg in enumerate(args):
-            try:
-                if arg == '--jars':
-                    user_jars = args[index + 1]
-                    return '%s,%s' % (default_jars, user_jars)
-            except IndexError:
-                raise Exception('Missing value for --jars')
-        return default_jars
-
     def get_hadoop_classpath(self):
         return commands.getoutput('%s/bin/hadoop classpath' % self.hadoop_home)
 
@@ -169,14 +155,6 @@ def main(command_args):
              spark_shell_args.append('spark.yarn.am.nodeLabelExpression=datanode')
              spark_shell_args.append('--conf')
              spark_shell_args.append('spark.yarn.executor.nodeLabelExpression=datanode||nodemanager') 
-
-    jars = spark_env.get_all_jars_to_ship(command_args)
-    if '--jars' in command_args:
-        index = command_args.index('--jars')
-        command_args[index + 1] = jars
-    else:
-        spark_shell_args.append('--jars')
-        spark_shell_args.append(jars)
 
     spark_shell_args.append('--driver-class-path')
     spark_shell_args.append(spark_env.get_spark_driver_classpath())

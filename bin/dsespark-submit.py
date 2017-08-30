@@ -102,15 +102,6 @@ class SparkSubmitEnvironment(object):
         yarn_site_file = '%s/yarn-site.xml' % self.hadoop_conf_dir
         return get_property_value_from_xml(yarn_site_file, 'aws.jobflowid', False) is None
 
-    def get_all_jars_to_ship(self, args):
-        """Return all jars to ship (user's jars + default jars shipped with all jobs)"""
-        default_jars = ','.join(["s3://atlas.us-east-1.prod.netflix.net/jars/atlas-hive.jar"])
-        user_jars, remaining = get_value(args, '--jars')
-        if user_jars:
-            return ('%s,%s' % (default_jars, user_jars), remaining)
-        else:
-            return (default_jars, remaining)
-
     def __str__(self):
         return 'SparkSubmitEnvironment = {spark_home=%s,' \
                'spark_conf_dir=%s,' \
@@ -177,10 +168,6 @@ def main(command_args):
 
     spark_submit_args.append('--conf')
     spark_submit_args.append('spark.s3.use.instance.credentials=true')
-
-    jars, command_args = spark_env.get_all_jars_to_ship(command_args)
-    spark_submit_args.append('--jars')
-    spark_submit_args.append(jars)
 
     spark_submit_args.append('--deploy-mode')
     spark_submit_args.append('cluster')
