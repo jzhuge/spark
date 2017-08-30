@@ -367,8 +367,10 @@ case class WholeStageCodegenExec(child: SparkPlan) extends UnaryExecNode with Co
 
     val rdds = child.asInstanceOf[CodegenSupport].inputRDDs()
     assert(rdds.size <= 2, "Up to two input RDDs can be supported")
+    val logMsg = s"Compiling stage for plan: $child"
     if (rdds.length == 1) {
       rdds.head.mapPartitionsWithIndex { (index, iter) =>
+        WholeStageCodegenExec.this.logInfo(logMsg)
         val clazz = CodeGenerator.compile(cleanedSource)
         val buffer = clazz.generate(references).asInstanceOf[BufferedRowIterator]
         buffer.init(index, Array(iter))
@@ -387,6 +389,7 @@ case class WholeStageCodegenExec(child: SparkPlan) extends UnaryExecNode with Co
         Iterator((leftIter, rightIter))
         // a small hack to obtain the correct partition index
       }.mapPartitionsWithIndex { (index, zippedIter) =>
+        WholeStageCodegenExec.this.logInfo(logMsg)
         val (leftIter, rightIter) = zippedIter.next()
         val clazz = CodeGenerator.compile(cleanedSource)
         val buffer = clazz.generate(references).asInstanceOf[BufferedRowIterator]
