@@ -704,6 +704,12 @@ class DataFrameWriter(OptionUtils):
         else:
             self._jwrite.save(path)
 
+    def byName(self):
+        """Enables by-name column resolution for writing.
+        """
+        self._jwrite.byName()
+        return self
+
     @since(1.4)
     def insertInto(self, tableName, overwrite=False):
         """Inserts the content of the :class:`DataFrame` to the specified table.
