@@ -323,6 +323,24 @@
   <dependencyManagement>
     <dependencies>
       <dependency>
+        <groupId>com.netflix.bdp</groupId>
+        <artifactId>bdp-fs</artifactId>
+        <version>0.8.1</version>
+        <scope>compile</scope>
+      </dependency>
+      <dependency>
+        <groupId>com.netflix.bdp</groupId>
+        <artifactId>metrics</artifactId>
+        <version>0.2.5</version>
+        <scope>compile</scope>
+      </dependency>
+      <dependency>
+        <groupId>netflix</groupId>
+        <artifactId>atlas-hive</artifactId>
+        <version>1.2.9</version>
+        <scope>compile</scope>
+      </dependency>
+      <dependency>
         <groupId>org.apache.spark</groupId>
         <artifactId>spark-tags_${scala.binary.version}</artifactId>
         <version>${project.version}</version>
@@ -806,13 +824,13 @@
         <groupId>mysql</groupId>
         <artifactId>mysql-connector-java</artifactId>
         <version>5.1.38</version>
-        <scope>test</scope>
+        <scope>compile</scope>
       </dependency>
       <dependency>
         <groupId>org.postgresql</groupId>
         <artifactId>postgresql</artifactId>
         <version>9.4.1207.jre7</version>
-        <scope>test</scope>
+        <scope>compile</scope>
       </dependency>
       <dependency>
         <groupId>org.apache.curator</groupId>
