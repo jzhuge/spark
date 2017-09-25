@@ -30,9 +30,19 @@ import org.apache.spark.util.Utils
 class SparkPlanInfo(
     val nodeName: String,
     val simpleString: String,
+    val details: Map[String, Any],
     val children: Seq[SparkPlanInfo],
     val metadata: Map[String, String],
     val metrics: Seq[SQLMetricInfo]) {
+
+  def this(
+      nodeName: String,
+      simpleString: String,
+      children: Seq[SparkPlanInfo],
+      metadata: Map[String, String],
+      metrics: Seq[SQLMetricInfo]) = {
+    this(nodeName, simpleString, Map.empty, children, metadata, metrics)
+  }
 
   override def hashCode(): Int = {
     // hashCode of simpleString should be good enough to distinguish the plans from each other
