@@ -177,22 +177,6 @@ def main(command_args):
     spark_args.append('--conf')
     spark_args.append('spark.log.path=spark.log')
 
-    # DEPRECATED: remove this when spark-cluster.properties contains these values.
-    # set default command line args
-    history_server_address = get_history_server_address(mapred_site)
-    if history_server_address:
-        spark_args.append('--conf')
-        spark_args.append('spark.yarn.historyServer.address=%s:18080' % history_server_address)
-
-    # DEPRECATED
-    if is_spinnaker_cluster(yarn_site):
-        node_labels_enabled = get_property_value_from_xml(yarn_site, 'yarn.node-labels.enabled', False)
-        if node_labels_enabled == 'true':
-             spark_args.append('--conf')
-             spark_args.append('spark.yarn.am.nodeLabelExpression=datanode')
-             spark_args.append('--conf')
-             spark_args.append('spark.yarn.executor.nodeLabelExpression=datanode||nodemanager')
-
     # set deploy mode
     deploy_mode, command_args = get_value(command_args, '--deploy-mode')
     if not deploy_mode:
