@@ -22,6 +22,7 @@ Wrapper for spark-submit script.
 import sys
 import os
 import os.path
+import shutil
 import commands
 import xml.etree.ElementTree as xml_parser
 
@@ -133,6 +134,12 @@ def main(command_args):
     hadoop_conf_dir = getenv('HADOOP_CONF_DIR')
     mapred_site = '%s/mapred-site.xml' % hadoop_conf_dir
     yarn_site = '%s/yarn-site.xml' % hadoop_conf_dir
+
+    # copy hive-site.xml into jars if it is present.
+    # adding this to Jars ensures that it is in the driver's classpath.
+    hive_site = '%s/hive-site.xml' % hadoop_conf_dir
+    if os.path.exists(hive_site):
+        shutil.copy(hive_site, '%s/jars/hive-site.xml' % spark_home)
 
     current_job_tmp_dir = getenv('CURRENT_JOB_TMP_DIR')
     current_job_working_dir = getenv('CURRENT_JOB_WORKING_DIR')
