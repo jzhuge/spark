@@ -204,8 +204,16 @@ def main(command_args):
     spark_args.append('--deploy-mode')
     spark_args.append(deploy_mode)
 
+    # get the command args file
+    command_args_file, command_args = get_value(command_args, '--command-arg-file')
+
     # last, add user's command line args
     spark_args.extend(command_args[1:])
+
+    # add command-line args for the app from the command args file
+    if command_args_file and os.path.exists(command_args_file):
+        with open(command_args_file) as arg_file:
+            spark_args.extend([ arg[:-1] if arg.endswith('\n') else arg for arg in arg_file.readlines() ])
 
     # set the temp folder for all JVMs
     java_options = [getenv('_JAVA_OPTIONS', required=False)]
