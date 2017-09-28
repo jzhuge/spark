@@ -206,6 +206,16 @@ class Dataset[T] private[sql](
    */
   private[sql] implicit val exprEnc: ExpressionEncoder[T] = encoderFor(encoder)
 
+  /**
+   * Encoder is used mostly as a container of serde expressions in Dataset.  We build logical
+   * plans by these serde expressions and execute it within the query framework.  However, for
+   * performance reasons we may want to use encoder as a function to deserialize internal rows to
+   * custom objects, e.g. collect.  Here we resolve and bind the encoder so that we can call its
+   * `fromRow` method later.
+   */
+  private val boundEnc =
+    exprEnc.resolveAndBind(logicalPlan.output, sparkSession.sessionState.analyzer)
+
   // The deserializer expression which can be used to build a projection and turn rows to objects
   // of type T, after collecting rows to the driver side.
   private lazy val deserializer =
@@ -2915,6 +2925,13 @@ class Dataset[T] private[sql](
    * @since 1.6.0
    */
   def cache(): this.type = persist()
+
+  def materialize(): Dataset[T] = withAction("materialize", queryExecution) { _ =>
+    withNewExecutionId {
+      var materializedRDD = queryExecution.toRdd.materialize().map(boundEnc.fromRow)
+      sparkSession.createDataset(materializedRDD)
+    }
+  }
 
   /**
    * Persist this Dataset with the given storage level.
