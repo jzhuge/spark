@@ -2515,6 +2515,13 @@ class Dataset[T] private[sql](
    */
   def cache(): this.type = persist()
 
+  def materialize(): Dataset[T] = withCallback("materialize", toDF()) { _ =>
+    withNewExecutionId {
+      var materializedRDD = queryExecution.toRdd.materialize().map(boundEnc.fromRow)
+      sparkSession.createDataset(materializedRDD)
+    }
+  }
+
   /**
    * Persist this Dataset with the given storage level.
    * @param newLevel One of: `MEMORY_ONLY`, `MEMORY_AND_DISK`, `MEMORY_ONLY_SER`,
