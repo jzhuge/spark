@@ -23,7 +23,7 @@ import org.apache.spark.sql._
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.planning._
 import org.apache.spark.sql.catalyst.plans._
-import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
+import org.apache.spark.sql.catalyst.plans.logical.{LogicalPlan, Project}
 import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.command.ExecutedCommandExec
 import org.apache.spark.sql.execution.datasources.{CreateTable, InsertIntoHadoopFsRelationCommand}
@@ -54,7 +54,15 @@ private[hive] trait HiveStrategies {
 
         val location = table.hiveQlTable.getDataLocation
         val staticParts = partition.filter(kv => kv._2.isDefined).mapValues(_.get)
-        val partitionAttrs = child.resolve(
+
+        // add literals to the plan for all static partition columns
+        val static = table.catalogTable.partitionSchema
+            .filter(c => staticParts.contains(c.name))
+            .map(c => Column(Literal(staticParts(c.name))).cast(c.dataType).as(c.name).named)
+        val allColumns = child.output ++ static
+        val childWithStaticPartitions = Project(allColumns, child)
+
+        val partitionAttrs = childWithStaticPartitions.resolve(
           table.catalogTable.partitionSchema, sparkSession.sessionState.conf.resolver)
         val mode = if (overwrite.enabled) SaveMode.Overwrite else SaveMode.Append
         val refreshFunc = (arg: Any) => {
@@ -63,7 +71,7 @@ private[hive] trait HiveStrategies {
 
         val cmd = InsertIntoHadoopFsRelationCommand(
           location, staticParts, Map.empty, partitionAttrs, None, new ParquetFileFormat(),
-          refreshFunc, options, child, mode, Some(table.catalogTable))
+          refreshFunc, options, childWithStaticPartitions, mode, Some(table.catalogTable))
 
         ExecutedCommandExec(cmd, cmd.children.map(planLater)) :: Nil
 
