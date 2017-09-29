@@ -750,6 +750,14 @@ object SQLConf {
     .booleanConf
     .createWithDefault(false)
 
+  val RANGE_EXCHANGE_SAMPLE_SIZE_PER_PARTITION =
+    SQLConfigBuilder("spark.sql.execution.rangeExchange.sampleSizePerPartition")
+      .internal()
+      .doc("Number of points to sample per partition in order to determine the range boundaries" +
+          " for range partitioning, typically used in global sorting (without limit).")
+      .intConf
+      .createWithDefault(100)
+
   val IGNORE_BATCH_ID_FOLDERS = SQLConfigBuilder("spark.sql.ignore-batchid-folders")
       .doc("Ignore folders named batchid=<num> when listing files in a partition directory.")
       .booleanConf
@@ -995,6 +1003,9 @@ class SQLConf extends Serializable with Logging {
   def crossJoinEnabled: Boolean = getConf(SQLConf.CROSS_JOINS_ENABLED)
 
   def ndvMaxError: Double = getConf(NDV_MAX_ERROR)
+
+  def rangeExchangeSampleSizePerPartition: Int = getConf(RANGE_EXCHANGE_SAMPLE_SIZE_PER_PARTITION)
+
   /** ********************** SQLConf functionality methods ************ */
 
   /** Set Spark SQL configuration properties. */
