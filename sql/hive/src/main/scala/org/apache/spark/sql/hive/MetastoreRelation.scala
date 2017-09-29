@@ -222,7 +222,8 @@ private[hive] case class MetastoreRelation(
       f.name,
       f.dataType,
       // Since data can be dumped in randomly with no validation, everything is nullable.
-      nullable = true
+      nullable = true,
+      metadata = f.metadata
     )(qualifier = Some(tableName))
   }
 
