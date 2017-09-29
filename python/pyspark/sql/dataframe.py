@@ -315,9 +315,9 @@ class DataFrame(object):
         +---+----+
         """
         if isinstance(truncate, bool) and truncate:
-            print(self._jdf.showString(n, 20))
+            print(self._jdf.showString(n, 20, False))
         else:
-            print(self._jdf.showString(n, int(truncate)))
+            print(self._jdf.showString(n, int(truncate), n == 1))
 
     def __repr__(self):
         return "DataFrame[%s]" % (", ".join("%s: %s" % c for c in self.dtypes))
