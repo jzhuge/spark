@@ -2394,6 +2394,14 @@ private[spark] object Utils extends Logging {
     conf.getLong("spark.sql.files.openCostInBytes", fileOpenCostBytesDefault)
   }
 
+  // Whether to set max partition size as spark.sql.files.maxPartitionBytes during split
+  // calculation and ignore the other heuristics. Defaults to false.
+  // Note: The defaults for this parameter are also defined in the sql module. The
+  // default values here should be kept in sync with the defaults in the sql module.
+  def overrideMaxPartitionSize(conf: SparkConf): Boolean = {
+    conf.getBoolean("spark.sql.override.maxPartitionSize", false)
+  }
+
   /**
    * Return the current system LD_LIBRARY_PATH name
    */

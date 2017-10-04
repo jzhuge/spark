@@ -1107,6 +1107,22 @@ class RDDSuite extends SparkFunSuite with SharedSparkContext {
     assert(hadoopRDD.partitions.length == 4)
   }
 
+  test("test combine hadoop input split with override") {
+    val outDir = new File(tempDir, "output-override").getAbsolutePath
+    val parallelizedRDD = sc.makeRDD(1001 to 2000, 10)
+    sc.conf.set("spark.sql.override.maxPartitionSize", "true")
+    // Number of partitions should be ten
+    assert(parallelizedRDD.partitions.length == 10)
+    parallelizedRDD.saveAsTextFile(outDir)
+
+    // Create a Hadoop RDD
+    val hadoopRDD =
+      sc.hadoopFile(outDir, classOf[TextInputFormat], classOf[LongWritable], classOf[Text])
+
+    // This should coalesce the partitions to 1 as default maxPartitionBytes is 128MB
+    assert(hadoopRDD.partitions.length == 1)
+  }
+
   test("SPARK-18406: race between end-of-task and completion iterator read lock release") {
     val rdd = sc.parallelize(1 to 1000, 10)
     rdd.cache()
