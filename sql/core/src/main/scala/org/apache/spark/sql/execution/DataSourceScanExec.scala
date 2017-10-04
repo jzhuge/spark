@@ -398,12 +398,18 @@ case class FileSourceScanExec(
       fsRelation: HadoopFsRelation): RDD[InternalRow] = {
     val defaultMaxSplitBytes =
       fsRelation.sparkSession.sessionState.conf.filesMaxPartitionBytes
-    val openCostInBytes = fsRelation.sparkSession.sessionState.conf.filesOpenCostInBytes
-    val defaultParallelism = fsRelation.sparkSession.sparkContext.defaultParallelism
-    val totalBytes = selectedPartitions.flatMap(_.files.map(_.getLen + openCostInBytes)).sum
-    val bytesPerCore = totalBytes / defaultParallelism
-
-    val maxSplitBytes = Math.min(defaultMaxSplitBytes, Math.max(openCostInBytes, bytesPerCore))
+    val overrideMaxPartitionSize =
+      fsRelation.sparkSession.sessionState.conf.overrideMaxPartitionSize
+    val (maxSplitBytes, openCostInBytes) = if (overrideMaxPartitionSize) {
+      (defaultMaxSplitBytes, 0L)
+    } else {
+        val openCostInBytes = fsRelation.sparkSession.sessionState.conf.filesOpenCostInBytes
+        val defaultParallelism = fsRelation.sparkSession.sparkContext.defaultParallelism
+        val totalBytes = selectedPartitions.flatMap(_.files.map(_.getLen + openCostInBytes)).sum
+        val bytesPerCore = totalBytes / defaultParallelism
+        val maxSplitBytes = Math.min(defaultMaxSplitBytes, Math.max(openCostInBytes, bytesPerCore))
+        (maxSplitBytes, openCostInBytes)
+    }
     logInfo(s"Planning scan with bin packing, max size: $maxSplitBytes bytes, " +
       s"open cost is considered as scanning $openCostInBytes bytes.")
 

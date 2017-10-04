@@ -755,6 +755,12 @@ object SQLConf {
     .longConf
     .createWithDefault(0)
 
+  val OVERRIDE_MAX_PARTITION_SIZE = buildConf("spark.sql.override.maxPartitionSize")
+    .doc("Whether to set max partition size as spark.sql.files.maxPartitionBytes during split " +
+      "calculation and ignore the other heuristics")
+    .booleanConf
+    .createWithDefault(false)
+
   val EXCHANGE_REUSE_ENABLED = buildConf("spark.sql.exchange.reuse")
     .internal()
     .doc("When true, the planner will try to find out duplicated exchanges and re-use them.")
@@ -1313,6 +1319,8 @@ class SQLConf extends Serializable with Logging {
   def ignoreMissingFiles: Boolean = getConf(IGNORE_MISSING_FILES)
 
   def maxRecordsPerFile: Long = getConf(MAX_RECORDS_PER_FILE)
+
+  def overrideMaxPartitionSize: Boolean = getConf(OVERRIDE_MAX_PARTITION_SIZE)
 
   def useCompression: Boolean = getConf(COMPRESS_CACHED)
 
