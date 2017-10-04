@@ -20,6 +20,7 @@ package org.apache.spark.sql.execution
 import org.apache.spark.sql.{Column, Dataset, Row}
 import org.apache.spark.sql.catalyst.analysis.UnresolvedAttribute
 import org.apache.spark.sql.catalyst.expressions.{Add, Literal, Stack}
+import org.apache.spark.sql.catalyst.expressions.codegen.{CodeAndComment, CodeGenerator}
 import org.apache.spark.sql.execution.aggregate.HashAggregateExec
 import org.apache.spark.sql.execution.joins.BroadcastHashJoinExec
 import org.apache.spark.sql.execution.joins.SortMergeJoinExec
@@ -177,5 +178,42 @@ class WholeStageCodegenSuite extends SparkPlanTest with SharedSQLContext {
             .isInstanceOf[SortMergeJoinExec]).isDefined)
       assert(df.collect() === Array(Row(1), Row(2)))
     }
+  }
+
+  def genGroupByCode(caseNum: Int): CodeAndComment = {
+    val caseExp = (1 to caseNum).map { i =>
+      s"case when id > $i and id <= ${i + 1} then 1 else 0 end as v$i"
+    }.toList
+    val keyExp = List(
+      "id",
+      "(id & 1023) as k1",
+      "cast(id & 1023 as double) as k2",
+      "cast(id & 1023 as int) as k3")
+
+    val ds = spark.range(10)
+      .selectExpr(keyExp:::caseExp: _*)
+      .groupBy("k1", "k2", "k3")
+      .sum()
+    val plan = ds.queryExecution.executedPlan
+
+    val wholeStageCodeGenExec = plan.find(p => p match {
+      case wp: WholeStageCodegenExec => wp.child match {
+        case hp: HashAggregateExec if (hp.child.isInstanceOf[ProjectExec]) => true
+        case _ => false
+      }
+      case _ => false
+    })
+
+    assert(wholeStageCodeGenExec.isDefined)
+    wholeStageCodeGenExec.get.asInstanceOf[WholeStageCodegenExec].doCodeGen()._2
+  }
+
+  test("SPARK-21871 check if we can get large code size when compiling too long functions") {
+    val codeWithShortFunctions = genGroupByCode(3)
+    val (_, maxCodeSize1) = CodeGenerator.compile(codeWithShortFunctions)
+    assert(maxCodeSize1 < SQLConf.WHOLESTAGE_HUGE_METHOD_LIMIT.defaultValue.get)
+    val codeWithLongFunctions = genGroupByCode(20)
+    val (_, maxCodeSize2) = CodeGenerator.compile(codeWithLongFunctions)
+    assert(maxCodeSize2 > SQLConf.WHOLESTAGE_HUGE_METHOD_LIMIT.defaultValue.get)
   }
 }
