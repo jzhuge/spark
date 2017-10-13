@@ -295,6 +295,7 @@ private[jdbc] class JDBCRDD(
     val myWhereClause = getWhereClause(part)
 
     val sqlText = s"SELECT $columnList FROM ${options.table} $myWhereClause"
+    logInfo(s"Running JDBC query: $sqlText")
     stmt = conn.prepareStatement(sqlText,
         ResultSet.TYPE_FORWARD_ONLY, ResultSet.CONCUR_READ_ONLY)
     stmt.setFetchSize(options.fetchSize)
