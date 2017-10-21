@@ -160,6 +160,13 @@ object SQLConf {
     .intConf
     .createWithDefault(4)
 
+  val ADVANCED_PARTITION_PREDICATE_PUSHDOWN =
+    SQLConfigBuilder("spark.sql.hive.advancedPartitionPredicatePushdown.enabled")
+      .internal()
+      .doc("When true, advanced partition predicate pushdown into Hive metastore is enabled.")
+      .booleanConf
+      .createWithDefault(true)
+
   val ENABLE_FALL_BACK_TO_HDFS_FOR_STATS =
     SQLConfigBuilder("spark.sql.statistics.fallBackToHdfs")
     .doc("If the table statistics are not available from table metadata enable fall back to hdfs." +
@@ -907,6 +914,9 @@ class SQLConf extends Serializable with Logging {
   def autoBroadcastJoinThreshold: Long = getConf(AUTO_BROADCASTJOIN_THRESHOLD)
 
   def limitScaleUpFactor: Int = getConf(LIMIT_SCALE_UP_FACTOR)
+
+  def advancedPartitionPredicatePushdownEnabled: Boolean =
+    getConf(ADVANCED_PARTITION_PREDICATE_PUSHDOWN)
 
   def fallBackToHdfsForStatsEnabled: Boolean = getConf(ENABLE_FALL_BACK_TO_HDFS_FOR_STATS)
 
