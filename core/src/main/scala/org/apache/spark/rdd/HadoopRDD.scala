@@ -221,19 +221,20 @@ class HadoopRDD[K, V](
     // add the credentials here as this can be called before SparkContext initialized
     SparkHadoopUtil.get.addCredentials(jobConf)
     val inputFormat = getInputFormat(jobConf)
-    val inputSplits = inputFormat.getSplits(jobConf, minPartitions)
+    val inputSplitsUnsorted = inputFormat.getSplits(jobConf, minPartitions)
     val hadoopPartitions = new ArrayBuffer[Partition]
     val defaultMaxSplitBytes = Utils.getMaxPartitionBytes(sparkContext.conf)
     val overrideMaxPartitionSize = Utils.overrideMaxPartitionSize(sparkContext.conf)
-    val (maxSplitBytes, openCostInBytes) = if (overrideMaxPartitionSize) {
-      (defaultMaxSplitBytes, 0L)
+    val openCostInBytes = Utils.getFileOpenCostBytes(sparkContext.conf)
+
+    val maxSplitBytes = if (overrideMaxPartitionSize) {
+      defaultMaxSplitBytes
     } else {
-      val openCostInBytes = Utils.getFileOpenCostBytes(sparkContext.conf)
       val defaultParallelism = sparkContext.defaultParallelism
-      val totalBytes = inputSplits.map(_.getLength + openCostInBytes).sum
+      val totalBytes = inputSplitsUnsorted.map(_.getLength + openCostInBytes).sum
       val bytesPerCore = totalBytes / defaultParallelism
       val maxSplitBytes = Math.min(defaultMaxSplitBytes, Math.max(openCostInBytes, bytesPerCore))
-      (maxSplitBytes, openCostInBytes)
+      maxSplitBytes
     }
     logInfo(s"Planning scan with bin packing, max size: $maxSplitBytes bytes, " +
       s"open cost is considered as scanning $openCostInBytes bytes.")
@@ -242,7 +243,7 @@ class HadoopRDD[K, V](
     var currentPartitionSplits = new ArrayBuffer[InputSplit]
     var currentSize = 0L
 
-    inputSplits.sortBy(_.getLength)(implicitly[Ordering[Long]].reverse)
+    val inputSplits = inputSplitsUnsorted.sortBy(_.getLength)(implicitly[Ordering[Long]].reverse)
 
     /** Close the current partition and move to the next. */
     def closePartition(): Unit = {
