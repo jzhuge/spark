@@ -592,21 +592,25 @@ case class SortMergeJoinExec(
 
     val iterator = ctx.freshName("iterator")
     val numOutput = metricTerm(ctx, "numOutputRows")
+    val joinedRow = ctx.freshName("joined")
     val (beforeLoop, condCheck) = if (condition.isDefined) {
       // Split the code of creating variables based on whether it's used by condition or not.
       val loaded = ctx.freshName("loaded")
       val (leftBefore, leftAfter) = splitVarsByCondition(left.output, leftVars)
       val (rightBefore, rightAfter) = splitVarsByCondition(right.output, rightVars)
       // Generate code for condition
+      ctx.INPUT_ROW = joinedRow
       ctx.currentVars = leftVars ++ rightVars
       val cond = BindReferences.bindReference(condition.get, output).genCode(ctx)
       // evaluate the columns those used by condition before loop
       val before = s"""
            |boolean $loaded = false;
+           |$joinedRow.withLeft($leftRow);
            |$leftBefore
          """.stripMargin
 
       val checking = s"""
+         |$joinedRow.withRight($rightRow);
          |$rightBefore
          |${cond.code}
          |if (${cond.isNull} || !${cond.value}) continue;
@@ -622,6 +626,7 @@ case class SortMergeJoinExec(
     }
 
     s"""
+       |JoinedRow $joinedRow = new JoinedRow();
        |while (findNextInnerJoinRows($leftInput, $rightInput)) {
        |  ${leftVarDecl.mkString("\n")}
        |  ${beforeLoop.trim}
