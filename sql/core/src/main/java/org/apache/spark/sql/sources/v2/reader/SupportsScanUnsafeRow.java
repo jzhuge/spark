@@ -32,8 +32,6 @@ import org.apache.spark.sql.sources.v2.reader.ReadTask;
  * This is an experimental and unstable interface, as {@link UnsafeRow} is not public and may get
  * changed in the future Spark versions.
  */
-@InterfaceStability.Evolving
-@Experimental
 @InterfaceStability.Unstable
 public interface SupportsScanUnsafeRow extends DataSourceV2Reader {
 
