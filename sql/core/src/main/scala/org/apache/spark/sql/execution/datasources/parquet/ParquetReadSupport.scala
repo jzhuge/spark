@@ -95,7 +95,7 @@ private[parquet] class ParquetReadSupport extends ReadSupport[UnsafeRow] with Lo
     new ParquetRecordMaterializer(
       parquetRequestedSchema,
       ParquetReadSupport.expandUDT(catalystRequestedSchema),
-      new ParquetSchemaConverter(conf))
+      new ParquetToSparkSchemaConverter(conf))
   }
 }
 
@@ -271,7 +271,7 @@ private[parquet] object ParquetReadSupport {
       parquetRecord: GroupType, structType: StructType): Seq[Type] = {
     val parquetFieldMap = parquetRecord.getFields.asScala
         .map(f => f.getName.toLowerCase(Locale.ENGLISH) -> f).toMap
-    val toParquet = new ParquetSchemaConverter(writeLegacyParquetFormat = false)
+    val toParquet = new SparkToParquetSchemaConverter(writeLegacyParquetFormat = false)
     structType.map { f =>
       parquetFieldMap
         .get(f.name.toLowerCase(Locale.ENGLISH))
