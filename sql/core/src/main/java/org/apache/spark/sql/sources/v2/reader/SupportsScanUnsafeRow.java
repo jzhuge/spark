@@ -39,7 +39,8 @@ public interface SupportsScanUnsafeRow extends DataSourceV2Reader {
 
   @Override
   default List<ReadTask<Row>> createReadTasks() {
-    throw new IllegalStateException("createReadTasks should not be called with SupportsScanUnsafeRow.");
+    throw new IllegalStateException(
+        "createReadTasks should not be called with SupportsScanUnsafeRow.");
   }
 
   /**
