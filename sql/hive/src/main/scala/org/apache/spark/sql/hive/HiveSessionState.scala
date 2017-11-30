@@ -24,6 +24,7 @@ import org.apache.spark.sql._
 import org.apache.spark.sql.catalyst.analysis.Analyzer
 import org.apache.spark.sql.execution.SparkPlanner
 import org.apache.spark.sql.execution.datasources._
+import org.apache.spark.sql.execution.datasources.v2.DataSourceV2Strategy
 import org.apache.spark.sql.hive.client.HiveClient
 import org.apache.spark.sql.internal.{SessionState, SQLConf}
 
@@ -142,6 +143,7 @@ private[hive] class HiveSessionState(sparkSession: SparkSession)
 
       override def strategies: Seq[Strategy] = {
         experimentalMethods.extraStrategies ++ Seq(
+          DataSourceV2Strategy,
           FileSourceStrategy,
           DataSourceStrategy,
           DDLStrategy,

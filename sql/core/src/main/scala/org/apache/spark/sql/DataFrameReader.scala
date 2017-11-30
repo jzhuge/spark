@@ -161,7 +161,7 @@ class DataFrameReader private[sql](sparkSession: SparkSession) extends Logging {
 
         case (ds: ReadSupport, Some(schema)) =>
           val reader = ds.createReader(options)
-          if (reader.readSchema() != schema) {
+          if (reader.readSchema() != schema) { // TODO: Should be canReadWith(schema)
             throw new AnalysisException(s"$ds does not allow user-specified schemas.")
           }
           reader
