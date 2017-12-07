@@ -45,6 +45,7 @@ import org.apache.spark.executor.OutputMetrics
 import org.apache.spark.internal.Logging
 import org.apache.spark.internal.io.FileCommitProtocol
 import org.apache.spark.internal.io.FileCommitProtocol.TaskCommitMessage
+import org.apache.spark.sql.SparkHadoopWriterUtils
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.util.DateTimeUtils
@@ -164,7 +165,7 @@ private[hive] class SparkHiveWriterContainer(
     if (conf.value.getBoolean("spark.sql.partition.metrics.enabled", true)) {
       val pm = new PartitionMetrics(metricClasses, fieldMetricClasses, metricHelper)
       pm.setSchema(schema.map(c => new DataField(c.name, c.dataType.simpleString)).asJava)
-      pm.initialize(SparkHadoopWriterUtils.toCommonsConf(conf.value))
+      pm.initialize(SparkHiveWriterContainer.toCommonsConf(conf.value))
       pm
     } else {
       new DummyMetrics()
@@ -344,6 +345,12 @@ private[hive] object SparkHiveWriterContainer {
     }
     outputPath.makeQualified(fs.getUri, fs.getWorkingDirectory)
   }
+
+  def toCommonsConf(conf: JobConf): CommonsConf = {
+    val commonsConf = new CommonsConf()
+    conf.iterator.asScala.foreach(entry => commonsConf.addProperty(entry.getKey, entry.getValue))
+    commonsConf
+  }
 }
 
 private[spark] object SparkHiveDynamicPartitionWriterContainer {
@@ -475,6 +482,8 @@ private[spark] class SparkHiveDynamicPartitionWriterContainer(
           currentWriter.close(false)
           writeMetrics(currentMetrics, currentMetricsPath, conf.value)
         }
+        SparkHadoopWriterUtils.maybeUpdateOutputMetrics(
+          outputMetricsAndBytesWrittenCallback, recordsWritten, force = true)
       }
     }
 
@@ -517,6 +526,8 @@ private[spark] class SparkHiveDynamicPartitionWriterContainer(
           currentWriter.close(false)
           writeMetrics(currentMetrics, currentMetricsPath, conf.value)
         }
+        SparkHadoopWriterUtils.maybeUpdateOutputMetrics(
+          outputMetricsAndBytesWrittenCallback, recordsWritten, force = true)
       }
     }
 
@@ -573,38 +584,4 @@ private[spark] class SparkHiveDynamicPartitionWriterContainer(
 
 private class DummyMetrics extends PartitionMetrics {
   override def update(t: DataTuple): Unit = {}
-}
-
-// from 9c419698fe110a805570031cac3387a51957d9d1
-private[spark]
-object SparkHadoopWriterUtils {
-
-  private val RECORDS_BETWEEN_BYTES_WRITTEN_METRIC_UPDATES = 1024
-
-  def toCommonsConf(conf: JobConf): CommonsConf = {
-    val commonsConf = new CommonsConf()
-    conf.iterator.asScala.foreach(entry => commonsConf.addProperty(entry.getKey, entry.getValue))
-    commonsConf
-  }
-
-  // return type: (output metrics, bytes written callback), defined only if the latter is defined
-  def initHadoopOutputMetrics(
-      context: TaskContext): Option[(OutputMetrics, () => Long)] = {
-    val bytesWrittenCallback = SparkHadoopUtil.get.getFSBytesWrittenOnThreadCallback()
-    bytesWrittenCallback.map { b =>
-      (context.taskMetrics().outputMetrics, b)
-    }
-  }
-
-  def maybeUpdateOutputMetrics(
-      outputMetricsAndBytesWrittenCallback: Option[(OutputMetrics, () => Long)],
-      recordsWritten: Long, force: Boolean = false): Unit = {
-    if (force || recordsWritten % RECORDS_BETWEEN_BYTES_WRITTEN_METRIC_UPDATES == 0) {
-      outputMetricsAndBytesWrittenCallback.foreach {
-        case (om, callback) =>
-          om.setBytesWritten(callback())
-          om.setRecordsWritten(recordsWritten)
-      }
-    }
-  }
 }

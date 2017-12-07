@@ -28,10 +28,11 @@ import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat
 import org.apache.hadoop.mapreduce.task.TaskAttemptContextImpl
 
 import org.apache.spark._
+import org.apache.spark.executor.OutputMetrics
 import org.apache.spark.internal.Logging
 import org.apache.spark.internal.io.FileCommitProtocol
 import org.apache.spark.internal.io.FileCommitProtocol.TaskCommitMessage
-import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.{SparkHadoopWriterUtils, SparkSession}
 import org.apache.spark.sql.catalyst.catalog.{BucketSpec, ExternalCatalogUtils}
 import org.apache.spark.sql.catalyst.catalog.CatalogTypes.TablePartitionSpec
 import org.apache.spark.sql.catalyst.expressions._
@@ -161,9 +162,7 @@ object FileFormatWriter extends Logging {
         (taskContext: TaskContext, iter: Iterator[InternalRow]) => {
           executeTask(
             description = description,
-            sparkStageId = taskContext.stageId(),
-            sparkPartitionId = taskContext.partitionId(),
-            sparkAttemptNumber = taskContext.attemptNumber(),
+            taskContext,
             committer,
             iterator = iter)
         })
@@ -184,15 +183,13 @@ object FileFormatWriter extends Logging {
   /** Writes data out in a single Spark task. */
   private def executeTask(
       description: WriteJobDescription,
-      sparkStageId: Int,
-      sparkPartitionId: Int,
-      sparkAttemptNumber: Int,
+      context: TaskContext,
       committer: FileCommitProtocol,
       iterator: Iterator[InternalRow]): (TaskCommitMessage, Set[String]) = {
 
-    val jobId = SparkHadoopWriter.createJobID(new Date, sparkStageId)
-    val taskId = new TaskID(jobId, TaskType.MAP, sparkPartitionId)
-    val taskAttemptId = new TaskAttemptID(taskId, sparkAttemptNumber)
+    val jobId = SparkHadoopWriter.createJobID(new Date, context.stageId())
+    val taskId = new TaskID(jobId, TaskType.MAP, context.partitionId())
+    val taskAttemptId = new TaskAttemptID(taskId, context.attemptNumber())
 
     // Set up the attempt context required to use in the output committer.
     val taskAttemptContext: TaskAttemptContext = {
@@ -216,10 +213,18 @@ object FileFormatWriter extends Logging {
         new DynamicPartitionWriteTask(description, taskAttemptContext, committer)
       }
 
+    val outputMetricsAndBytesWrittenCallback: Option[(OutputMetrics, () => Long)] =
+      SparkHadoopWriterUtils.initHadoopOutputMetrics(context)
+
+    def updateMetrics(recordsWritten: Long, force: Boolean = false): Unit = {
+      SparkHadoopWriterUtils.maybeUpdateOutputMetrics(
+        outputMetricsAndBytesWrittenCallback, recordsWritten, force = force)
+    }
+
     try {
       Utils.tryWithSafeFinallyAndFailureCallbacks(block = {
         // Execute the task to write rows out and commit the task.
-        val outputPartitions = writeTask.execute(iterator)
+        val outputPartitions = writeTask.execute(iterator, updateMetrics)
         writeTask.releaseResources()
         (committer.commitTask(taskAttemptContext), outputPartitions)
       })(catchBlock = {
@@ -247,7 +252,9 @@ object FileFormatWriter extends Logging {
      * Writes data out to files, and then returns the list of partition strings written out.
      * The list of partitions is sent back to the driver and used to update the catalog.
      */
-    def execute(iterator: Iterator[InternalRow]): Set[String]
+    def execute(
+        iterator: Iterator[InternalRow],
+        maybeUpdateMetrics: (Long, Boolean) => Unit): Set[String]
     def releaseResources(): Unit
   }
 
@@ -271,11 +278,18 @@ object FileFormatWriter extends Logging {
       outputWriter
     }
 
-    override def execute(iter: Iterator[InternalRow]): Set[String] = {
+    override def execute(
+        iter: Iterator[InternalRow],
+        maybeUpdateMetrics: (Long, Boolean) => Unit): Set[String] = {
+      var recordsWritten: Long = 0L
       while (iter.hasNext) {
         val internalRow = iter.next()
         outputWriter.writeInternal(internalRow)
+        recordsWritten += 1
+        maybeUpdateMetrics(recordsWritten, false)
       }
+      releaseResources() // release resources so that the bytes written for metrics are correct
+      maybeUpdateMetrics(recordsWritten, true)
       Set.empty
     }
 
@@ -368,7 +382,9 @@ object FileFormatWriter extends Logging {
       currentWriter.initConverter(desc.dataColumns.toStructType)
     }
 
-    override def execute(iter: Iterator[InternalRow]): Set[String] = {
+    override def execute(
+        iter: Iterator[InternalRow],
+        maybeUpdateMetrics: (Long, Boolean) => Unit): Set[String] = {
       val getPartitionColsAndBucketId = UnsafeProjection.create(
         desc.partitionColumns ++ desc.bucketIdExpression, desc.allColumns)
 
@@ -381,6 +397,7 @@ object FileFormatWriter extends Logging {
 
       // If anything below fails, we should abort the task.
       var recordsInFile: Long = 0L
+      var recordsWritten: Long = 0L
       var fileCounter = 0
       var currentPartColsAndBucketId: UnsafeRow = null
       val updatedPartitions = mutable.Set[String]()
@@ -400,8 +417,11 @@ object FileFormatWriter extends Logging {
 
         currentWriter.writeInternal(getOutputRow(row))
         recordsInFile += 1
+        recordsWritten += 1
+        maybeUpdateMetrics(recordsWritten, false)
       }
       releaseResources()
+      maybeUpdateMetrics(recordsWritten, true)
       updatedPartitions.toSet
     }
 
