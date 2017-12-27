@@ -357,7 +357,9 @@ private[hive] class HiveMetastoreCatalog(sparkSession: SparkSession) extends Log
    * data source relations for better performance.
    */
   object ParquetConversions extends Rule[LogicalPlan] {
-    private def shouldConvertMetastoreParquet(relation: MetastoreRelation): Boolean = {
+    private def shouldConvertMetastoreParquet(
+        relation: MetastoreRelation,
+        isWrite: Boolean): Boolean = {
       (Utils.isTesting ||
         (relation.catalogTable.identifier.database match {
         case Some("default") => false
@@ -365,7 +367,8 @@ private[hive] class HiveMetastoreCatalog(sparkSession: SparkSession) extends Log
         case _ => true
       })) &&
         relation.tableDesc.getSerdeClassName.toLowerCase.contains("parquet") &&
-        sessionState.convertMetastoreParquet
+        sessionState.convertMetastoreParquet &&
+        (!isWrite || sessionState.convertMetastoreParquetWrite)
     }
 
     private def convertToParquetRelation(relation: MetastoreRelation): LogicalRelation = {
@@ -388,12 +391,13 @@ private[hive] class HiveMetastoreCatalog(sparkSession: SparkSession) extends Log
         case InsertIntoTable(r: MetastoreRelation, partition, child, overwrite, ifNotExists,
             options)
           // Inserting into partitioned table is not supported in Parquet data source (yet).
-          if !r.hiveQlTable.isPartitioned && shouldConvertMetastoreParquet(r) =>
+          if !r.hiveQlTable.isPartitioned && shouldConvertMetastoreParquet(r, isWrite = true) =>
           InsertIntoTable(convertToParquetRelation(r), partition, child, overwrite, ifNotExists,
             options)
 
         // Read path
-        case relation: MetastoreRelation if shouldConvertMetastoreParquet(relation) =>
+        case relation: MetastoreRelation
+            if shouldConvertMetastoreParquet(relation, isWrite = false) =>
           val parquetRelation = convertToParquetRelation(relation)
           SubqueryAlias(relation.tableName, parquetRelation, None)
       }

@@ -179,6 +179,10 @@ private[hive] class HiveSessionState(sparkSession: SparkSession)
     conf.getConf(HiveUtils.CONVERT_METASTORE_PARQUET)
   }
 
+  def convertMetastoreParquetWrite: Boolean = {
+    conf.getConf(HiveUtils.CONVERT_METASTORE_PARQUET_WRITE)
+  }
+
   /**
    * When true, also tries to merge possibly different but compatible Parquet schemas in different
    * Parquet data files.
