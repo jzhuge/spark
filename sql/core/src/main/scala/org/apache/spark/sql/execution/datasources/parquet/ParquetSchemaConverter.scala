@@ -171,6 +171,7 @@ class ParquetToSparkSchemaConverter(
 
       case FIXED_LEN_BYTE_ARRAY =>
         originalType match {
+          case null => BinaryType
           case DECIMAL => makeDecimalType(maxPrecisionForBytes(field.getTypeLength))
           case INTERVAL => typeNotImplemented()
           case _ => illegalType()
