@@ -25,10 +25,13 @@ fi
 
 export NETFLIX_ENVIRONMENT=prod
 
+# get maven repository of dependencies from stash
+[[ -d "spark-repo" ]] || git clone ssh://git@stash.corp.netflix.com:7999/bdp/spark-repo.git -b netflix/2.1.1 spark-repo
+
 # this is the version used for output files to distinguish this branch
 BASE_VERSION=2.1.1
-SPARK_VERSION=${BASE_VERSION}-nflx
-# default to unstable if BUILD_VERSION is not in the environment
+# default to unstable if SPARK_VERSION and BUILD_VERSION are not in the environment
+SPARK_VERSION=${SPARK_VERSION:-${BASE_VERSION}-unstable-$BUILD_NUMBER}
 BUILD_VERSION=${BUILD_VERSION:-${BASE_VERSION}-unstable}
 HADOOP_VERSION_PROFILE=hadoop-2.7
 HADOOP_VERSION=2.7.3
@@ -46,7 +49,10 @@ cp netflix/metrics-site.xml core/src/main/resources/
 # avoid stale compile servers causing problems
 build/zinc-0.3.9/bin/zinc -shutdown || echo "No zinc server running."
 
-dev/make-distribution.sh --tgz -P${HADOOP_VERSION_PROFILE} -Pmesos -Pyarn -Phive-thriftserver -Psparkr -Pkinesis-asl -Phadoop-provided -Dmaven.repo.local=${WORKSPACE}/.m2/repository 
+# set the maven version to include the build number
+build/mvn versions:set -DnewVersion=$SPARK_VERSION -DgenerateBackupPoms=false
+
+dev/make-distribution.sh --tgz -P${HADOOP_VERSION_PROFILE} -Dmaven.repo.local=spark-repo -Pmesos -Pyarn -Phive-thriftserver -Psparkr -Pkinesis-asl -Phadoop-provided
 
 rm -rf spark-*-bin-${HADOOP_VERSION}
 tar -xf spark-${SPARK_VERSION}-bin-${HADOOP_VERSION}.tgz
