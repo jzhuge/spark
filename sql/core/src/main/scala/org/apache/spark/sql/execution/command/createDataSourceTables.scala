@@ -19,6 +19,11 @@ package org.apache.spark.sql.execution.command
 
 import java.net.URI
 
+import com.netflix.iceberg.PartitionSpec
+import com.netflix.iceberg.metacat.MetacatTables
+import com.netflix.iceberg.spark.SparkSchemaUtil
+
+import org.apache.spark.SparkException
 import org.apache.spark.sql._
 import org.apache.spark.sql.catalyst.catalog._
 import org.apache.spark.sql.catalyst.expressions.Attribute
@@ -44,6 +49,8 @@ import org.apache.spark.sql.types.StructType
 case class CreateDataSourceTableCommand(table: CatalogTable, ignoreIfExists: Boolean)
   extends RunnableCommand {
 
+  import CreateDataSourceTableCommand._
+
   override def run(sparkSession: SparkSession): Seq[Row] = {
     assert(table.tableType != CatalogTableType.VIEW)
     assert(table.provider.isDefined)
@@ -57,69 +64,127 @@ case class CreateDataSourceTableCommand(table: CatalogTable, ignoreIfExists: Boo
       }
     }
 
-    // Create the relation to validate the arguments before writing the metadata to the metastore,
-    // and infer the table schema and partition if users didn't specify schema in CREATE TABLE.
-    val pathOption = table.storage.locationUri.map("path" -> CatalogUtils.URIToString(_))
-    // Fill in some default table options from the session conf
-    val tableWithDefaultOptions = table.copy(
-      identifier = table.identifier.copy(
-        database = Some(
-          table.identifier.database.getOrElse(sessionState.catalog.getCurrentDatabase))),
-      tracksPartitionsInCatalog = sessionState.conf.manageFilesourcePartitions)
-    val dataSource: BaseRelation =
-      DataSource(
-        sparkSession = sparkSession,
-        userSpecifiedSchema = if (table.schema.isEmpty) None else Some(table.schema),
-        partitionColumns = table.partitionColumnNames,
-        className = table.provider.get,
-        bucketSpec = table.bucketSpec,
-        options = table.storage.properties ++ pathOption,
-        // As discussed in SPARK-19583, we don't check if the location is existed
-        catalogTable = Some(tableWithDefaultOptions)).resolveRelation(checkFilesExist = false)
+    if (table.provider.get == "iceberg") {
+      val hadoopConf = sparkSession.sparkContext.hadoopConfiguration
+      val hiveEnv = hadoopConf.get("spark.sql.hive.env", "prod")
+      val catalog = conf.getConfString("spark.sql.metacat.write.catalog", hiveEnv + "hive")
+      val db = table.identifier.database.getOrElse(sparkSession.catalog.currentDatabase)
+      val tableName = table.identifier.table
 
-    val partitionColumnNames = if (table.schema.nonEmpty) {
-      table.partitionColumnNames
-    } else {
-      // This is guaranteed in `PreprocessDDL`.
-      assert(table.partitionColumnNames.isEmpty)
-      dataSource match {
-        case r: HadoopFsRelation => r.partitionSchema.fieldNames.toSeq
-        case _ => Nil
+      val tables = new MetacatTables(
+        hadoopConf, sparkSession.sparkContext.applicationId, catalog)
+
+      val nonIdentityPartitions = table.partitionColumnNames.filter {
+        case Year(_) => true
+        case Month(_) => true
+        case Day(_) => true
+        case Hour(_) => true
+        case Bucket(_, _) => true
+        case Truncate(_, _) => true
+        case _ => false
+      }.toSet
+
+      // filter our the partition columns, except for identity partitions
+      val baseSchema = table.schema.toAttributes
+          .filterNot(a => nonIdentityPartitions.contains(a.name))
+          .toStructType
+
+      val schema = SparkSchemaUtil.convert(baseSchema)
+      val specBuilder = PartitionSpec.builderFor(schema)
+      table.partitionColumnNames.foreach {
+        case Year(name) =>
+          specBuilder.year(name)
+        case Month(name) =>
+          specBuilder.month(name)
+        case Day(name) =>
+          specBuilder.day(name)
+        case Hour(name) =>
+          specBuilder.hour(name)
+        case Bucket(name, numBuckets) =>
+          specBuilder.bucket(name, numBuckets.toInt)
+        case Truncate(name, width) =>
+          specBuilder.truncate(name, width.toInt)
+        case name: String =>
+          specBuilder.identity(name)
+        case other =>
+          throw new SparkException(s"Cannot determine partition type: $other")
       }
+
+      tables.create(schema, specBuilder.build, db, tableName)
+    } else {
+      // Create the relation to validate the arguments before writing the metadata to metastore,
+      // and infer the table schema and partition if users didn't specify schema in CREATE TABLE.
+      val pathOption = table.storage.locationUri.map("path" -> CatalogUtils.URIToString(_))
+      // Fill in some default table options from the session conf
+      val tableWithDefaultOptions = table.copy(
+        identifier = table.identifier.copy(
+          database = Some(
+            table.identifier.database.getOrElse(sessionState.catalog.getCurrentDatabase))),
+        tracksPartitionsInCatalog = sessionState.conf.manageFilesourcePartitions)
+      val dataSource: BaseRelation =
+        DataSource(
+          sparkSession = sparkSession,
+          userSpecifiedSchema = if (table.schema.isEmpty) None else Some(table.schema),
+          partitionColumns = table.partitionColumnNames,
+          className = table.provider.get,
+          bucketSpec = table.bucketSpec,
+          options = table.storage.properties ++ pathOption,
+          // As discussed in SPARK-19583, we don't check if the location is existed
+          catalogTable = Some(tableWithDefaultOptions)).resolveRelation(checkFilesExist = false)
+
+      val partitionColumnNames = if (table.schema.nonEmpty) {
+        table.partitionColumnNames
+      } else {
+        // This is guaranteed in `PreprocessDDL`.
+        assert(table.partitionColumnNames.isEmpty)
+        dataSource match {
+          case r: HadoopFsRelation => r.partitionSchema.fieldNames.toSeq
+          case _ => Nil
+        }
+      }
+
+      val newTable = dataSource match {
+        // Since Spark 2.1, we store the inferred schema of data source in metastore, to avoid
+        // inferring the schema again at read path. However if data source has overlapped columns
+        // between data and partition schema, we can't store it in metastore as it breaks the
+        // assumption of table schema. Here we fallback to the behavior of Spark prior to 2.1, store
+        // empty schema in metastore and infer it at runtime. Note that this also means the new
+        // scalable partitioning handling feature(introduced at Spark 2.1) is disabled in this case.
+        case r: HadoopFsRelation if r.overlappedPartCols.nonEmpty =>
+          logWarning("It is not recommended to create a table with overlapped data and partition " +
+            "columns, as Spark cannot store a valid table schema and has to infer it at runtime, " +
+            "which hurts performance. Please check your data files and remove the partition " +
+            "columns in it.")
+          table.copy(schema = new StructType(), partitionColumnNames = Nil)
+
+        case _ =>
+          table.copy(
+            schema = dataSource.schema,
+            partitionColumnNames = partitionColumnNames,
+            // If metastore partition mgmt for file source tables is enabled, we start off with
+            // partition provider hive, but no partitions in the metastore. The user has to call
+            // `msck repair table` to populate the table partitions.
+            tracksPartitionsInCatalog = partitionColumnNames.nonEmpty &&
+              sessionState.conf.manageFilesourcePartitions)
+
+      }
+
+      // We will return Nil or throw exception at the beginning if the table already exists, so when
+      // we reach here, the table should not exist and we should set `ignoreIfExists` to false.
+      sessionState.catalog.createTable(newTable, ignoreIfExists = false)
     }
-
-    val newTable = dataSource match {
-      // Since Spark 2.1, we store the inferred schema of data source in metastore, to avoid
-      // inferring the schema again at read path. However if the data source has overlapped columns
-      // between data and partition schema, we can't store it in metastore as it breaks the
-      // assumption of table schema. Here we fallback to the behavior of Spark prior to 2.1, store
-      // empty schema in metastore and infer it at runtime. Note that this also means the new
-      // scalable partitioning handling feature(introduced at Spark 2.1) is disabled in this case.
-      case r: HadoopFsRelation if r.overlappedPartCols.nonEmpty =>
-        logWarning("It is not recommended to create a table with overlapped data and partition " +
-          "columns, as Spark cannot store a valid table schema and has to infer it at runtime, " +
-          "which hurts performance. Please check your data files and remove the partition " +
-          "columns in it.")
-        table.copy(schema = new StructType(), partitionColumnNames = Nil)
-
-      case _ =>
-        table.copy(
-          schema = dataSource.schema,
-          partitionColumnNames = partitionColumnNames,
-          // If metastore partition management for file source tables is enabled, we start off with
-          // partition provider hive, but no partitions in the metastore. The user has to call
-          // `msck repair table` to populate the table partitions.
-          tracksPartitionsInCatalog = partitionColumnNames.nonEmpty &&
-            sessionState.conf.manageFilesourcePartitions)
-
-    }
-
-    // We will return Nil or throw exception at the beginning if the table already exists, so when
-    // we reach here, the table should not exist and we should set `ignoreIfExists` to false.
-    sessionState.catalog.createTable(newTable, ignoreIfExists = false)
 
     Seq.empty[Row]
   }
+}
+
+object CreateDataSourceTableCommand {
+  lazy val Year = "^(\\w+)_year$".r
+  lazy val Month = "^(\\w+)_month$".r
+  lazy val Day = "^(\\w+)_day$".r
+  lazy val Hour = "^(\\w+)_hour$".r
+  lazy val Bucket = "^(\\w+)_bucket_(\\d+)$".r
+  lazy val Truncate = "^(\\w+)_truncate_(\\d+)$".r
 }
 
 /**
