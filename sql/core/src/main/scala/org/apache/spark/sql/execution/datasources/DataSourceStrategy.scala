@@ -20,12 +20,13 @@ package org.apache.spark.sql.execution.datasources
 import java.util.Locale
 import java.util.concurrent.Callable
 
+import com.netflix.iceberg.spark.source.IcebergMetacatSource
 import org.apache.hadoop.fs.Path
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql._
-import org.apache.spark.sql.catalyst.{CatalystTypeConverters, InternalRow, QualifiedTableName}
+import org.apache.spark.sql.catalyst.{expressions => _, _}
 import org.apache.spark.sql.catalyst.CatalystTypeConverters.convertToScala
 import org.apache.spark.sql.catalyst.analysis._
 import org.apache.spark.sql.catalyst.catalog._
@@ -37,8 +38,10 @@ import org.apache.spark.sql.catalyst.plans.physical.HashPartitioning
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution.{RowDataSourceScanExec, SparkPlan}
 import org.apache.spark.sql.execution.command._
+import org.apache.spark.sql.execution.datasources.v2.DataSourceV2Relation
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.sources._
+import org.apache.spark.sql.sources.v2.DataSourceV2
 import org.apache.spark.sql.types._
 import org.apache.spark.unsafe.types.UTF8String
 
@@ -221,6 +224,9 @@ case class DataSourceAnalysis(conf: SQLConf) extends Rule[LogicalPlan] with Cast
  * data source.
  */
 class FindDataSourceTable(sparkSession: SparkSession) extends Rule[LogicalPlan] {
+
+  private lazy val icebergTables: DataSourceV2 = new IcebergMetacatSource()
+
   private def readDataSourceTable(table: CatalogTable): LogicalPlan = {
     val qualifiedTableName = QualifiedTableName(table.database, table.identifier.table)
     val catalog = sparkSession.sessionState.catalog
@@ -245,11 +251,15 @@ class FindDataSourceTable(sparkSession: SparkSession) extends Rule[LogicalPlan] 
   }
 
   private def readHiveTable(table: CatalogTable): LogicalPlan = {
-    HiveTableRelation(
-      table,
-      // Hive table columns are always nullable.
-      table.dataSchema.asNullable.toAttributes,
-      table.partitionSchema.asNullable.toAttributes)
+    if (table.properties.get("table_type").exists("iceberg".equalsIgnoreCase)) {
+      DataSourceV2Relation.create(icebergTables, Map.empty, table = Some(table.identifier))
+    } else {
+      HiveTableRelation(
+          table,
+          // Hive table columns are always nullable.
+          table.dataSchema.asNullable.toAttributes,
+          table.partitionSchema.asNullable.toAttributes)
+    }
   }
 
   override def apply(plan: LogicalPlan): LogicalPlan = plan transform {
