@@ -32,7 +32,7 @@ import org.apache.spark.sql.execution.datasources.DataSource
 import org.apache.spark.sql.execution.datasources.jdbc._
 import org.apache.spark.sql.execution.datasources.json.InferSchema
 import org.apache.spark.sql.execution.datasources.v2.DataSourceV2Relation
-import org.apache.spark.sql.sources.v2.{DataSourceV2, DataSourceV2Options, ReadSupport, ReadSupportWithSchema}
+import org.apache.spark.sql.sources.v2.DataSourceV2
 import org.apache.spark.sql.types.StructType
 
 /**
@@ -147,30 +147,23 @@ class DataFrameReader private[sql](sparkSession: SparkSession) extends Logging {
   def load(paths: String*): DataFrame = {
     val cls = DataSource.lookupDataSource(source)
     if (classOf[DataSourceV2].isAssignableFrom(cls)) {
-      val options = new DataSourceV2Options(extraOptions.asJava)
-
-      val reader = (cls.newInstance(), userSpecifiedSchema) match {
-        case (ds: ReadSupportWithSchema, Some(schema)) =>
-          ds.createReader(schema, options)
-
-        case (ds: ReadSupport, None) =>
-          ds.createReader(options)
-
-        case (ds: ReadSupportWithSchema, None) =>
-          throw new AnalysisException(s"A schema needs to be specified when using $ds.")
-
-        case (ds: ReadSupport, Some(schema)) =>
-          val reader = ds.createReader(options)
-          if (reader.readSchema() != schema) { // TODO: Should be canReadWith(schema)
-            throw new AnalysisException(s"$ds does not allow user-specified schemas.")
-          }
-          reader
-
+      val source = cls.newInstance().asInstanceOf[DataSourceV2]
+      val (pathOption, tableOption) = extraOptions.get("path") match {
+        case Some(path) if !path.contains("/") =>
+          // without "/", this cannot be a full path. parse it as a table name
+          val ident = sparkSession.sessionState.sqlParser.parseTableIdentifier(path)
+          // ensure the database is set correctly
+          val db = ident.database.getOrElse(sparkSession.catalog.currentDatabase)
+          (None, Some(ident.copy(database = Some(db))))
+        case Some(path) =>
+          (Some(path), None)
         case _ =>
-          throw new AnalysisException(s"$cls does not support data reading.")
+          (None, None)
       }
 
-      Dataset.ofRows(sparkSession, DataSourceV2Relation(reader))
+      Dataset.ofRows(sparkSession, DataSourceV2Relation(
+        source, extraOptions.toMap, pathOption, tableOption, userSchema = userSpecifiedSchema))
+
     } else {
       // Code path for data source v1.
       sparkSession.baseRelationToDataFrame(

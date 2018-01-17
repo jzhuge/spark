@@ -17,8 +17,7 @@
 
 package org.apache.spark.sql
 
-import java.text.SimpleDateFormat
-import java.util.{Date, Locale, Properties, UUID}
+import java.util.Properties
 
 import scala.collection.JavaConverters._
 
@@ -32,8 +31,8 @@ import org.apache.spark.sql.catalyst.plans.logical.{InsertIntoTable, LogicalPlan
 import org.apache.spark.sql.execution.SQLExecution
 import org.apache.spark.sql.execution.command.DDLUtils
 import org.apache.spark.sql.execution.datasources.{CreateTable, DataSource}
-import org.apache.spark.sql.execution.datasources.v2.WriteToDataSourceV2
-import org.apache.spark.sql.sources.v2.{DataSourceV2, DataSourceV2Options, WriteSupport}
+import org.apache.spark.sql.execution.datasources.v2.DataSourceV2Relation
+import org.apache.spark.sql.sources.v2.DataSourceV2
 import org.apache.spark.sql.types.StructType
 
 /**
@@ -211,31 +210,60 @@ final class DataFrameWriter[T] private[sql](ds: Dataset[T]) {
    */
   def save(): Unit = {
     assertNotBucketed("save")
-    val dataSource = DataSource(
-      df.sparkSession,
-      className = source,
-      partitionColumns = partitioningColumns.getOrElse(Nil),
-      bucketSpec = getBucketSpec,
-      options = extraOptions.toMap)
 
     val cls = DataSource.lookupDataSource(source)
     if (classOf[DataSourceV2].isAssignableFrom(cls)) {
-      cls.newInstance() match {
-        case ds: WriteSupport =>
-          val options = new DataSourceV2Options(extraOptions.asJava)
-          // Using a timestamp and a random UUID to distinguish different writing jobs. This is good
-          // enough as there won't be tons of writing jobs created at the same second.
-          val jobId = new SimpleDateFormat("yyyyMMddHHmmss", Locale.US)
-            .format(new Date()) + "-" + UUID.randomUUID()
-          val writer = ds.createWriter(jobId, df.logicalPlan.schema, mode, options)
-          if (writer.isPresent) {
-            runCommand(df.sparkSession, "save") {
-              WriteToDataSourceV2(writer.get(), df.logicalPlan)
-            }
-          }
+      val dataSource = cls.newInstance().asInstanceOf[DataSourceV2]
+      extraOptions.put("fromDataFrame", "true")
 
-        case _ => throw new AnalysisException(s"$cls does not support data writing.")
+      if (!extraOptions.contains("insertSafeCasts")) {
+        extraOptions.put("insertSafeCasts",
+          df.sparkSession.sessionState.conf.getConfString("spark.sql.insertSafeCasts", "false"))
       }
+
+      // save variants always match columns by name
+      extraOptions.put("matchByName", "true")
+
+      val (pathOption, tableOption) = extraOptions.get("path") match {
+        case Some(path) if !path.contains("/") =>
+          // without "/", this cannot be a full path. parse it as a table name
+          val ident = df.sparkSession.sessionState.sqlParser.parseTableIdentifier(path)
+          // ensure the database is set correctly
+          val db = ident.database.getOrElse(df.sparkSession.catalog.currentDatabase)
+          (None, Some(ident.copy(database = Some(db))))
+        case Some(path) =>
+          (Some(path), None)
+        case _ =>
+          (None, None)
+      }
+
+      val partitions = normalizedParCols.map(_.map(col => col -> (None: Option[String])).toMap)
+      val relation = DataSourceV2Relation(dataSource, extraOptions.toMap, pathOption, tableOption)
+
+      val (overwrite, ifNotExists) = mode match {
+        case SaveMode.Ignore =>
+          if (relation.writer(df.logicalPlan.schema, mode).isEmpty) {
+            return
+          }
+          (false, false)
+        case SaveMode.Append =>
+          (false, false)
+        case SaveMode.Overwrite =>
+          (true, false)
+        case SaveMode.ErrorIfExists =>
+          (true, true)
+      }
+
+      runCommand(df.sparkSession, "save") {
+        InsertIntoTable(
+          relation,
+          partitions.getOrElse(Map.empty),
+          df.logicalPlan,
+          overwrite = OverwriteOptions(enabled = overwrite),
+          ifNotExists = ifNotExists,
+          extraOptions.toMap)
+      }
+
     } else {
       // Code path for data source v1.
       runCommand(df.sparkSession, "save") {
@@ -247,6 +275,7 @@ final class DataFrameWriter[T] private[sql](ds: Dataset[T]) {
       }
     }
   }
+
   /**
    * Inserts the content of the `DataFrame` to the specified table. It requires that
    * the schema of the `DataFrame` is the same as the schema of the table.
