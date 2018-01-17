@@ -32,8 +32,7 @@ import org.apache.spark.sql.execution.datasources.{DataSource, FailureSafeParser
 import org.apache.spark.sql.execution.datasources.csv._
 import org.apache.spark.sql.execution.datasources.jdbc._
 import org.apache.spark.sql.execution.datasources.json.TextInputJsonDataSource
-import org.apache.spark.sql.execution.datasources.v2.DataSourceV2Relation
-import org.apache.spark.sql.execution.datasources.v2.DataSourceV2Utils
+import org.apache.spark.sql.execution.datasources.v2.{DataSourceV2Relation, DataSourceV2Utils}
 import org.apache.spark.sql.sources.v2.{DataSourceV2, ReadSupport, ReadSupportWithSchema}
 import org.apache.spark.sql.types.{StringType, StructType}
 import org.apache.spark.unsafe.types.UTF8String
@@ -193,8 +192,23 @@ class DataFrameReader private[sql](sparkSession: SparkSession) extends Logging {
       if (ds.isInstanceOf[ReadSupport] || ds.isInstanceOf[ReadSupportWithSchema]) {
         val sessionOptions = DataSourceV2Utils.extractSessionConfigs(
           ds = ds, conf = sparkSession.sessionState.conf)
+
+        val (pathOption, tableOption) = extraOptions.get("path") match {
+          case Some(path) if !path.contains("/") =>
+            // without "/", this cannot be a full path. parse it as a table name
+            val ident = sparkSession.sessionState.sqlParser.parseTableIdentifier(path)
+            // ensure the database is set correctly
+            val db = ident.database.getOrElse(sparkSession.catalog.currentDatabase)
+            (None, Some(ident.copy(database = Some(db))))
+          case Some(path) =>
+            (Some(path), None)
+          case _ =>
+            (None, None)
+        }
+
         Dataset.ofRows(sparkSession, DataSourceV2Relation.create(
           ds, sessionOptions ++ extraOptions.toMap,
+          path = pathOption, table = tableOption,
           userSpecifiedSchema = userSpecifiedSchema))
 
       } else {
