@@ -25,6 +25,9 @@ import java.util
 import scala.collection.mutable
 import scala.util.control.NonFatal
 
+import com.netflix.iceberg.PartitionSpec
+import com.netflix.iceberg.metacat.MetacatTables
+import com.netflix.iceberg.spark.SparkSchemaUtil
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FileSystem, Path}
 import org.apache.hadoop.hive.ql.metadata.HiveException

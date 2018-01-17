@@ -17,14 +17,19 @@
 
 package org.apache.spark.sql.execution.command
 
+import com.netflix.iceberg.PartitionSpec
+import com.netflix.iceberg.metacat.MetacatTables
+import com.netflix.iceberg.spark.SparkSchemaUtil
 import org.apache.hadoop.fs.Path
 
+import org.apache.spark.SparkException
 import org.apache.spark.sql._
 import org.apache.spark.sql.catalyst.catalog._
 import org.apache.spark.sql.catalyst.expressions.NamedExpression
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
 import org.apache.spark.sql.execution.datasources._
 import org.apache.spark.sql.sources.BaseRelation
+import org.apache.spark.sql.sources.v2.DataSourceV2
 
 /**
  * A command used to create a data source table.
@@ -42,6 +47,8 @@ import org.apache.spark.sql.sources.BaseRelation
 case class CreateDataSourceTableCommand(table: CatalogTable, ignoreIfExists: Boolean)
   extends RunnableCommand {
 
+  import CreateDataSourceTableCommand._
+
   override def run(sparkSession: SparkSession): Seq[Row] = {
     assert(table.tableType != CatalogTableType.VIEW)
     assert(table.provider.isDefined)
@@ -55,59 +62,123 @@ case class CreateDataSourceTableCommand(table: CatalogTable, ignoreIfExists: Boo
       }
     }
 
-    // Create the relation to validate the arguments before writing the metadata to the metastore,
-    // and infer the table schema and partition if users didn't specify schema in CREATE TABLE.
-    val pathOption = table.storage.locationUri.map("path" -> _)
-    // Fill in some default table options from the session conf
-    val tableWithDefaultOptions = table.copy(
-      identifier = table.identifier.copy(
-        database = Some(
-          table.identifier.database.getOrElse(sessionState.catalog.getCurrentDatabase))),
-      tracksPartitionsInCatalog = sparkSession.sessionState.conf.manageFilesourcePartitions)
-    val dataSource: BaseRelation =
-      DataSource(
-        sparkSession = sparkSession,
-        userSpecifiedSchema = if (table.schema.isEmpty) None else Some(table.schema),
-        partitionColumns = table.partitionColumnNames,
-        className = table.provider.get,
-        bucketSpec = table.bucketSpec,
-        options = table.storage.properties ++ pathOption,
-        catalogTable = Some(tableWithDefaultOptions)).resolveRelation()
+    val cls = DataSource.lookupDataSource(table.provider.get)
+    if (classOf[DataSourceV2].isAssignableFrom(cls)) {
+      if (table.provider.get == "iceberg") {
+        val hadoopConf = sparkSession.sparkContext.hadoopConfiguration
+        val hiveEnv = hadoopConf.get("spark.sql.hive.env", "prod")
+        val catalog = conf.getConfString("spark.sql.metacat.write.catalog", hiveEnv + "hive")
+        val db = table.identifier.database.getOrElse(sparkSession.catalog.currentDatabase)
+        val tableName = table.identifier.table
 
-    dataSource match {
-      case fs: HadoopFsRelation =>
-        if (table.tableType == CatalogTableType.EXTERNAL && fs.location.rootPaths.isEmpty) {
-          throw new AnalysisException(
-            "Cannot create a file-based external data source table without path")
+        val tables = new MetacatTables(
+          hadoopConf, sparkSession.sparkContext.applicationId, catalog)
+
+        val nonIdentityPartitions = table.partitionColumnNames.filter {
+          case Year(_) => true
+          case Month(_) => true
+          case Day(_) => true
+          case Hour(_) => true
+          case Bucket(_, _) => true
+          case Truncate(_, _) => true
+          case _ => false
+        }.toSet
+
+        // filter our the partition columns, except for identity partitions
+        val baseSchema = table.schema.toAttributes
+            .filterNot(a => nonIdentityPartitions.contains(a.name))
+            .toStructType
+
+        val schema = SparkSchemaUtil.convert(baseSchema)
+        val specBuilder = PartitionSpec.builderFor(schema)
+        table.partitionColumnNames.foreach {
+          case Year(name) =>
+            specBuilder.year(name)
+          case Month(name) =>
+            specBuilder.month(name)
+          case Day(name) =>
+            specBuilder.day(name)
+          case Hour(name) =>
+            specBuilder.hour(name)
+          case Bucket(name, numBuckets) =>
+            specBuilder.bucket(name, numBuckets.toInt)
+          case Truncate(name, width) =>
+            specBuilder.truncate(name, width.toInt)
+          case name: String =>
+            specBuilder.identity(name)
+          case other =>
+            throw new SparkException(s"Cannot determine partition type: $other")
         }
-      case _ =>
-    }
 
-    val partitionColumnNames = if (table.schema.nonEmpty) {
-      table.partitionColumnNames
-    } else {
-      // This is guaranteed in `PreprocessDDL`.
-      assert(table.partitionColumnNames.isEmpty)
-      dataSource match {
-        case r: HadoopFsRelation => r.partitionSchema.fieldNames.toSeq
-        case _ => Nil
+        tables.create(schema, specBuilder.build, db, tableName)
       }
-    }
 
-    val newTable = table.copy(
-      schema = dataSource.schema,
-      partitionColumnNames = partitionColumnNames,
-      // If metastore partition management for file source tables is enabled, we start off with
-      // partition provider hive, but no partitions in the metastore. The user has to call
-      // `msck repair table` to populate the table partitions.
-      tracksPartitionsInCatalog = partitionColumnNames.nonEmpty &&
-        sparkSession.sessionState.conf.manageFilesourcePartitions)
-    // We will return Nil or throw exception at the beginning if the table already exists, so when
-    // we reach here, the table should not exist and we should set `ignoreIfExists` to false.
-    sessionState.catalog.createTable(newTable, ignoreIfExists = false)
+    } else {
+      // Create the relation to validate the arguments before writing the metadata to the
+      // metastore, and infer the table schema and partition if users didn't specify schema in
+      // CREATE TABLE.
+      val pathOption = table.storage.locationUri.map("path" -> _)
+      // Fill in some default table options from the session conf
+      val tableWithDefaultOptions = table.copy(
+        identifier = table.identifier.copy(
+          database = Some(
+            table.identifier.database.getOrElse(sessionState.catalog.getCurrentDatabase))),
+        tracksPartitionsInCatalog = sparkSession.sessionState.conf.manageFilesourcePartitions)
+      val dataSource: BaseRelation =
+        DataSource(
+          sparkSession = sparkSession,
+          userSpecifiedSchema = if (table.schema.isEmpty) None else Some(table.schema),
+          partitionColumns = table.partitionColumnNames,
+          className = table.provider.get,
+          bucketSpec = table.bucketSpec,
+          options = table.storage.properties ++ pathOption,
+          catalogTable = Some(tableWithDefaultOptions)).resolveRelation()
+
+      dataSource match {
+        case fs: HadoopFsRelation =>
+          if (table.tableType == CatalogTableType.EXTERNAL && fs.location.rootPaths.isEmpty) {
+            throw new AnalysisException(
+              "Cannot create a file-based external data source table without path")
+          }
+        case _ =>
+      }
+
+      val partitionColumnNames = if (table.schema.nonEmpty) {
+        table.partitionColumnNames
+      } else {
+        // This is guaranteed in `PreprocessDDL`.
+        assert(table.partitionColumnNames.isEmpty)
+        dataSource match {
+          case r: HadoopFsRelation => r.partitionSchema.fieldNames.toSeq
+          case _ => Nil
+        }
+      }
+
+      val newTable = table.copy(
+        schema = dataSource.schema,
+        partitionColumnNames = partitionColumnNames,
+        // If metastore partition management for file source tables is enabled, we start off with
+        // partition provider hive, but no partitions in the metastore. The user has to call
+        // `msck repair table` to populate the table partitions.
+        tracksPartitionsInCatalog = partitionColumnNames.nonEmpty &&
+            sparkSession.sessionState.conf.manageFilesourcePartitions)
+      // We will return Nil or throw exception at the beginning if the table already exists, so
+      // when we reach here, the table should not exist and we should set `ignoreIfExists` to
+      // false.
+      sessionState.catalog.createTable(newTable, ignoreIfExists = false)
+    }
 
     Seq.empty[Row]
   }
+}
+
+object CreateDataSourceTableCommand {
+  lazy val Year = "^(\\w+)_year$".r
+  lazy val Month = "^(\\w+)_month$".r
+  lazy val Day = "^(\\w+)_day$".r
+  lazy val Hour = "^(\\w+)_hour$".r
+  lazy val Bucket = "^(\\w+)_bucket_(\\d+)$".r
+  lazy val Truncate = "^(\\w+)_truncate_(\\d+)$".r
 }
 
 /**
