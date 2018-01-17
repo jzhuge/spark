@@ -17,25 +17,33 @@
 
 package org.apache.spark.sql.execution.datasources.v2
 
-import scala.collection.JavaConverters._
+import java.util.UUID
 
-import org.apache.spark.sql.AnalysisException
+import scala.collection.JavaConverters._
+import scala.collection.mutable
+
+import org.apache.spark.sql.{AnalysisException, SaveMode}
+import org.apache.spark.sql.catalyst.TableIdentifier
 import org.apache.spark.sql.catalyst.analysis.MultiInstanceRelation
+import org.apache.spark.sql.catalyst.catalog._
 import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Expression}
 import org.apache.spark.sql.catalyst.plans.QueryPlan
 import org.apache.spark.sql.catalyst.plans.logical.{LeafNode, LogicalPlan, Statistics}
 import org.apache.spark.sql.execution.datasources.DataSourceStrategy
 import org.apache.spark.sql.sources.{DataSourceRegister, Filter}
-import org.apache.spark.sql.sources.v2.{DataSourceOptions, DataSourceV2, ReadSupport, ReadSupportWithSchema}
-import org.apache.spark.sql.sources.v2.reader.{DataSourceReader, SupportsPushDownCatalystFilters, SupportsPushDownFilters, SupportsPushDownRequiredColumns, SupportsReportStatistics}
+import org.apache.spark.sql.sources.v2._
+import org.apache.spark.sql.sources.v2.reader._
 import org.apache.spark.sql.types.StructType
 
 case class DataSourceV2Relation(
     source: DataSourceV2,
     options: Map[String, String],
     projection: Seq[AttributeReference],
+    path: Option[String] = None,
+    table: Option[TableIdentifier] = None,
     filters: Option[Seq[Expression]] = None,
-    userSpecifiedSchema: Option[StructType] = None) extends LeafNode with MultiInstanceRelation {
+    userSpecifiedSchema: Option[StructType] = None)
+  extends LeafNode with MultiInstanceRelation with CatalogRelation {
 
   import DataSourceV2Relation._
 
@@ -55,12 +63,12 @@ case class DataSourceV2Relation(
       AttributeReference(f.name, f.dataType, f.nullable, f.metadata)()))
   }
 
-  private lazy val v2Options: DataSourceOptions = makeV2Options(options)
+  private lazy val v2Options: DataSourceOptions = makeV2Options(options, path, table)
 
   lazy val (
-      reader: DataSourceReader,
-      unsupportedFilters: Seq[Expression],
-      pushedFilters: Seq[Expression]) = {
+    reader: DataSourceReader,
+    unsupportedFilters: Seq[Expression],
+    pushedFilters: Seq[Expression]) = {
     val newReader = userSpecifiedSchema match {
       case Some(s) =>
         source.asReadSupportWithSchema.createReader(s, v2Options)
@@ -80,14 +88,20 @@ case class DataSourceV2Relation(
     (newReader, remainingFilters, pushedFilters)
   }
 
+  lazy val writer = (dfSchema: StructType, mode: SaveMode) => {
+    val writer =
+      source.asWriteSupport.createWriter(UUID.randomUUID.toString, dfSchema, mode, v2Options)
+    if (writer.isPresent) Some(writer.get()) else None
+  }
+
   override def doCanonicalize(): LogicalPlan = {
     val c = super.doCanonicalize().asInstanceOf[DataSourceV2Relation]
 
     // override output with canonicalized output to avoid attempting to configure a reader
     val canonicalOutput: Seq[AttributeReference] = this.output
-        .map(a => QueryPlan.normalizeExprId(a, projection))
+      .map(a => QueryPlan.normalizeExprId(a, projection))
 
-    new DataSourceV2Relation(c.source, c.options, c.projection) {
+    new DataSourceV2Relation(c.source, c.options, c.projection, c.path, c.table) {
       override lazy val output: Seq[AttributeReference] = canonicalOutput
     }
   }
@@ -98,6 +112,17 @@ case class DataSourceV2Relation(
     case _ =>
       Statistics(sizeInBytes = conf.defaultSizeInBytes)
   }
+
+  override def catalogTable: CatalogTable = CatalogTable(
+    table.getOrElse(path
+        .map(p => TableIdentifier(p.substring(p.lastIndexOf("/") + 1)))
+        .getOrElse(TableIdentifier("unknown"))),
+    CatalogTableType.EXTERNAL,
+    CatalogStorageFormat(options.get("path").map(CatalogUtils.stringToURI), None, None, None,
+      compressed = true, options),
+    schema,
+    Some(source.name)
+  )
 
   override def newInstance(): DataSourceV2Relation = {
     // projection is used to maintain id assignment.
@@ -155,6 +180,15 @@ object DataSourceV2Relation {
       }
     }
 
+    def asWriteSupport: WriteSupport = {
+      source match {
+        case support: WriteSupport =>
+          support
+        case _ =>
+          throw new AnalysisException(s"Data source is not writable: $name")
+      }
+    }
+
     def name: String = {
       source match {
         case registered: DataSourceRegister =>
@@ -165,8 +199,20 @@ object DataSourceV2Relation {
     }
   }
 
-  private def makeV2Options(options: Map[String, String]): DataSourceOptions = {
-    new DataSourceOptions(options.asJava)
+  private def makeV2Options(options: Map[String, String], path: Option[String],
+                            table: Option[TableIdentifier]): DataSourceOptions = {
+    // ensure path and table options are set correctly
+    val updatedOptions = new mutable.HashMap[String, String]
+
+    updatedOptions ++= options
+
+    path.foreach(p => updatedOptions.put("path", p))
+    table.foreach { ident =>
+      updatedOptions.put("table", ident.table)
+      ident.database.map(db => updatedOptions.put("database", db))
+    }
+
+    new DataSourceOptions(updatedOptions.asJava)
   }
 
   private def schema(
@@ -192,10 +238,13 @@ object DataSourceV2Relation {
   def create(
       source: DataSourceV2,
       options: Map[String, String],
+      path: Option[String] = None,
+      table: Option[TableIdentifier] = None,
       filters: Option[Seq[Expression]] = None,
       userSpecifiedSchema: Option[StructType] = None): DataSourceV2Relation = {
-    val projection = schema(source, makeV2Options(options), userSpecifiedSchema).toAttributes
-    DataSourceV2Relation(source, options, projection, filters,
+    val projection =
+      schema(source, makeV2Options(options, path, table), userSpecifiedSchema).toAttributes
+    DataSourceV2Relation(source, options, projection, path, table, filters,
       // if the source does not implement ReadSupportWithSchema, then the userSpecifiedSchema must
       // be equal to the reader's schema. the schema method enforces this. because the user schema
       // and the reader's schema are identical, drop the user schema.

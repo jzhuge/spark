@@ -199,33 +199,33 @@ class DataSourceV2Suite extends QueryTest with SharedSQLContext {
         val path = file.getCanonicalPath
         assert(spark.read.format(cls.getName).option("path", path).load().collect().isEmpty)
 
-        spark.range(10).select('id, -'id).write.format(cls.getName)
+        spark.range(10).select('id as 'i, -'id as 'j).write.format(cls.getName)
           .option("path", path).save()
         checkAnswer(
           spark.read.format(cls.getName).option("path", path).load(),
           spark.range(10).select('id, -'id))
 
         // test with different save modes
-        spark.range(10).select('id, -'id).write.format(cls.getName)
+        spark.range(10).select('id as 'i, -'id as 'j).write.format(cls.getName)
           .option("path", path).mode("append").save()
         checkAnswer(
           spark.read.format(cls.getName).option("path", path).load(),
           spark.range(10).union(spark.range(10)).select('id, -'id))
 
-        spark.range(5).select('id, -'id).write.format(cls.getName)
+        spark.range(5).select('id as 'i, -'id as 'j).write.format(cls.getName)
           .option("path", path).mode("overwrite").save()
         checkAnswer(
           spark.read.format(cls.getName).option("path", path).load(),
           spark.range(5).select('id, -'id))
 
-        spark.range(5).select('id, -'id).write.format(cls.getName)
+        spark.range(5).select('id as 'i, -'id as 'j).write.format(cls.getName)
           .option("path", path).mode("ignore").save()
         checkAnswer(
           spark.read.format(cls.getName).option("path", path).load(),
           spark.range(5).select('id, -'id))
 
         val e = intercept[Exception] {
-          spark.range(5).select('id, -'id).write.format(cls.getName)
+          spark.range(5).select('id as 'i, -'id as 'j).write.format(cls.getName)
             .option("path", path).mode("error").save()
         }
         assert(e.getMessage.contains("data already exists"))
@@ -242,7 +242,7 @@ class DataSourceV2Suite extends QueryTest with SharedSQLContext {
           }
         }
         // this input data will fail to read middle way.
-        val input = spark.range(10).select(failingUdf('id).as('i)).select('i, -'i)
+        val input = spark.range(10).select(failingUdf('id).as('i)).select('i as 'i, -'i as 'j)
         val e2 = intercept[SparkException] {
           input.write.format(cls.getName).option("path", path).mode("overwrite").save()
         }
@@ -251,7 +251,7 @@ class DataSourceV2Suite extends QueryTest with SharedSQLContext {
         assert(spark.read.format(cls.getName).option("path", path).load().collect().isEmpty)
 
         // test internal row writer
-        spark.range(5).select('id, -'id).write.format(cls.getName)
+        spark.range(5).select('id as 'i, -'id as 'j).write.format(cls.getName)
           .option("path", path).option("internal", "true").mode("overwrite").save()
         checkAnswer(
           spark.read.format(cls.getName).option("path", path).load(),
@@ -326,9 +326,9 @@ class DataSourceV2Suite extends QueryTest with SharedSQLContext {
         .option(optionName, false)
         .format(classOf[DataSourceV2WithSessionConfig].getName).load()
       val options = df.queryExecution.optimizedPlan.collectFirst {
-        case DataSourceV2Relation(_, SimpleDataSourceV2Reader(options)) => options
+        case d: DataSourceV2Relation => d.options
       }
-      assert(options.get.getBoolean(optionName, true) == false)
+      assert(options.get.getOrElse(optionName, "true") == "false")
     }
   }
 
