@@ -17,7 +17,6 @@
 
 package org.apache.spark.sql.hive
 
-import scala.collection.JavaConverters._
 import scala.util.{Failure, Success, Try}
 import scala.util.control.NonFatal
 
@@ -38,7 +37,7 @@ import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution.datasources.v2.DataSourceV2Relation
 import org.apache.spark.sql.hive.HiveShim.HiveFunctionWrapper
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.sources.v2.{DataSourceV2, DataSourceV2Options, ReadSupport}
+import org.apache.spark.sql.sources.v2.DataSourceV2
 import org.apache.spark.sql.types.{DecimalType, DoubleType}
 import org.apache.spark.util.Utils
 
@@ -73,16 +72,18 @@ private[sql] class HiveSessionCatalog(
       } else if (name.database.isDefined || !tempTables.contains(table)) {
         val database = name.database.map(formatDatabaseName)
         val newName = name.copy(database = database, table = table)
+
         metastoreCatalog.lookupRelation(newName, alias) match {
           case m: MetastoreRelation
               if m.catalogTable.properties.get("table_type").contains("iceberg") =>
-            val reader = icebergTables.asInstanceOf[ReadSupport]
-                .createReader(new DataSourceV2Options(Map(
-                  "database" -> name.database.getOrElse("default"),
-                  "table" -> name.table).asJava))
-            DataSourceV2Relation(reader)
+
+            DataSourceV2Relation(icebergTables,
+              Map("database" -> db, "table" -> table),
+              table = Some(TableIdentifier(table, Some(db))))
+
           case other => other
         }
+
       } else {
         val relation = tempTables(table)
         val tableWithQualifiers = SubqueryAlias(table, relation, None)
