@@ -72,10 +72,9 @@ rm -rf spark-${BUILD_VERSION}/data/
 rm -rf spark-${BUILD_VERSION}/ec2/
 
 # Add extra dependency jars
-curl https://artifacts.netflix.com/libs-snapshots-local/netflix/atlas-hive/1.2.5/atlas-hive-1.2.5.jar -o spark-${BUILD_VERSION}/jars/atlas-hive-1.2.5.jar
-cp ${WORKSPACE}/.m2/repository/org/datanucleus/datanucleus-core/3.2.10/datanucleus-core-3.2.10.jar spark-${BUILD_VERSION}/jars/
-cp ${WORKSPACE}/.m2/repository/org/datanucleus/datanucleus-rdbms/3.2.9/datanucleus-rdbms-3.2.9.jar spark-${BUILD_VERSION}/jars/
-cp ${WORKSPACE}/.m2/repository/org/datanucleus/datanucleus-api-jdo/3.2.6/datanucleus-api-jdo-3.2.6.jar spark-${BUILD_VERSION}/jars/
+cp ${WORKSPACE}/spark-repo/org/datanucleus/datanucleus-core/3.2.10/datanucleus-core-3.2.10.jar spark-${BUILD_VERSION}/jars/
+cp ${WORKSPACE}/spark-repo/org/datanucleus/datanucleus-rdbms/3.2.9/datanucleus-rdbms-3.2.9.jar spark-${BUILD_VERSION}/jars/
+cp ${WORKSPACE}/spark-repo/org/datanucleus/datanucleus-api-jdo/3.2.6/datanucleus-api-jdo-3.2.6.jar spark-${BUILD_VERSION}/jars/
 
 # Add spark-defaults.conf and spark-env.sh
 mkdir -p ${WORKSPACE}/spark-${BUILD_VERSION}/conf
