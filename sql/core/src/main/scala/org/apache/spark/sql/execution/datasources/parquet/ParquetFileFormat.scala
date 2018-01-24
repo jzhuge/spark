@@ -23,7 +23,6 @@ import java.net.URI
 import scala.collection.JavaConverters._
 import scala.collection.mutable
 import scala.collection.parallel.ForkJoinTaskSupport
-import scala.concurrent.forkjoin.ForkJoinPool
 import scala.util.{Failure, Try}
 
 import org.apache.hadoop.conf.Configuration
@@ -363,7 +362,7 @@ class ParquetFileFormat
         // read the file schema to create Parquet filters that match case
         val fileReader = ParquetFileReader.open(conf, fileSplit.getPath)
         val fileSchema = try {
-          new ParquetSchemaConverter(conf).convert(
+          new ParquetToSparkSchemaConverter(conf).convert(
             ParquetReadSupport.clipParquetSchema(
               fileReader.getFileMetaData.getSchema, requiredSchema))
         } finally {
@@ -632,7 +631,7 @@ object ParquetFileFormat extends Logging {
 
   def readSchemaFromFileMetadata(
       fileMetaData: FileMetaData,
-      converter: ParquetSchemaConverter): StructType = {
+      converter: ParquetToSparkSchemaConverter): StructType = {
     fileMetaData
         .getKeyValueMetaData
         .asScala.toMap
