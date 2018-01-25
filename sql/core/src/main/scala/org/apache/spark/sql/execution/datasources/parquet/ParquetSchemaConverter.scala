@@ -149,7 +149,7 @@ private[parquet] class ParquetSchemaConverter(
           case UINT_8 => typeNotSupported()
           case UINT_16 => typeNotSupported()
           case UINT_32 => typeNotSupported()
-          case TIME_MILLIS | TIME_MICROS => typeNotImplemented()
+          case TIME_MILLIS => typeNotImplemented()
           case _ => illegalType()
         }
 
@@ -158,7 +158,7 @@ private[parquet] class ParquetSchemaConverter(
           case INT_64 | null => LongType
           case DECIMAL => makeDecimalType(Decimal.MAX_LONG_DIGITS)
           case UINT_64 => typeNotSupported()
-          case TIMESTAMP_MILLIS | TIMESTAMP_MICROS => TimestampType
+          case TIMESTAMP_MILLIS => typeNotImplemented()
           case _ => illegalType()
         }
 
@@ -372,11 +372,10 @@ private[parquet] class ParquetSchemaConverter(
       // For Parquet, we plan to write all `TimestampType` value as `TIMESTAMP_MICROS`, but it's
       // currently not implemented yet because parquet-mr 1.7.0 (the version we're currently using)
       // hasn't implemented `TIMESTAMP_MICROS` yet.
-      case TimestampType if assumeInt96IsTimestamp =>
-        Types.primitive(INT96, repetition).named(field.name)
-
+      //
+      // TODO Converts `TIMESTAMP_MICROS` once parquet-mr implements that.
       case TimestampType =>
-        Types.primitive(INT64, repetition).as(TIMESTAMP_MICROS).named(field.name)
+        Types.primitive(INT96, repetition).named(field.name)
 
       case BinaryType =>
         Types.primitive(BINARY, repetition).named(field.name)

@@ -66,8 +66,6 @@ private[parquet] class ParquetWriteSupport extends WriteSupport[InternalRow] wit
   // Whether to write data in legacy Parquet format compatible with Spark 1.4 and prior versions
   private var writeLegacyParquetFormat: Boolean = _
 
-  private var writeInt96Timestamp: Boolean = false
-
   // Reusable byte array used to write timestamps as Parquet INT96 values
   private val timestampBuffer = new Array[Byte](12)
 
@@ -155,7 +153,7 @@ private[parquet] class ParquetWriteSupport extends WriteSupport[InternalRow] wit
           recordConsumer.addBinary(
             Binary.fromReusedByteArray(row.getUTF8String(ordinal).getBytes))
 
-      case TimestampType if writeInt96Timestamp =>
+      case TimestampType =>
         (row: SpecializedGetters, ordinal: Int) => {
           // TODO Writes `TimestampType` values as `TIMESTAMP_MICROS` once parquet-mr implements it
           // Currently we only support timestamps stored as INT96, which is compatible with Hive
@@ -169,11 +167,6 @@ private[parquet] class ParquetWriteSupport extends WriteSupport[InternalRow] wit
           val buf = ByteBuffer.wrap(timestampBuffer)
           buf.order(ByteOrder.LITTLE_ENDIAN).putLong(timeOfDayNanos).putInt(julianDay)
           recordConsumer.addBinary(Binary.fromReusedByteArray(timestampBuffer))
-        }
-
-      case TimestampType =>
-        (row: SpecializedGetters, ordinal: Int) => {
-          recordConsumer.addLong(row.getLong(ordinal))
         }
 
       case BinaryType =>

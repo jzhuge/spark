@@ -26,7 +26,7 @@ import scala.collection.mutable.ArrayBuffer
 import org.apache.parquet.column.Dictionary
 import org.apache.parquet.io.api.{Binary, Converter, GroupConverter, PrimitiveConverter}
 import org.apache.parquet.schema.{GroupType, MessageType, Type}
-import org.apache.parquet.schema.OriginalType.{INT_32, LIST, TIMESTAMP_MICROS, TIMESTAMP_MILLIS, UTF8}
+import org.apache.parquet.schema.OriginalType.{INT_32, LIST, UTF8}
 import org.apache.parquet.schema.PrimitiveType.PrimitiveTypeName.{BINARY, DOUBLE, FIXED_LEN_BYTE_ARRAY, INT32, INT64}
 
 import org.apache.spark.internal.Logging
@@ -251,18 +251,6 @@ private[parquet] class ParquetRowConverter(
 
       case StringType =>
         new ParquetStringConverter(updater)
-
-      case TimestampType
-        if parquetType.asPrimitiveType().getPrimitiveTypeName == INT64 &&
-           parquetType.getOriginalType == TIMESTAMP_MILLIS =>
-        new ParquetPrimitiveConverter(updater) {
-          override def addLong(value: Long): Unit = updater.setLong(1000L * value)
-        }
-
-      case TimestampType
-        if parquetType.asPrimitiveType().getPrimitiveTypeName == INT64 &&
-           parquetType.getOriginalType == TIMESTAMP_MICROS =>
-        new ParquetPrimitiveConverter(updater)
 
       case TimestampType =>
         // TODO Implements `TIMESTAMP_MICROS` once parquet-mr has that.
