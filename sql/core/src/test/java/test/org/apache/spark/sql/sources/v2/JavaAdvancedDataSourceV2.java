@@ -79,8 +79,8 @@ public class JavaAdvancedDataSourceV2 implements DataSourceV2, ReadSupport {
     }
 
     @Override
-    public List<ReadTask<Row>> createReadTasks() {
-      List<ReadTask<Row>> res = new ArrayList<>();
+    public List<DataReaderFactory<Row>> createDataReaderFactories() {
+      List<DataReaderFactory<Row>> res = new ArrayList<>();
 
       Integer lowerBound = null;
       for (Filter filter : filters) {
@@ -94,25 +94,25 @@ public class JavaAdvancedDataSourceV2 implements DataSourceV2, ReadSupport {
       }
 
       if (lowerBound == null) {
-        res.add(new JavaAdvancedReadTask(0, 5, requiredSchema));
-        res.add(new JavaAdvancedReadTask(5, 10, requiredSchema));
+        res.add(new JavaAdvancedDataReaderFactory(0, 5, requiredSchema));
+        res.add(new JavaAdvancedDataReaderFactory(5, 10, requiredSchema));
       } else if (lowerBound < 4) {
-        res.add(new JavaAdvancedReadTask(lowerBound + 1, 5, requiredSchema));
-        res.add(new JavaAdvancedReadTask(5, 10, requiredSchema));
+        res.add(new JavaAdvancedDataReaderFactory(lowerBound + 1, 5, requiredSchema));
+        res.add(new JavaAdvancedDataReaderFactory(5, 10, requiredSchema));
       } else if (lowerBound < 9) {
-        res.add(new JavaAdvancedReadTask(lowerBound + 1, 10, requiredSchema));
+        res.add(new JavaAdvancedDataReaderFactory(lowerBound + 1, 10, requiredSchema));
       }
 
       return res;
     }
   }
 
-  static class JavaAdvancedReadTask implements ReadTask<Row>, DataReader<Row> {
+  static class JavaAdvancedDataReaderFactory implements DataReaderFactory<Row>, DataReader<Row> {
     private int start;
     private int end;
     private StructType requiredSchema;
 
-    JavaAdvancedReadTask(int start, int end, StructType requiredSchema) {
+    JavaAdvancedDataReaderFactory(int start, int end, StructType requiredSchema) {
       this.start = start;
       this.end = end;
       this.requiredSchema = requiredSchema;
@@ -120,7 +120,7 @@ public class JavaAdvancedDataSourceV2 implements DataSourceV2, ReadSupport {
 
     @Override
     public DataReader<Row> createDataReader() {
-      return new JavaAdvancedReadTask(start - 1, end, requiredSchema);
+      return new JavaAdvancedDataReaderFactory(start - 1, end, requiredSchema);
     }
 
     @Override

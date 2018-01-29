@@ -45,11 +45,11 @@ case class DataSourceV2ScanExec(
     "numOutputRows" -> SQLMetrics.createMetric(sparkContext, "number of output rows"))
 
   override protected def doExecute(): RDD[InternalRow] = {
-    val readTasks: java.util.List[ReadTask[UnsafeRow]] = reader match {
-      case r: SupportsScanUnsafeRow => r.createUnsafeRowReadTasks()
+    val readTasks: java.util.List[DataReaderFactory[UnsafeRow]] = reader match {
+      case r: SupportsScanUnsafeRow => r.createUnsafeRowReaderFactories()
       case _ =>
-        reader.createReadTasks().asScala.map {
-          new RowToUnsafeRowReadTask(_, reader.readSchema()): ReadTask[UnsafeRow]
+        reader.createDataReaderFactories().asScala.map {
+          new RowToUnsafeRowDataReaderFactory(_, reader.readSchema()): DataReaderFactory[UnsafeRow]
         }.asJava
     }
 
@@ -63,14 +63,14 @@ case class DataSourceV2ScanExec(
   }
 }
 
-class RowToUnsafeRowReadTask(rowReadTask: ReadTask[Row], schema: StructType)
-  extends ReadTask[UnsafeRow] {
+class RowToUnsafeRowDataReaderFactory(rowReaderFactory: DataReaderFactory[Row], schema: StructType)
+  extends DataReaderFactory[UnsafeRow] {
 
-  override def preferredLocations: Array[String] = rowReadTask.preferredLocations
+  override def preferredLocations: Array[String] = rowReaderFactory.preferredLocations
 
   override def createDataReader: DataReader[UnsafeRow] = {
     new RowToUnsafeDataReader(
-      rowReadTask.createDataReader, RowEncoder.apply(schema).resolveAndBind())
+      rowReaderFactory.createDataReader, RowEncoder.apply(schema).resolveAndBind())
   }
 }
 
