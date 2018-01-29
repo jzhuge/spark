@@ -36,7 +36,6 @@ import org.apache.hadoop.yarn.ipc.YarnRPC
 import org.apache.hadoop.yarn.util.{ConverterUtils, Records}
 
 import org.apache.spark.{SecurityManager, SparkConf, SparkException}
-import org.apache.spark.deploy.yarn.config._
 import org.apache.spark.internal.Logging
 import org.apache.spark.internal.config._
 import org.apache.spark.launcher.YarnCommandBuilderUtils
@@ -142,6 +141,9 @@ private[yarn] class ExecutorRunnable(
     javaOpts += "-Xmx" + executorMemoryString
 
     // Set extra Java options for the executor, if defined
+    sparkConf.get(EXECUTOR_DEFAULT_JAVA_OPTIONS).foreach { opts =>
+      javaOpts ++= Utils.splitCommandString(opts).map(YarnSparkHadoopUtil.escapeForShell)
+    }
     sparkConf.get(EXECUTOR_JAVA_OPTIONS).foreach { opts =>
       javaOpts ++= Utils.splitCommandString(opts).map(YarnSparkHadoopUtil.escapeForShell)
     }
