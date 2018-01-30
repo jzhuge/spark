@@ -29,14 +29,18 @@ import org.apache.spark.annotation.InterfaceStability;
  * data source options.
  */
 @InterfaceStability.Evolving
-public class DataSourceV2Options {
+public class DataSourceOptions {
   private final Map<String, String> keyLowerCasedMap;
 
   private String toLowerCase(String key) {
     return key.toLowerCase(Locale.ROOT);
   }
 
-  public DataSourceV2Options(Map<String, String> originalMap) {
+  public static DataSourceOptions empty() {
+    return new DataSourceOptions(new HashMap<>());
+  }
+
+  public DataSourceOptions(Map<String, String> originalMap) {
     keyLowerCasedMap = new HashMap<>(originalMap.size());
     for (Map.Entry<String, String> entry : originalMap.entrySet()) {
       keyLowerCasedMap.put(toLowerCase(entry.getKey()), entry.getValue());

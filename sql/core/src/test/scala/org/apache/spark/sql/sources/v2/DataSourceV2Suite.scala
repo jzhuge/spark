@@ -153,7 +153,7 @@ class DataSourceV2Suite extends QueryTest with SharedSQLContext {
 
 class SimpleDataSourceV2 extends DataSourceV2 with ReadSupport {
 
-  class Reader extends DataSourceV2Reader {
+  class Reader extends DataSourceReader {
     override def readSchema(): StructType = new StructType().add("i", "int").add("j", "int")
 
     override def createReadTasks(): JList[ReadTask[Row]] = {
@@ -161,7 +161,7 @@ class SimpleDataSourceV2 extends DataSourceV2 with ReadSupport {
     }
   }
 
-  override def createReader(options: DataSourceV2Options): DataSourceV2Reader = new Reader
+  override def createReader(options: DataSourceOptions): DataSourceReader = new Reader
 }
 
 class SimpleReadTask(start: Int, end: Int) extends ReadTask[Row] with DataReader[Row] {
@@ -183,7 +183,7 @@ class SimpleReadTask(start: Int, end: Int) extends ReadTask[Row] with DataReader
 
 class AdvancedDataSourceV2 extends DataSourceV2 with ReadSupport {
 
-  class Reader extends DataSourceV2Reader
+  class Reader extends DataSourceReader
     with SupportsPushDownRequiredColumns with SupportsPushDownFilters {
 
     var requiredSchema = new StructType().add("i", "int").add("j", "int")
@@ -225,7 +225,7 @@ class AdvancedDataSourceV2 extends DataSourceV2 with ReadSupport {
     }
   }
 
-  override def createReader(options: DataSourceV2Options): DataSourceV2Reader = new Reader
+  override def createReader(options: DataSourceOptions): DataSourceReader = new Reader
 }
 
 class AdvancedReadTask(start: Int, end: Int, requiredSchema: StructType)
@@ -256,7 +256,7 @@ class AdvancedReadTask(start: Int, end: Int, requiredSchema: StructType)
 
 class UnsafeRowDataSourceV2 extends DataSourceV2 with ReadSupport {
 
-  class Reader extends DataSourceV2Reader with SupportsScanUnsafeRow {
+  class Reader extends DataSourceReader with SupportsScanUnsafeRow {
     override def readSchema(): StructType = new StructType().add("i", "int").add("j", "int")
 
     override def createUnsafeRowReadTasks(): JList[ReadTask[UnsafeRow]] = {
@@ -264,7 +264,7 @@ class UnsafeRowDataSourceV2 extends DataSourceV2 with ReadSupport {
     }
   }
 
-  override def createReader(options: DataSourceV2Options): DataSourceV2Reader = new Reader
+  override def createReader(options: DataSourceOptions): DataSourceReader = new Reader
 }
 
 class UnsafeRowReadTask(start: Int, end: Int)
@@ -292,11 +292,11 @@ class UnsafeRowReadTask(start: Int, end: Int)
 
 class SchemaRequiredDataSource extends DataSourceV2 with ReadSupportWithSchema {
 
-  class Reader(val readSchema: StructType) extends DataSourceV2Reader {
+  class Reader(val readSchema: StructType) extends DataSourceReader {
     override def createReadTasks(): JList[ReadTask[Row]] =
       java.util.Collections.emptyList()
   }
 
-  override def createReader(schema: StructType, options: DataSourceV2Options): DataSourceV2Reader =
+  override def createReader(schema: StructType, options: DataSourceOptions): DataSourceReader =
     new Reader(schema)
 }

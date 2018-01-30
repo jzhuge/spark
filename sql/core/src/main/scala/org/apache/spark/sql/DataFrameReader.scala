@@ -21,10 +21,10 @@ import java.util.Properties
 
 import scala.collection.JavaConverters._
 
-import org.apache.spark.api.java.JavaRDD
-import org.apache.spark.internal.Logging
 import org.apache.spark.Partition
 import org.apache.spark.annotation.InterfaceStability
+import org.apache.spark.api.java.JavaRDD
+import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.json.{JacksonParser, JSONOptions}
 import org.apache.spark.sql.execution.LogicalRDD
@@ -184,7 +184,7 @@ class DataFrameReader private[sql](sparkSession: SparkSession) extends Logging {
    */
   def jdbc(url: String, table: String, properties: Properties): DataFrame = {
     // properties should override settings in extraOptions.
-    this.extraOptions = this.extraOptions ++ properties.asScala
+    this.extraOptions ++= properties.asScala
     // explicit url and dbtable should override all
     this.extraOptions += (JDBCOptions.JDBC_URL -> url, JDBCOptions.JDBC_TABLE_NAME -> table)
     format("jdbc").load()

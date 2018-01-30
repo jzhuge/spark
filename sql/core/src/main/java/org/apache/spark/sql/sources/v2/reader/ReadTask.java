@@ -22,8 +22,9 @@ import java.io.Serializable;
 import org.apache.spark.annotation.InterfaceStability;
 
 /**
- * A read task returned by {@link DataSourceV2Reader#createReadTasks()} and is responsible for
- * creating the actual data reader. The relationship between {@link ReadTask} and {@link DataReader}
+ * A reader factory returned by {@link DataSourceReader#createReadTasks()} and is
+ * responsible for creating the actual data reader. The relationship between
+ * {@link ReadTask} and {@link DataReader}
  * is similar to the relationship between {@link Iterable} and {@link java.util.Iterator}.
  *
  * Note that, the read task will be serialized and sent to executors, then the data reader will be

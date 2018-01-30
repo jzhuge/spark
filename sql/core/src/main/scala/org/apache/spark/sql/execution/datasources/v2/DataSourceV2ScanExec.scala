@@ -34,7 +34,8 @@ import org.apache.spark.sql.types.StructType
  */
 case class DataSourceV2ScanExec(
     fullOutput: Seq[AttributeReference],
-    @transient reader: DataSourceV2Reader) extends LeafExecNode with DataSourceReaderHolder {
+    @transient reader: DataSourceReader)
+  extends LeafExecNode with DataSourceReaderHolder {
 
   override def canEqual(other: Any): Boolean = other.isInstanceOf[DataSourceV2ScanExec]
 

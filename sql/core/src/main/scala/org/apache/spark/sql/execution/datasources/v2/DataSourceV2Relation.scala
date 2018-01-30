@@ -29,9 +29,9 @@ import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Expression
 import org.apache.spark.sql.catalyst.plans.logical.{LeafNode, Statistics}
 import org.apache.spark.sql.execution.datasources.DataSourceStrategy
 import org.apache.spark.sql.sources.{DataSourceRegister, Filter}
-import org.apache.spark.sql.sources.v2.{DataSourceV2, DataSourceV2Options, ReadSupport, ReadSupportWithSchema, WriteSupport}
+import org.apache.spark.sql.sources.v2.{DataSourceOptions, DataSourceV2, ReadSupport, ReadSupportWithSchema, WriteSupport}
 import org.apache.spark.sql.sources.v2.reader._
-import org.apache.spark.sql.sources.v2.writer.DataSourceV2Writer
+import org.apache.spark.sql.sources.v2.writer.DataSourceWriter
 import org.apache.spark.sql.types.StructType
 
 case class DataSourceV2Relation(
@@ -62,7 +62,7 @@ case class DataSourceV2Relation(
     }
   }
 
-  private lazy val v2Options: DataSourceV2Options = {
+  private lazy val v2Options: DataSourceOptions = {
     // ensure path and table options are set correctly
     val updatedOptions = new mutable.HashMap[String, String]
     path.map(p => updatedOptions.put("path", p))
@@ -71,7 +71,7 @@ case class DataSourceV2Relation(
       ident.database.map(db => updatedOptions.put("database", db))
     }
 
-    new  DataSourceV2Options(updatedOptions.asJava)
+    new  DataSourceOptions(updatedOptions.asJava)
   }
 
   private val sourceName: String = {
@@ -83,7 +83,7 @@ case class DataSourceV2Relation(
     }
   }
 
-  lazy val (reader: DataSourceV2Reader, unsupportedFilters: Seq[Expression]) = {
+  lazy val (reader: DataSourceReader, unsupportedFilters: Seq[Expression]) = {
     val newReader = userSchema match {
       case Some(s) =>
         asReadSupportWithSchema.createReader(s, v2Options)
@@ -105,7 +105,7 @@ case class DataSourceV2Relation(
     (newReader, remainingFilters)
   }
 
-  def writer(dfSchema: StructType, mode: SaveMode): Option[DataSourceV2Writer] = {
+  def writer(dfSchema: StructType, mode: SaveMode): Option[DataSourceWriter] = {
     val writer = asWriteSupport.createWriter(UUID.randomUUID.toString, dfSchema, mode, v2Options)
     if (writer.isPresent) Some(writer.get()) else None
   }
@@ -166,7 +166,7 @@ case class DataSourceV2Relation(
 }
 
 object DataSourceV2Relation {
-  private def pushRequiredColumns(reader: DataSourceV2Reader, struct: StructType): Unit = {
+  private def pushRequiredColumns(reader: DataSourceReader, struct: StructType): Unit = {
     reader match {
       case projectionSupport: SupportsPushDownRequiredColumns =>
         projectionSupport.pruneColumns(struct)
@@ -174,7 +174,7 @@ object DataSourceV2Relation {
     }
   }
 
-  private def pushFilters(reader: DataSourceV2Reader, filters: Seq[Expression]): Seq[Expression] = {
+  private def pushFilters(reader: DataSourceReader, filters: Seq[Expression]): Seq[Expression] = {
     reader match {
       case catalystFilterSupport: SupportsPushDownCatalystFilters =>
         catalystFilterSupport.pushCatalystFilters(filters.toArray)
