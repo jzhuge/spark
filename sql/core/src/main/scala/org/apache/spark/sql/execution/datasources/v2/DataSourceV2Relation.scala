@@ -71,7 +71,7 @@ case class DataSourceV2Relation(
       ident.database.map(db => updatedOptions.put("database", db))
     }
 
-    new DataSourceV2Options(options.asJava)
+    new  DataSourceV2Options(updatedOptions.asJava)
   }
 
   private val sourceName: String = {
