@@ -38,6 +38,7 @@ DEFAULT_DEPLOY_MODE = {
         'spark-console': 'client',
         'scala-console': 'client',
         'scala-kernel': 'client',
+        'sparklyr': 'client',
         'sql-console': 'client',
         'spark-submit': 'cluster',
         'pyspark': 'cluster'
@@ -124,6 +125,52 @@ def get_driver_memory(mode):
 
     return str(mem_mb) + 'm'
 
+def write_config_yml(spark_args):
+    # yaml is available on the big data image, but not Genie
+    # Genie doesn't run R kernels, so this only imports yaml when it is needed
+    import yaml
+
+    # sparklyr does not use the default master from spark-defaults.conf
+    configs = {
+            'spark.master': 'yarn'
+        }
+    i = 1 # skip spark command
+    while i < len(spark_args):
+        if spark_args[i] == '--conf':
+            i += 1
+            key, value = spark_args[i].split('=', 1)
+            configs[key] = value
+
+        elif spark_args[i].startswith('--'):
+            key = 'sparklyr.shell.' + spark_args[i].lstrip('--')
+            if not spark_args[i+1].startswith('--'):
+                i += 1
+                configs[key] = spark_args[i]
+            else:
+                configs[key] = ''
+
+        i += 1
+
+    with open('config.yml', 'w') as config_yml:
+        yaml.dump(
+                { 'default': configs },
+                config_yml,
+                default_flow_style=False
+            )
+
+def clean_delimiter_args(command, command_args):
+    '''Makes args with DELIMITER look like args passed by the other commands.
+
+    clean_delimiter_args('sparklyr',
+        ['pyspark-kernel', ..., 'DELIMITER',
+         'R', '-e', 'IRKernel::main()', '--args', 'conn.json'])
+    => ['sparklyr', 'R', '-e', 'IRKernel::main()', '--args', 'conn.json'])
+    '''
+    delim = command_args.index('DELIMITER')
+    args = [command]
+    args.extend(command_args[delim+1:])
+    return args
+
 
 def main(command_args):
     """main entry point"""
@@ -158,8 +205,13 @@ def main(command_args):
     # it doesn't pass the script name as the first arg to spark-shell
     # instead, it runs its own python script.
     if command.startswith('../../../../../../../../'):
-        spark_executable = '%s/bin/%s' % (spark_home, command)
-        spark_args = [command]
+        # detect R
+        if '/usr/lib/R/bin/R' in command_args:
+            command = 'sparklyr'
+            command_args = clean_delimiter_args(command, command_args)
+        else:
+            spark_executable = '%s/bin/%s' % (spark_home, command)
+            spark_args = [command]
 
     # add the Spark properties file
     spark_args.append('--properties-file')
@@ -198,14 +250,6 @@ def main(command_args):
     # get the command args file
     command_args_file, command_args = get_value(command_args, '--command-arg-file')
 
-    # last, add user's command line args
-    spark_args.extend(command_args[1:])
-
-    # add command-line args for the app from the command args file
-    if command_args_file and os.path.exists(command_args_file):
-        with open(command_args_file) as arg_file:
-            spark_args.extend([ arg[:-1] if arg.endswith('\n') else arg for arg in arg_file.readlines() ])
-
     # set the temp folder for all JVMs
     java_options = [getenv('_JAVA_OPTIONS', required=False)]
     if None in java_options:
@@ -220,7 +264,23 @@ def main(command_args):
         os.environ['SPARK_PRINT_LAUNCH_COMMAND'] = 'True'
         sys.stderr.write("Execv: %s %s\n" % (spark_executable, repr(spark_args)))
 
-    os.execv(spark_executable, spark_args)
+    if command == 'sparklyr':
+        # spark args are passed via configuration file instead of direct
+        write_config_yml(spark_args)
+
+        # command_args contains: ['sparklyr',executable,args...]
+        os.execv(command_args[1], command_args[2:])
+
+    else:
+        # last, add user's command line args
+        spark_args.extend(command_args[1:])
+
+        # add command-line args for the app from the command args file
+        if command_args_file and os.path.exists(command_args_file):
+            with open(command_args_file) as arg_file:
+                spark_args.extend([ arg[:-1] if arg.endswith('\n') else arg for arg in arg_file.readlines() ])
+
+        os.execv(spark_executable, spark_args)
 
 if __name__ == "__main__":
     main(sys.argv[1:])
