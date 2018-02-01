@@ -21,7 +21,7 @@ import java.util.{ArrayList, List => JList}
 
 import test.org.apache.spark.sql.sources.v2._
 
-import org.apache.spark.SparkException
+import org.apache.spark.{SparkConf, SparkException}
 import org.apache.spark.sql.{AnalysisException, DataFrame, QueryTest, Row}
 import org.apache.spark.sql.catalyst.expressions.UnsafeRow
 import org.apache.spark.sql.execution.datasources.v2.DataSourceV2ScanExec
@@ -241,6 +241,25 @@ class DataSourceV2Suite extends QueryTest with SharedSQLContext {
     checkAnswer(q4, Row(1))
     val reader4 = getReader(q4)
     assert(reader4.requiredSchema.fieldNames === Seq("i"))
+  }
+
+  test("simple counter in writer with onDataWriterCommit") {
+    Seq(classOf[SimpleWritableDataSource]).foreach { cls =>
+      withTempPath { file =>
+        val path = file.getCanonicalPath
+        assert(spark.read.format(cls.getName).option("path", path).load().collect().isEmpty)
+
+        val numPartition = 6
+        spark.range(0, 10, 1, numPartition).select('id, -'id).write.format(cls.getName)
+          .option("path", path).save()
+        checkAnswer(
+          spark.read.format(cls.getName).option("path", path).load(),
+          spark.range(10).select('id, -'id))
+
+        assert(SimpleCounter.getCounter == numPartition,
+          "method onDataWriterCommit should be called as many as the number of partitions")
+      }
+    }
   }
 }
 

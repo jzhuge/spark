@@ -65,7 +65,10 @@ case class WriteToDataSourceV2Exec(writer: DataSourceWriter, query: SparkPlan) e
         (context: TaskContext, iter: Iterator[InternalRow]) =>
           DataWritingSparkTask.run(writeTask, context, iter, useCommitCoordinator),
         rdd.partitions.indices,
-        (index, message: WriterCommitMessage) => messages(index) = message
+        (index, message: WriterCommitMessage) => {
+          messages(index) = message
+          writer.onDataWriterCommit(message)
+        }
       )
 
       logInfo(s"Data source writer $writer is committing.")
