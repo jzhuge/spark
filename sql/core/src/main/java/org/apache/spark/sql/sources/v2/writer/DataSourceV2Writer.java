@@ -60,6 +60,16 @@ public interface DataSourceV2Writer {
   DataWriterFactory<Row> createWriterFactory();
 
   /**
+   * Returns whether Spark should use the commit coordinator to ensure that only one attempt for
+   * each task commits.
+   *
+   * @return true if commit coordinator should be used, false otherwise.
+   */
+  default boolean useCommitCoordinator() {
+    return true;
+  }
+
+  /**
    * Commits this writing job with a list of commit messages. The commit messages are collected from
    * successful data writers and are produced by {@link DataWriter#commit()}.
    *
@@ -67,10 +77,11 @@ public interface DataSourceV2Writer {
    * failed, and {@link #abort(WriterCommitMessage[])} would be called. The state of the destination
    * is undefined and @{@link #abort(WriterCommitMessage[])} may not be able to deal with it.
    *
-   * Note that, one partition may have multiple committed data writers because of speculative tasks.
-   * Spark will pick the first successful one and get its commit message. Implementations should be
-   * aware of this and handle it correctly, e.g., have a coordinator to make sure only one data
-   * writer can commit, or have a way to clean up the data of already-committed writers.
+   * Note that speculative execution may cause multiple tasks to run for a partition. By default,
+   * Spark uses the commit coordinator to allow only one attempt to commit. Implementations can
+   * disable this behavior by overriding {@link #useCommitCoordinator()}. If disabled, multiple
+   * attempts may have committed successfully and all successful commit messages are passed to this
+   * commit method.
    */
   void commit(WriterCommitMessage[] messages);
 
