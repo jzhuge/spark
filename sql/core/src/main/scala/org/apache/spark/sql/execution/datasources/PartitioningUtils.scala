@@ -245,13 +245,17 @@ object PartitioningUtils {
       None
     } else {
       val columnName = unescapePathName(columnSpec.take(equalSignIndex))
-      assert(columnName.nonEmpty, s"Empty partition column name in '$columnSpec'")
+      if (columnName.equalsIgnoreCase("batchid")) {
+        None
+      } else {
+        assert(columnName.nonEmpty, s"Empty partition column name in '$columnSpec'")
 
-      val rawColumnValue = columnSpec.drop(equalSignIndex + 1)
-      assert(rawColumnValue.nonEmpty, s"Empty partition column value in '$columnSpec'")
+        val rawColumnValue = columnSpec.drop(equalSignIndex + 1)
+        assert(rawColumnValue.nonEmpty, s"Empty partition column value in '$columnSpec'")
 
-      val literal = inferPartitionColumnValue(rawColumnValue, typeInference, timeZone)
-      Some(columnName -> literal)
+        val literal = inferPartitionColumnValue(rawColumnValue, typeInference, timeZone)
+        Some(columnName -> literal)
+      }
     }
   }
 
