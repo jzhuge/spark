@@ -1000,15 +1000,15 @@ class SparkContext(object):
                 """ % (web_ui, cluster, region, app_id, app_id, log_file)
         else:
             web_proxy = self._jsc.hadoopConfiguration().get("yarn.web-proxy.address")
-            master_host = web_proxy.split(":")[0]
+            rm_addr = self._jsc.hadoopConfiguration().get("yarn.resourcemanager.webapp.address")
             return """
                 <ul>
                 <li><a href="http://%s/proxy/%s" target="new_tab">Spark UI</a></li>
-                <li><a href="http://%s:8088/cluster/app/%s" target="new_tab">Hadoop app: %s</a></li>
+                <li><a href="http://%s/cluster/app/%s" target="new_tab">Hadoop app: %s</a></li>
                 <li>Local logs available using %%tail_log</li>
                 <li>Local logs are at %s</li>
                 </ul>
-                """ % (web_proxy, app_id, master_host, app_id, app_id, log_file)
+                """ % (web_proxy, app_id, rm_addr, app_id, app_id, log_file)
 
 def _test():
     import atexit
