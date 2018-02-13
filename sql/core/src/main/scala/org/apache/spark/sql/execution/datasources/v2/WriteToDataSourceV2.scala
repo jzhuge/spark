@@ -20,6 +20,7 @@ package org.apache.spark.sql.execution.datasources.v2
 import scala.util.control.NonFatal
 
 import org.apache.spark.{SparkEnv, SparkException, TaskContext}
+import org.apache.spark.executor.CommitDeniedException
 import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.Row
@@ -56,6 +57,7 @@ case class WriteToDataSourceV2Exec(writer: DataSourceWriter, query: SparkPlan) e
       case _ => new InternalRowDataWriterFactory(writer.createWriterFactory(), query.schema)
     }
 
+    val useCommitCoordinator = writer.useCommitCoordinator
     val rdd = query.execute()
     val messages = new Array[WriterCommitMessage](rdd.partitions.length)
 
@@ -76,7 +78,7 @@ case class WriteToDataSourceV2Exec(writer: DataSourceWriter, query: SparkPlan) e
             DataWritingSparkTask.runContinuous(writeTask, context, iter)
         case _ =>
           (context: TaskContext, iter: Iterator[InternalRow]) =>
-            DataWritingSparkTask.run(writeTask, context, iter)
+            DataWritingSparkTask.run(writeTask, context, iter, useCommitCoordinator)
       }
 
       sparkContext.runJob(
@@ -122,24 +124,47 @@ object DataWritingSparkTask extends Logging {
   def run(
       writeTask: DataWriterFactory[InternalRow],
       context: TaskContext,
-      iter: Iterator[InternalRow]): WriterCommitMessage = {
+      iter: Iterator[InternalRow],
+      useCommitCoordinator: Boolean): WriterCommitMessage = {
     // SPARK-24552: Generate a unique "attempt ID" based on the stage and task attempt numbers.
     // Assumes that there won't be more than Short.MaxValue attempts, at least not concurrently.
     val attemptId = (context.stageAttemptNumber << 16) | context.attemptNumber
     val dataWriter = writeTask.createDataWriter(context.partitionId(), attemptId)
+    val stageId = context.stageId()
+    val partId = context.partitionId()
 
     // write the data and commit this writer.
     Utils.tryWithSafeFinallyAndFailureCallbacks(block = {
       iter.foreach(dataWriter.write)
-      logInfo(s"Writer for partition ${context.partitionId()} is committing.")
-      val msg = dataWriter.commit()
-      logInfo(s"Writer for partition ${context.partitionId()} committed.")
+
+      val msg = if (useCommitCoordinator) {
+        val coordinator = SparkEnv.get.outputCommitCoordinator
+        val commitAuthorized = coordinator.canCommit(context.stageId(),
+          context.stageAttemptNumber(), partId, attemptId)
+        if (commitAuthorized) {
+          logInfo(s"Writer for stage $stageId, task $partId.$attemptId is authorized to commit.")
+          dataWriter.commit()
+        } else {
+          val message = s"Stage $stageId, task $partId.$attemptId: driver did not authorize commit"
+          logInfo(message)
+          // throwing CommitDeniedException will trigger the catch block for abort
+          throw new CommitDeniedException(message, stageId, partId, attemptId)
+        }
+
+      } else {
+        logInfo(s"Writer for partition ${context.partitionId()} is committing.")
+        dataWriter.commit()
+      }
+
+      logInfo(s"Writer for stage $stageId, task $partId.$attemptId committed.")
+
       msg
+
     })(catchBlock = {
       // If there is an error, abort this writer
-      logError(s"Writer for partition ${context.partitionId()} is aborting.")
+      logError(s"Writer for stage $stageId, task $partId.$attemptId is aborting.")
       dataWriter.abort()
-      logError(s"Writer for partition ${context.partitionId()} aborted.")
+      logError(s"Writer for stage $stageId, task $partId.$attemptId aborted.")
     })
   }
 
