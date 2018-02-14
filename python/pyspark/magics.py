@@ -1,5 +1,9 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
+#
+# Must support both Python 2 and 3 !
+#
+from __future__ import print_function
 
 import os, sys
 
@@ -25,4 +29,4 @@ def tail_log(arg = ""):
         if line_count > 10 * num_lines:
             lines = lines[-num_lines:]
 
-    print "".join(lines[-num_lines:])
+    print("".join(lines[-num_lines:]))
