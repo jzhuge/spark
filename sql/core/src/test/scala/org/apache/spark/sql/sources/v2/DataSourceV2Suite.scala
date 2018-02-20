@@ -25,7 +25,7 @@ import test.org.apache.spark.sql.sources.v2._
 import org.apache.spark.SparkException
 import org.apache.spark.sql.{AnalysisException, DataFrame, QueryTest, Row}
 import org.apache.spark.sql.catalyst.expressions.UnsafeRow
-import org.apache.spark.sql.execution.datasources.v2.{DataSourceV2Relation, DataSourceV2ScanExec}
+import org.apache.spark.sql.execution.datasources.v2.{DataSourceV2Relation, DataSourceV2ScanExec, StreamingDataSourceV2Relation}
 import org.apache.spark.sql.execution.exchange.ShuffleExchangeExec
 import org.apache.spark.sql.execution.vectorized.OnHeapColumnVector
 import org.apache.spark.sql.functions._
@@ -147,7 +147,7 @@ class DataSourceV2Suite extends QueryTest with SharedSQLContext {
     Seq(classOf[SchemaRequiredDataSource], classOf[JavaSchemaRequiredDataSource]).foreach { cls =>
       withClue(cls.getName) {
         val e = intercept[AnalysisException](spark.read.format(cls.getName).load())
-        assert(e.message.contains("A schema needs to be specified"))
+        assert(e.message.contains("requires a user-supplied schema"))
 
         val schema = new StructType().add("i", "int").add("s", "string")
         val df = spark.read.format(cls.getName).schema(schema).load()
@@ -326,9 +326,9 @@ class DataSourceV2Suite extends QueryTest with SharedSQLContext {
         .option(optionName, false)
         .format(classOf[DataSourceV2WithSessionConfig].getName).load()
       val options = df.queryExecution.optimizedPlan.collectFirst {
-        case DataSourceV2Relation(_, SimpleDataSourceV2Reader(options)) => options
+        case relation: DataSourceV2Relation => relation.options
       }
-      assert(options.get.getBoolean(optionName, true) == false)
+      assert(options.get.get(optionName).get == "false")
     }
   }
 
