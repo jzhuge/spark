@@ -17,11 +17,11 @@
 
 package org.apache.spark.sql.execution.datasources
 
-import java.io.IOException
+import java.io.{Closeable, IOException}
 
 import scala.collection.mutable
 
-import org.apache.spark.{Partition => RDDPartition, TaskContext, TaskKilledException}
+import org.apache.spark.{Partition => RDDPartition, TaskContext}
 import org.apache.spark.deploy.SparkHadoopUtil
 import org.apache.spark.rdd.{InputFileNameHolder, RDD}
 import org.apache.spark.sql.SparkSession
@@ -121,8 +121,17 @@ class FileScanRDD(
         nextElement
       }
 
+      private def closeCurrent(): Unit = {
+        currentIterator match {
+          case closeable: Closeable =>
+            closeable.close()
+          case _ =>
+        }
+      }
+
       /** Advances to the next file. Returns true if a new non-empty iterator is available. */
       private def nextIterator(): Boolean = {
+        closeCurrent()
         updateBytesReadWithFileSize()
         if (files.hasNext) {
           currentFile = files.next()
@@ -131,7 +140,7 @@ class FileScanRDD(
 
           try {
             if (ignoreCorruptFiles) {
-              currentIterator = new NextIterator[Object] {
+              currentIterator = new NextIterator[Object] with Closeable {
                 private val internalIter = {
                   try {
                     // The readFunction may read files before consuming the iterator.
@@ -160,7 +169,13 @@ class FileScanRDD(
                   }
                 }
 
-                override def close(): Unit = {}
+                override def close(): Unit = {
+                  internalIter match {
+                    case closeable: Closeable =>
+                      closeable.close()
+                    case _ =>
+                  }
+                }
               }
             } else {
               currentIterator = readFunction(currentFile)
@@ -168,6 +183,7 @@ class FileScanRDD(
           } catch {
             case e: IOException if ignoreCorruptFiles =>
               logWarning(s"Skipped the rest content in the corrupted file: $currentFile", e)
+              closeCurrent() // attempt to close
               currentIterator = Iterator.empty
             case e: java.io.FileNotFoundException =>
               throw new java.io.FileNotFoundException(
@@ -188,6 +204,7 @@ class FileScanRDD(
       }
 
       override def close(): Unit = {
+        closeCurrent()
         updateBytesRead()
         updateBytesReadWithFileSize()
         InputFileNameHolder.unsetInputFileName()
