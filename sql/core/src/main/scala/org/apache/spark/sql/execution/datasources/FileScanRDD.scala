@@ -17,7 +17,7 @@
 
 package org.apache.spark.sql.execution.datasources
 
-import java.io.{FileNotFoundException, IOException}
+import java.io.{Closeable, FileNotFoundException, IOException}
 
 import scala.collection.mutable
 
@@ -127,6 +127,14 @@ class FileScanRDD(
         nextElement
       }
 
+      private def closeCurrent(): Unit = {
+        currentIterator match {
+          case closeable: Closeable =>
+            closeable.close()
+          case _ =>
+        }
+      }
+
       private def readCurrentFile(): Iterator[InternalRow] = {
         try {
           readFunction(currentFile)
@@ -143,6 +151,7 @@ class FileScanRDD(
 
       /** Advances to the next file. Returns true if a new non-empty iterator is available. */
       private def nextIterator(): Boolean = {
+        closeCurrent()
         updateBytesReadWithFileSize()
         if (files.hasNext) {
           currentFile = files.next()
@@ -151,7 +160,7 @@ class FileScanRDD(
           InputFileBlockHolder.set(currentFile.filePath, currentFile.start, currentFile.length)
 
           if (ignoreMissingFiles || ignoreCorruptFiles) {
-            currentIterator = new NextIterator[Object] {
+            currentIterator = new NextIterator[Object]  with Closeable {
               // The readFunction may read some bytes before consuming the iterator, e.g.,
               // vectorized Parquet reader. Here we use lazy val to delay the creation of
               // iterator so that we will throw exception in `getNext`.
@@ -175,12 +184,19 @@ class FileScanRDD(
                   case e @ (_: RuntimeException | _: IOException) if ignoreCorruptFiles =>
                     logWarning(
                       s"Skipped the rest of the content in the corrupted file: $currentFile", e)
+                    closeCurrent() // attempt to close
                     finished = true
                     null
                 }
               }
 
-              override def close(): Unit = {}
+              override def close(): Unit = {
+                internalIter match {
+                  case closeable: Closeable =>
+                    closeable.close()
+                  case _ =>
+                }
+              }
             }
           } else {
             currentIterator = readCurrentFile()
@@ -211,6 +227,7 @@ class FileScanRDD(
       }
 
       override def close(): Unit = {
+        closeCurrent()
         incTaskInputMetricsBytesRead()
         updateBytesReadWithFileSize()
         InputFileBlockHolder.unset()
