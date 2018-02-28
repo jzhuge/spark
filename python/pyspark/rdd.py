@@ -253,6 +253,12 @@ class RDD(object):
         self._jrdd.unpersist()
         return self
 
+    def materialize(self):
+        """
+        Action to force materialization of this RDD. Returns this RDD.
+        """
+        return self._jrdd.materialize()
+
     def checkpoint(self):
         """
         Mark this RDD for checkpointing. It will be saved to a file inside the
