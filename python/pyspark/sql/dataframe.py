@@ -477,6 +477,14 @@ class DataFrame(object):
         self._jdf.persist(javaStorageLevel)
         return self
 
+    def materialize(self):
+        """
+        Action to force materialization of this DF.
+
+        Returns a new DF based on the underlying materialized RDD.
+        """
+        return self._jdf.materialize()
+
     @property
     @since(2.1)
     def storageLevel(self):
