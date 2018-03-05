@@ -28,7 +28,7 @@ import xml.etree.ElementTree as xml_parser
 
 DEFAULT_DRIVER_MEM_MB = {
         'client': 5120,
-        'cluster': 3072
+        'cluster': 5120
     }
 
 DEFAULT_DEPLOY_MODE = {
