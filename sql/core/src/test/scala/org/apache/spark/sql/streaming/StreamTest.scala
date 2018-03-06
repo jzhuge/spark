@@ -620,16 +620,16 @@ trait StreamTest extends QueryTest with SharedSQLContext with TimeLimits with Be
               val queryToUse = Option(currentStream).orElse(Option(lastStream))
               val (source, offset) = a.addData(queryToUse)
 
-              def findSourceIndex(plan: LogicalPlan): Option[Int] = {
-                plan
-                  .collect {
-                    case StreamingExecutionRelation(s, _) => s
-                    case StreamingDataSourceV2Relation(_, r) => r
-                  }
-                  .zipWithIndex
-                  .find(_._1 == source)
-                  .map(_._2)
-              }
+            def findSourceIndex(plan: LogicalPlan): Option[Int] = {
+              plan
+                .collect {
+                  case r: StreamingExecutionRelation => r.source
+                  case r: StreamingDataSourceV2Relation => r.reader
+                }
+                .zipWithIndex
+                .find(_._1 == source)
+                .map(_._2)
+            }
 
               // Try to find the index of the source to which data was added. Either get the index
               // from the current active query or the original input logical plan.
