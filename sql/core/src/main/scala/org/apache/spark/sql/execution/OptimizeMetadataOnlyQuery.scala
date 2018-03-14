@@ -108,7 +108,7 @@ case class OptimizeMetadataOnlyQuery(
           case l @ LogicalRelation(fsRelation: HadoopFsRelation, _, _) =>
             val partAttrs = getPartitionAttrs(fsRelation.partitionSchema.map(_.name), l)
             val partitionData = fsRelation.location.listFiles(filters = relFilters)
-            LocalRelation(partAttrs, partitionData.map(_.values))
+            LocalRelation(partAttrs, partitionData.map(_.values).toList)
 
           case relation: CatalogRelation =>
             val partAttrs = getPartitionAttrs(relation.catalogTable.partitionColumnNames, relation)
@@ -123,7 +123,7 @@ case class OptimizeMetadataOnlyQuery(
                 Cast(Literal(p.spec(attr.name)), attr.dataType).eval()
               })
             }
-            LocalRelation(partAttrs, partitionData)
+            LocalRelation(partAttrs, partitionData.toList)
 
           case _ =>
             throw new IllegalStateException(s"unrecognized table scan node: $relation, " +
