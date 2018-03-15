@@ -6,14 +6,18 @@
   </property>
   <property>
     <name>bdp.metrics.sample-rate</name>
-    <value>0.05</value>
+    <value>1.0</value>
+  </property>
+  <property>
+    <name>bdp.metrics.topic</name>
+    <value>bdp_process_metrics</value>
   </property>
   <property>
     <name>bdp.metrics.host</name>
-    <value>ip-100-74-116-72.ec2.internal</value>
+    <value>ksgateway-us-east-1.prod.netflix.net</value>
   </property>
   <property>
     <name>bdp.metrics.port</name>
-    <value>3435</value>
+    <value>80</value>
   </property>
 </configuration>

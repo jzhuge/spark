@@ -332,7 +332,7 @@
       <dependency>
         <groupId>com.netflix.bdp</groupId>
         <artifactId>metrics</artifactId>
-        <version>0.2.5</version>
+        <version>0.3.1</version>
         <scope>compile</scope>
       </dependency>
       <dependency>
