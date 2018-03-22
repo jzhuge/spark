@@ -65,6 +65,9 @@ case class DataSourceV2Relation(
   private lazy val v2Options: DataSourceOptions = {
     // ensure path and table options are set correctly
     val updatedOptions = new mutable.HashMap[String, String]
+
+    updatedOptions ++= options
+
     path.map(p => updatedOptions.put("path", p))
     table.map { ident =>
       updatedOptions.put("table", ident.table)
