@@ -111,6 +111,7 @@ def main(args):
             '-Dspark.history.fs.max.size=20g',
             '-Dspark.history.fs.cleaner.maxAge=365d',
             '-Dspark.history.ui.port=0',
+            '-Dspark.ui.retainedDeadExecutors=10000',
             'org.apache.spark.deploy.history.HistoryServer',
             history_dir
         ]
