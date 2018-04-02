@@ -34,6 +34,24 @@ import org.apache.spark.sql.types.StructType
 
 
 /**
+ * Trait for relations to appear as catalog relations, if possible.
+ */
+trait MaybeCatalogRelation {
+  def asCatalogRelation: Option[CatalogRelation]
+}
+
+/**
+ * An interface that is implemented by logical plans to return the underlying catalog table.
+ * If we can in the future consolidate SimpleCatalogRelation and MetastoreRelation, we should
+ * probably remove this interface.
+ */
+trait CatalogRelation {
+  def catalogTable: CatalogTable
+  def output: Seq[Attribute]
+}
+
+
+/**
  * A function defined in the catalog.
  *
  * @param identifier name of the function
@@ -422,10 +440,12 @@ object CatalogTypes {
  * A placeholder for a table relation, which will be replaced by concrete relation like
  * `LogicalRelation` or `HiveTableRelation`, during analysis.
  */
-case class UnresolvedCatalogRelation(tableMeta: CatalogTable) extends LeafNode {
+case class UnresolvedCatalogRelation(tableMeta: CatalogTable)
+  extends LeafNode with CatalogRelation {
   assert(tableMeta.identifier.database.isDefined)
   override lazy val resolved: Boolean = false
   override def output: Seq[Attribute] = Nil
+  override def catalogTable: CatalogTable = tableMeta
 }
 
 /**
@@ -436,10 +456,13 @@ case class UnresolvedCatalogRelation(tableMeta: CatalogTable) extends LeafNode {
 case class HiveTableRelation(
     tableMeta: CatalogTable,
     dataCols: Seq[AttributeReference],
-    partitionCols: Seq[AttributeReference]) extends LeafNode with MultiInstanceRelation {
+    partitionCols: Seq[AttributeReference])
+  extends LeafNode with MultiInstanceRelation with CatalogRelation {
   assert(tableMeta.identifier.database.isDefined)
   assert(tableMeta.partitionSchema.sameType(partitionCols.toStructType))
   assert(tableMeta.dataSchema.sameType(dataCols.toStructType))
+
+  override def catalogTable: CatalogTable = tableMeta
 
   // The partition column should always appear after data columns.
   override def output: Seq[AttributeReference] = dataCols ++ partitionCols

@@ -205,10 +205,12 @@ class AstBuilder(conf: SQLConf) extends SqlBaseBaseVisitor[AnyRef] with Logging 
     ctx match {
       case table: InsertIntoTableContext =>
         val (tableIdent, partitionKeys, exists) = visitInsertIntoTable(table)
-        InsertIntoTable(UnresolvedRelation(tableIdent), partitionKeys, query, false, exists)
+        InsertIntoTable(UnresolvedRelation(tableIdent), partitionKeys, query, false, exists,
+          Map.empty /* SQL always matches by position */)
       case table: InsertOverwriteTableContext =>
         val (tableIdent, partitionKeys, exists) = visitInsertOverwriteTable(table)
-        InsertIntoTable(UnresolvedRelation(tableIdent), partitionKeys, query, true, exists)
+        InsertIntoTable(UnresolvedRelation(tableIdent), partitionKeys, query, true, exists,
+          Map.empty /* SQL always matches by position */)
       case dir: InsertOverwriteDirContext =>
         val (isLocal, storage, provider) = visitInsertOverwriteDir(dir)
         InsertIntoDir(isLocal, storage, provider, query, overwrite = true)

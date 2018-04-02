@@ -22,7 +22,9 @@ import java.util.Locale
 import scala.collection.mutable
 
 import org.apache.spark.sql.{SparkSession, SQLContext}
-import org.apache.spark.sql.catalyst.catalog.BucketSpec
+import org.apache.spark.sql.catalyst.TableIdentifier
+import org.apache.spark.sql.catalyst.catalog.{BucketSpec, CatalogRelation, CatalogStorageFormat, CatalogTable, CatalogTableType}
+import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference}
 import org.apache.spark.sql.execution.FileRelation
 import org.apache.spark.sql.sources.{BaseRelation, DataSourceRegister}
 import org.apache.spark.sql.types.{StructField, StructType}
@@ -48,9 +50,30 @@ case class HadoopFsRelation(
     bucketSpec: Option[BucketSpec],
     fileFormat: FileFormat,
     options: Map[String, String])(val sparkSession: SparkSession)
-  extends BaseRelation with FileRelation {
+  extends BaseRelation with FileRelation with CatalogRelation {
 
   override def sqlContext: SQLContext = sparkSession.sqlContext
+
+  val partitionColumnNames: Seq[String] = partitionSchema.map(_.name)
+
+  /** PartitionKey attributes */
+  val partitionAttributes: Seq[AttributeReference] = partitionSchema.toAttributes
+
+  /** Non-partitionKey attributes */
+  val attributes: Seq[AttributeReference] = dataSchema.toAttributes
+      .filter { c => !partitionColumnNames.contains(c.name) }
+
+  val catalogSchema: StructType = StructType(dataSchema.filterNot {
+    c => !partitionColumnNames.contains(c.name)
+  } ++ partitionSchema)
+
+  val format: CatalogStorageFormat = CatalogStorageFormat(None, None, None, None, false, options)
+
+  override def catalogTable: CatalogTable = CatalogTable(TableIdentifier("fs_table"),
+    CatalogTableType.EXTERNAL, format, catalogSchema, partitionColumnNames = partitionColumnNames,
+    bucketSpec = bucketSpec, properties = options)
+
+  override def output: Seq[Attribute] = attributes ++ partitionAttributes
 
   private def getColName(f: StructField): String = {
     if (sparkSession.sessionState.conf.caseSensitiveAnalysis) {

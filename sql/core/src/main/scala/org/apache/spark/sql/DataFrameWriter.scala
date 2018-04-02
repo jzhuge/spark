@@ -26,7 +26,7 @@ import org.apache.spark.annotation.InterfaceStability
 import org.apache.spark.sql.catalyst.TableIdentifier
 import org.apache.spark.sql.catalyst.analysis.{EliminateSubqueryAliases, UnresolvedRelation}
 import org.apache.spark.sql.catalyst.catalog._
-import org.apache.spark.sql.catalyst.plans.logical.{AnalysisBarrier, InsertIntoTable, LogicalPlan}
+import org.apache.spark.sql.catalyst.plans.logical.{AnalysisBarrier, InsertIntoTable, LogicalPlan, Project}
 import org.apache.spark.sql.execution.SQLExecution
 import org.apache.spark.sql.execution.command.DDLUtils
 import org.apache.spark.sql.execution.datasources.{CreateTable, DataSource, LogicalRelation}
@@ -311,22 +311,45 @@ final class DataFrameWriter[T] private[sql](ds: Dataset[T]) {
   private def insertInto(tableIdent: TableIdentifier): Unit = {
     assertNotBucketed("insertInto")
 
-    if (partitioningColumns.isDefined) {
-      throw new AnalysisException(
-        "insertInto() can't be used together with partitionBy(). " +
-          "Partition columns have already been defined for the table. " +
-          "It is not necessary to use partitionBy()."
-      )
-    }
+    val partitions = normalizedParCols.map(_.map(col => col -> (None: Option[String])).toMap)
+
+    // A partitioned relation's schema can be different from the input logicalPlan, since
+    // partition columns are all moved after data columns. We Project to adjust the ordering.
+    // TODO: this belongs to the analyzer.
+    val input = normalizedParCols.map { parCols =>
+      val (inputPartCols, inputDataCols) = df.planWithBarrier.output.partition { attr =>
+        parCols.contains(attr.name)
+      }
+      Project(inputDataCols ++ inputPartCols, df.planWithBarrier)
+    }.getOrElse(df.planWithBarrier)
+
+    extraOptions.put("fromDataFrame", "true")
 
     runCommand(df.sparkSession, "insertInto") {
       InsertIntoTable(
         table = UnresolvedRelation(tableIdent),
-        partition = Map.empty[String, Option[String]],
-        query = df.planWithBarrier,
+        partition = partitions.getOrElse(Map.empty[String, Option[String]]),
+        query = input,
         overwrite = mode == SaveMode.Overwrite,
-        ifPartitionNotExists = false)
+        ifPartitionNotExists = false,
+        options = extraOptions.toMap)
     }
+  }
+
+  private def normalizedParCols: Option[Seq[String]] = partitioningColumns.map { cols =>
+    cols.map(normalize(_, "Partition"))
+  }
+
+  /**
+   * The given column name may not be equal to any of the existing column names if we were in
+   * case-insensitive context. Normalize the given column name to the real one so that we don't
+   * need to care about case sensitivity afterwards.
+   */
+  private def normalize(columnName: String, columnType: String): String = {
+    val validColumnNames = df.logicalPlan.output.map(_.name)
+    validColumnNames.find(df.sparkSession.sessionState.analyzer.resolver(_, columnName))
+      .getOrElse(throw new AnalysisException(s"$columnType column $columnName not found in " +
+        s"existing columns (${validColumnNames.mkString(", ")})"))
   }
 
   private def getBucketSpec: Option[BucketSpec] = {
@@ -349,6 +372,11 @@ final class DataFrameWriter[T] private[sql](ds: Dataset[T]) {
     if (partitioningColumns.isDefined) {
       throw new AnalysisException( s"'$operation' does not support partitioning")
     }
+  }
+
+  def byName: DataFrameWriter[T] = {
+    extraOptions.put("matchByName", "true")
+    this
   }
 
   /**

@@ -320,69 +320,6 @@ case class PreprocessTableCreation(sparkSession: SparkSession) extends Rule[Logi
 }
 
 /**
- * Preprocess the [[InsertIntoTable]] plan. Throws exception if the number of columns mismatch, or
- * specified partition columns are different from the existing partition columns in the target
- * table. It also does data type casting and field renaming, to make sure that the columns to be
- * inserted have the correct data type and fields have the correct names.
- */
-case class PreprocessTableInsertion(conf: SQLConf) extends Rule[LogicalPlan] {
-  private def preprocess(
-      insert: InsertIntoTable,
-      tblName: String,
-      partColNames: Seq[String]): InsertIntoTable = {
-
-    val normalizedPartSpec = PartitioningUtils.normalizePartitionSpec(
-      insert.partition, partColNames, tblName, conf.resolver)
-
-    val staticPartCols = normalizedPartSpec.filter(_._2.isDefined).keySet
-    val expectedColumns = insert.table.output.filterNot(a => staticPartCols.contains(a.name))
-
-    if (expectedColumns.length != insert.query.schema.length) {
-      throw new AnalysisException(
-        s"$tblName requires that the data to be inserted have the same number of columns as the " +
-          s"target table: target table has ${insert.table.output.size} column(s) but the " +
-          s"inserted data has ${insert.query.output.length + staticPartCols.size} column(s), " +
-          s"including ${staticPartCols.size} partition column(s) having constant value(s).")
-    }
-
-    val newQuery = DDLPreprocessingUtils.castAndRenameQueryOutput(
-      insert.query, expectedColumns, conf)
-    if (normalizedPartSpec.nonEmpty) {
-      if (normalizedPartSpec.size != partColNames.length) {
-        throw new AnalysisException(
-          s"""
-             |Requested partitioning does not match the table $tblName:
-             |Requested partitions: ${normalizedPartSpec.keys.mkString(",")}
-             |Table partitions: ${partColNames.mkString(",")}
-           """.stripMargin)
-      }
-
-      insert.copy(query = newQuery, partition = normalizedPartSpec)
-    } else {
-      // All partition columns are dynamic because the InsertIntoTable command does
-      // not explicitly specify partitioning columns.
-      insert.copy(query = newQuery, partition = partColNames.map(_ -> None).toMap)
-    }
-  }
-
-  def apply(plan: LogicalPlan): LogicalPlan = plan transform {
-    case i @ InsertIntoTable(table, _, query, _, _) if table.resolved && query.resolved =>
-      table match {
-        case relation: HiveTableRelation =>
-          val metadata = relation.tableMeta
-          preprocess(i, metadata.identifier.quotedString, metadata.partitionColumnNames)
-        case LogicalRelation(h: HadoopFsRelation, _, catalogTable, _) =>
-          val tblName = catalogTable.map(_.identifier.quotedString).getOrElse("unknown")
-          preprocess(i, tblName, h.partitionSchema.map(_.name))
-        case LogicalRelation(_: InsertableRelation, _, catalogTable, _) =>
-          val tblName = catalogTable.map(_.identifier.quotedString).getOrElse("unknown")
-          preprocess(i, tblName, Nil)
-        case _ => i
-      }
-  }
-}
-
-/**
  * A rule to check whether the functions are supported only when Hive support is enabled
  */
 object HiveOnlyCheck extends (LogicalPlan => Unit) {
@@ -443,7 +380,7 @@ object PreWriteCheck extends (LogicalPlan => Unit) {
 
   def apply(plan: LogicalPlan): Unit = {
     plan.foreach {
-      case InsertIntoTable(l @ LogicalRelation(relation, _, _, _), partition, query, _, _) =>
+      case InsertIntoTable(l @ LogicalRelation(relation, _, _, _), partition, query, _, _, _) =>
         // Get all input data source relations of the query.
         val srcRelations = query.collect {
           case LogicalRelation(src, _, _, _) => src
@@ -465,7 +402,7 @@ object PreWriteCheck extends (LogicalPlan => Unit) {
           case _ => failAnalysis(s"$relation does not allow insertion.")
         }
 
-      case InsertIntoTable(t, _, _, _, _)
+      case InsertIntoTable(t, _, _, _, _, _)
         if !t.isInstanceOf[LeafNode] ||
           t.isInstanceOf[Range] ||
           t.isInstanceOf[OneRowRelation] ||
