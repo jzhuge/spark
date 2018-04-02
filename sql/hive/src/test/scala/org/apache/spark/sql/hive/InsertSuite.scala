@@ -172,7 +172,15 @@ class InsertSuite extends QueryTest with TestHiveSingleton with BeforeAndAfter
     sql("DROP TABLE tmp_table")
   }
 
-  testPartitionedTable("INSERT OVERWRITE - partition IF NOT EXISTS") { tableName =>
+  test("Hive SerDe table - INSERT OVERWRITE - partition IF NOT EXISTS") {
+    testPartitionedHiveSerDeTable(partitionIFNOTEXISTS)
+  }
+
+  test("Data source table - INSERT OVERWRITE - partition IF NOT EXISTS") {
+    testPartitionedDataSourceTable(partitionIFNOTEXISTS)
+  }
+
+  val partitionIFNOTEXISTS: String => Unit = { tableName =>
     val selQuery = s"select a, b, c, d from $tableName"
     sql(
       s"""
@@ -304,72 +312,84 @@ class InsertSuite extends QueryTest with TestHiveSingleton with BeforeAndAfter
     }
   }
 
-  private def testPartitionedHiveSerDeTable(testName: String)(f: String => Unit): Unit = {
-    test(s"Hive SerDe table - $testName") {
-      val hiveTable = "hive_table"
+  private def testPartitionedHiveSerDeTable(f: String => Unit): Unit = {
+    val hiveTable = "hive_table"
 
-      withTable(hiveTable) {
-        withSQLConf("hive.exec.dynamic.partition.mode" -> "nonstrict") {
-          sql(
-            s"""
-              |CREATE TABLE $hiveTable (a INT, d INT)
-              |PARTITIONED BY (b INT, c INT) STORED AS TEXTFILE
-            """.stripMargin)
-          f(hiveTable)
-        }
-      }
-    }
-  }
-
-  private def testPartitionedDataSourceTable(testName: String)(f: String => Unit): Unit = {
-    test(s"Data source table - $testName") {
-      val dsTable = "ds_table"
-
-      withTable(dsTable) {
+    withTable(hiveTable) {
+      withSQLConf("hive.exec.dynamic.partition.mode" -> "nonstrict") {
         sql(
           s"""
-             |CREATE TABLE $dsTable (a INT, b INT, c INT, d INT)
-             |USING PARQUET PARTITIONED BY (b, c)
-           """.stripMargin)
-        f(dsTable)
+            |CREATE TABLE $hiveTable (a INT, d INT)
+            |PARTITIONED BY (b INT, c INT) STORED AS TEXTFILE
+          """.stripMargin)
+        f(hiveTable)
       }
     }
   }
 
-  private def testPartitionedTable(testName: String)(f: String => Unit): Unit = {
-    testPartitionedHiveSerDeTable(testName)(f)
-    testPartitionedDataSourceTable(testName)(f)
-  }
+  private def testPartitionedDataSourceTable(f: String => Unit): Unit = {
+    val dsTable = "ds_table"
 
-  testPartitionedTable("partitionBy() can't be used together with insertInto()") { tableName =>
-    val cause = intercept[AnalysisException] {
-      Seq((1, 2, 3, 4)).toDF("a", "b", "c", "d").write.partitionBy("b", "c").insertInto(tableName)
+    withTable(dsTable) {
+      sql(
+        s"""
+           |CREATE TABLE $dsTable (a INT, b INT, c INT, d INT)
+           |USING PARQUET PARTITIONED BY (b, c)
+         """.stripMargin)
+      f(dsTable)
     }
-
-    assert(cause.getMessage.contains("insertInto() can't be used together with partitionBy()."))
   }
 
-  testPartitionedTable(
-    "SPARK-16036: better error message when insert into a table with mismatch schema") {
+  test("InsertIntoTable#resolved should include dynamic partitions") {
+    withSQLConf(("hive.exec.dynamic.partition.mode", "nonstrict")) {
+      sql("CREATE TABLE partitioned (id bigint, data string) PARTITIONED BY (part string)")
+      val data = (1 to 10).map(i => (i.toLong, s"data-$i")).toDF("id", "data")
+
+      val logical = InsertIntoTable(spark.table("partitioned").logicalPlan,
+        Map("part" -> None), data.logicalPlan, overwrite = false,
+        ifPartitionNotExists = false, Map("matchByName" -> "true"))
+      assert(!logical.resolved, "Should not resolve: missing partition data")
+    }
+  }
+
+  val spark16036: String => Unit = {
     tableName =>
       val e = intercept[AnalysisException] {
         sql(s"INSERT INTO TABLE $tableName PARTITION(b=1, c=2) SELECT 1, 2, 3")
       }
-      assert(e.message.contains(
-        "target table has 4 column(s) but the inserted data has 5 column(s)"))
+      assert(e.message.contains("Extra data columns to write"))
   }
 
-  testPartitionedTable("SPARK-16037: INSERT statement should match columns by position") {
+  test("Hive SerDe table - SPARK-16036: better error message when insert into a table with " +
+      "mismatch schema") {
+    testPartitionedHiveSerDeTable(spark16036)
+  }
+
+  test("Data source table - SPARK-16036: better error message when insert into a table with " +
+      "mismatch schema") {
+    testPartitionedDataSourceTable(spark16036)
+  }
+
+  val spark16037: String => Unit = {
     tableName =>
       withSQLConf("hive.exec.dynamic.partition.mode" -> "nonstrict") {
         sql(s"INSERT INTO TABLE $tableName SELECT 1, 4, 2 AS c, 3 AS b")
         checkAnswer(sql(s"SELECT a, b, c, d FROM $tableName"), Row(1, 2, 3, 4))
+
         sql(s"INSERT OVERWRITE TABLE $tableName SELECT 1, 4, 2, 3")
         checkAnswer(sql(s"SELECT a, b, c, 4 FROM $tableName"), Row(1, 2, 3, 4))
       }
   }
 
-  testPartitionedTable("INSERT INTO a partitioned table (semantic and error handling)") {
+  test("Hive SerDe table - SPARK-16037: INSERT statement should match columns by position") {
+    testPartitionedHiveSerDeTable(spark16037)
+  }
+
+  test("Data source table - SPARK-16037: INSERT statement should match columns by position") {
+    testPartitionedDataSourceTable(spark16037)
+  }
+
+  val semanticAndErrorHandling: String => Unit = {
     tableName =>
       withSQLConf(("hive.exec.dynamic.partition.mode", "nonstrict")) {
         sql(s"INSERT INTO TABLE $tableName PARTITION (b=2, c=3) SELECT 1, 4")
@@ -408,10 +428,15 @@ class InsertSuite extends QueryTest with TestHiveSingleton with BeforeAndAfter
           sql(s"INSERT INTO TABLE $tableName PARTITION (b=15) SELECT 13, 14")
         }
 
-        // The statement is missing a column.
-        intercept[AnalysisException] {
-          sql(s"INSERT INTO TABLE $tableName PARTITION (b=15) SELECT 13, 14, 16")
-        }
+        // The statement is missing a column in the PARTITION clause.
+        // NETFLIX-BUILD: Table partitions that are not static are added as dynamic in the analyzer.
+        // This change is to make PartitionProviderCompatibilitySuite tests pass, which rely on the
+        // fact that omitting the PARTITION clause will use the last columns for dynamic partitions.
+        // Relying on this behavior is not a good idea, so instead we update the plan based on the
+        // table and add the dynamic partitions.
+//        intercept[AnalysisException] {
+//          sql(s"INSERT INTO TABLE $tableName PARTITION (b=15) SELECT 13, 14, 16")
+//        }
 
         sql(s"INSERT INTO TABLE $tableName PARTITION (b=14, c) SELECT 13, 16, 15")
 
@@ -424,22 +449,30 @@ class InsertSuite extends QueryTest with TestHiveSingleton with BeforeAndAfter
 
         sql(s"INSERT INTO TABLE $tableName PARTITION (c, b) SELECT 21, 24, 22, 23")
 
-        sql(s"INSERT INTO TABLE $tableName SELECT 25, 28, 26, 27")
-
         checkAnswer(
           sql(s"SELECT a, b, c, d FROM $tableName"),
-          Row(1, 2, 3, 4) ::
-            Row(5, 6, 7, 8) ::
-            Row(9, 10, 11, 12) ::
-            Row(13, 14, 15, 16) ::
-            Row(17, 18, 19, 20) ::
-            Row(21, 22, 23, 24) ::
-            Row(25, 26, 27, 28) :: Nil
+              Row(1, 2, 3, 4) ::
+              Row(5, 6, 7, 8) ::
+              Row(9, 10, 11, 12) ::
+              Row(13, 14, 15, 16) ::
+              Row(17, 18, 19, 20) ::
+              Row(21, 22, 23, 24) :: Nil
         )
       }
   }
 
-  testPartitionedTable("insertInto() should match columns by position and ignore column names") {
+  test("Hive SerDe table - INSERT INTO a partitioned table (semantic and error handling)") {
+    testPartitionedHiveSerDeTable(semanticAndErrorHandling)
+  }
+
+  test("Data source table - INSERT INTO a partitioned table (semantic and error handling)") {
+    testPartitionedDataSourceTable(semanticAndErrorHandling)
+  }
+
+  val positionIgnoreColumnNames: String => Unit = {
+    // NETFLIX: this test case is ignored because insertInto matches partition columns by name. this
+    // is a known behavior difference from upstream Spark. for this test case, the data order does
+    // not match.
     tableName =>
       withSQLConf("hive.exec.dynamic.partition.mode" -> "nonstrict") {
         // Columns `df.c` and `df.d` are resolved by position, and thus mapped to partition columns
@@ -454,7 +487,21 @@ class InsertSuite extends QueryTest with TestHiveSingleton with BeforeAndAfter
       }
   }
 
-  testPartitionedTable("insertInto() should match unnamed columns by position") {
+  ignore("Hive SerDe table - " +
+      "insertInto() should match columns by position and ignore column names") {
+    testPartitionedHiveSerDeTable(positionIgnoreColumnNames)
+  }
+
+  ignore("Data source table - " +
+      "insertInto() should match columns by position and ignore column names")
+  {
+    testPartitionedDataSourceTable(positionIgnoreColumnNames)
+  }
+
+  val unnamedColumnsByPosition: String => Unit = {
+    // NETFLIX: this test case is ignored because insertInto matches partition columns by name. this
+    // is a known behavior difference from upstream Spark. for this test case, the partition columns
+    // cannot be found.
     tableName =>
       withSQLConf("hive.exec.dynamic.partition.mode" -> "nonstrict") {
         // Columns `c + 1` and `d + 1` are resolved by position, and thus mapped to partition
@@ -469,7 +516,15 @@ class InsertSuite extends QueryTest with TestHiveSingleton with BeforeAndAfter
       }
   }
 
-  testPartitionedTable("insertInto() should reject missing columns") {
+  ignore("Hive SerDe table - insertInto() should match unnamed columns by position") {
+    testPartitionedHiveSerDeTable(unnamedColumnsByPosition)
+  }
+
+  ignore("Data source table - insertInto() should match unnamed columns by position") {
+    testPartitionedDataSourceTable(unnamedColumnsByPosition)
+  }
+
+  val rejectMissingColumns: String => Unit = {
     tableName =>
       withTable("t") {
         sql("CREATE TABLE t (a INT, b INT)")
@@ -480,7 +535,15 @@ class InsertSuite extends QueryTest with TestHiveSingleton with BeforeAndAfter
       }
   }
 
-  testPartitionedTable("insertInto() should reject extra columns") {
+  test("Hive SerDe table - insertInto() should reject missing columns") {
+    testPartitionedHiveSerDeTable(rejectMissingColumns)
+  }
+
+  test("Data source table - insertInto() should reject missing columns") {
+    testPartitionedDataSourceTable(rejectMissingColumns)
+  }
+
+  val rejectExtraColumns: String => Unit = {
     tableName =>
       withTable("t") {
         sql("CREATE TABLE t (a INT, b INT, c INT, d INT, e INT)")
@@ -758,6 +821,133 @@ class InsertSuite extends QueryTest with TestHiveSingleton with BeforeAndAfter
         df.write.format("hive").partitionBy("part").mode("overwrite").saveAsTable("tab1")
         df.write.format("hive").partitionBy("part").mode("append").saveAsTable("tab1")
       }
+    }
+  }
+
+  test("Hive SerDe table - insertInto() should reject extra columns") {
+    testPartitionedHiveSerDeTable(rejectExtraColumns)
+  }
+
+  test("Data source table - insertInto() should reject extra columns") {
+    testPartitionedDataSourceTable(rejectExtraColumns)
+  }
+
+  test("Insert unnamed expressions by position") {
+    withSQLConf(("hive.exec.dynamic.partition.mode", "nonstrict")) {
+      sql("CREATE TABLE source (id bigint, part string)")
+      sql("CREATE TABLE partitioned (id bigint, data string) PARTITIONED BY (part string)")
+
+      val expected = (1 to 10).map(i => (i, s"data-$i", if ((i % 2) == 0) "even" else "odd"))
+          .toDF("id", "data", "part")
+      val data = expected.select("id", "part")
+
+      data.write.insertInto("source")
+      checkAnswer(sql("SELECT * FROM source"), data.collect().toSeq)
+
+      // should be able to insert an expression when NOT mapping columns by name
+      spark.table("source").selectExpr("id", "part", "CONCAT('data-', id)")
+          .write.insertInto("partitioned")
+      checkAnswer(sql("SELECT * FROM partitioned"), expected.collect().toSeq)
+    }
+  }
+
+  test("Insert expression by name") {
+    withSQLConf(("hive.exec.dynamic.partition.mode", "nonstrict")) {
+      sql("CREATE TABLE source (id bigint, part string)")
+      sql("CREATE TABLE partitioned (id bigint, data string) PARTITIONED BY (part string)")
+
+      val expected = (1 to 10).map(i => (i, s"data-$i", if ((i % 2) == 0) "even" else "odd"))
+          .toDF("id", "data", "part")
+      val data = expected.select("id", "part")
+
+      data.write.insertInto("source")
+      checkAnswer(sql("SELECT * FROM source"), data.collect().toSeq)
+
+      intercept[AnalysisException] {
+        // also a problem when mapping by name
+        spark.table("source").selectExpr("id", "part", "CONCAT('data-', id)")
+            .write.byName.insertInto("partitioned")
+      }
+
+      // should be able to insert an expression using AS when mapping columns by name
+      spark.table("source").selectExpr("id", "part", "CONCAT('data-', id) as data")
+          .write.byName.insertInto("partitioned")
+      checkAnswer(sql("SELECT * FROM partitioned"), expected.collect().toSeq)
+    }
+  }
+
+  test("Reject missing columns") {
+    withSQLConf(("hive.exec.dynamic.partition.mode", "nonstrict")) {
+      sql("CREATE TABLE source (id bigint, part string)")
+      sql("CREATE TABLE partitioned (id bigint, data string) PARTITIONED BY (part string)")
+
+      intercept[AnalysisException] {
+        spark.table("source").write.insertInto("partitioned")
+      }
+
+      intercept[AnalysisException] {
+        // also a problem when mapping by name
+        spark.table("source").write.byName.insertInto("partitioned")
+      }
+    }
+  }
+
+  test("Reject extra columns") {
+    withSQLConf(("hive.exec.dynamic.partition.mode", "nonstrict")) {
+      sql("CREATE TABLE source (id bigint, data string, extra string, part string)")
+      sql("CREATE TABLE partitioned (id bigint, data string) PARTITIONED BY (part string)")
+
+      intercept[AnalysisException] {
+        spark.table("source").write.insertInto("partitioned")
+      }
+
+      val data = (1 to 10)
+          .map(i => (i, s"data-$i", s"${i * i}", if ((i % 2) == 0) "even" else "odd"))
+          .toDF("id", "data", "extra", "part")
+      data.write.insertInto("source")
+      checkAnswer(sql("SELECT * FROM source"), data.collect().toSeq)
+
+      spark.table("source").write.byName.insertInto("partitioned")
+
+      val expected = data.select("id", "data", "part")
+      checkAnswer(sql("SELECT * FROM partitioned"), expected.collect().toSeq)
+    }
+  }
+
+  test("Ignore names when writing by position") {
+    withSQLConf(("hive.exec.dynamic.partition.mode", "nonstrict")) {
+      sql("CREATE TABLE source (id bigint, part string, data string)") // part, data transposed
+      sql("CREATE TABLE destination (id bigint, data string, part string)")
+
+      val data = (1 to 10).map(i => (i, s"data-$i", if ((i % 2) == 0) "even" else "odd"))
+          .toDF("id", "data", "part")
+
+      // write into the reordered table by name
+      data.write.byName.insertInto("source")
+      checkAnswer(sql("SELECT id, data, part FROM source"), data.collect().toSeq)
+
+      val expected = data.select($"id", $"part" as "data", $"data" as "part")
+
+      // this produces a warning, but writes src.part -> dest.data and src.data -> dest.part
+      spark.table("source").write.insertInto("destination")
+      checkAnswer(sql("SELECT id, data, part FROM destination"), expected.collect().toSeq)
+    }
+  }
+
+  test("Reorder columns by name") {
+    withSQLConf(("hive.exec.dynamic.partition.mode", "nonstrict")) {
+      sql("CREATE TABLE source (data string, part string, id bigint)")
+      sql("CREATE TABLE partitioned (id bigint, data string) PARTITIONED BY (part string)")
+
+      val data = (1 to 10).map(i => (s"data-$i", if ((i % 2) == 0) "even" else "odd", i))
+          .toDF("data", "part", "id")
+      data.write.insertInto("source")
+      checkAnswer(sql("SELECT * FROM source"), data.collect().toSeq)
+
+      spark.table("source").write.byName.insertInto("partitioned")
+
+      val expected = data.select("id", "data", "part")
+      checkAnswer(sql("SELECT * FROM partitioned"), expected.collect().toSeq)
     }
   }
 }

@@ -172,6 +172,7 @@ class Analyzer(
       ResolveWindowOrder ::
       ResolveWindowFrame ::
       ResolveNaturalAndUsingJoin ::
+      ResolveOutputColumns ::
       ExtractWindowExpressions ::
       GlobalAggregates ::
       ResolveAggregateFunctions ::
@@ -638,8 +639,20 @@ class Analyzer(
     }
 
     def apply(plan: LogicalPlan): LogicalPlan = plan.transformUp {
-      case i @ InsertIntoTable(u: UnresolvedRelation, parts, child, _, _) if child.resolved =>
-        EliminateSubqueryAliases(lookupTableFromCatalog(u)) match {
+      case i @ InsertIntoTable(u: UnresolvedRelation, parts, child, _, _, _) if child.resolved =>
+        val table = EliminateSubqueryAliases(lookupTableFromCatalog(u))
+        table match {
+          case maybe: MaybeCatalogRelation =>
+            maybe.asCatalogRelation match {
+              case Some(catalogRelation) =>
+                updateWithTablePartitions(i, table, catalogRelation)
+              case None =>
+                i.copy(table = table)
+            }
+
+          case relation: CatalogRelation if relation.catalogTable.partitionColumnNames.nonEmpty =>
+            updateWithTablePartitions(i, table, relation)
+
           case v: View =>
             u.failAnalysis(s"Inserting into a view is not allowed. View: ${v.desc.identifier}.")
           case other => i.copy(table = other)
@@ -680,6 +693,184 @@ class Analyzer(
     private def isRunningDirectlyOnFiles(table: TableIdentifier): Boolean = {
       table.database.isDefined && conf.runSQLonFile && !catalog.isTemporaryTable(table) &&
         (!catalog.databaseExists(table.database.get) || !catalog.tableExists(table))
+    }
+
+    private def updateWithTablePartitions(
+        insert: InsertIntoTable, table: LogicalPlan, relation: CatalogRelation): InsertIntoTable = {
+      val parts = insert.partition
+      val tablePartitionNames = relation.catalogTable.partitionColumnNames
+      if (tablePartitionNames.isEmpty && parts.keys.isEmpty) {
+        return insert.copy(table = table)
+      }
+
+      // PARTITION clause references are matched by name and must exist in the table
+      val missing = parts.keys.filter(n1 => !tablePartitionNames.exists(n2 => resolver(n1, n2)))
+      if (missing.nonEmpty) {
+        // the SQL PARTITION clause had columns that aren't table partitions.
+        throw new AnalysisException(
+          s"""Requested partitioning does not match the ${relation.catalogTable.identifier} table:
+             |Requested partitions: ${parts.keys.mkString(", ")}
+             |Table partitions: ${tablePartitionNames.mkString(", ")}""".stripMargin)
+      }
+
+      // Set up the table's partition scheme using dynamic partitioning for any missing partitions.
+      val newPartsMap = tablePartitionNames.map(name =>
+        name -> parts.find(t => resolver(name, t._1)).map(_._2).getOrElse(None)
+      ).toMap
+
+      if (insert.isFromDataFrame) {
+        // Moves partition columns to the end of the column list, in partition order, and removes
+        // static partition columns.
+
+        val (inputPartCols, columns) = insert.query.output.partition { attr =>
+          tablePartitionNames.exists(resolver(_, attr.name))
+        }
+
+        // select dynamic: parts(name) is null or it is missing
+        val dynamicPartitionNames = newPartsMap.filter(_._2.isEmpty).keys
+
+        // PARTITION clause references are matched by name for data frames
+        val dynamicPartColumns = dynamicPartitionNames.flatMap { name =>
+          inputPartCols.find(input => resolver(input.name, name))
+        }
+
+        insert.copy(
+          table = table,
+          partition = newPartsMap,
+          query = Project(columns ++ dynamicPartColumns, insert.query))
+      } else {
+        insert.copy(table = table, partition = newPartsMap)
+      }
+    }
+  }
+
+  object ResolveOutputColumns extends Rule[LogicalPlan] {
+    def apply(plan: LogicalPlan): LogicalPlan = plan.transform {
+      case ins @ InsertIntoTable(relation: LogicalPlan, partition, _, _, _, _)
+          if relation.resolved && relation.output.nonEmpty &&
+              ins.childrenResolved && !ins.resolved =>
+        resolveOutputColumns(ins, expectedColumns(relation, partition), relation.toString)
+    }
+
+    private def resolveOutputColumns(
+        insertInto: InsertIntoTable,
+        columns: Seq[Attribute],
+        relation: String) = {
+      val resolved = if (insertInto.isMatchByName) {
+        projectAndCastOutputColumns(columns, insertInto.query, relation)
+      } else {
+        castAndRenameOutputColumns(columns, insertInto.query, relation)
+      }
+
+      if (resolved == insertInto.query.output) {
+        insertInto
+      } else {
+        insertInto.copy(query = Project(resolved, insertInto.query))
+      }
+    }
+
+    /**
+     * Resolves output columns by input column name, adding casts if necessary.
+     */
+    private def projectAndCastOutputColumns(
+        output: Seq[Attribute],
+        data: LogicalPlan,
+        relation: String): Seq[NamedExpression] = {
+      output.map { col =>
+        data.resolveQuoted(col.name, resolver) match {
+          case Some(inCol) if col.dataType != inCol.dataType =>
+            Alias(UpCast(inCol, col.dataType, Seq()), col.name)()
+          case Some(inCol) => inCol
+          case None =>
+            throw new AnalysisException(
+              s"Cannot resolve ${col.name} in ${data.output.mkString(",")}")
+        }
+      }
+    }
+
+    private def castAndRenameOutputColumns(
+        output: Seq[Attribute],
+        data: LogicalPlan,
+        relation: String): Seq[NamedExpression] = {
+      val outputNames = output.map(_.name)
+      // incoming expressions may not have names
+      val inputNames = data.output.flatMap(col => Option(col.name))
+      if (output.size > data.output.size) {
+        // always a problem
+        throw new AnalysisException(
+          s"""Not enough data columns to write into $relation:
+             |Data columns: ${data.output.mkString(", ")}
+             |Table columns: ${outputNames.mkString(", ")}""".stripMargin)
+      } else if (output.size < data.output.size) {
+        if (outputNames.toSet.subsetOf(inputNames.toSet)) {
+          throw new AnalysisException(
+            s"""Table column names are a subset of the input data columns:
+               |Data columns: ${inputNames.mkString(", ")}
+               |Table columns: ${outputNames.mkString(", ")}
+               |To write a subset of the columns by name, use df.write.byName.insertInto(...)"""
+                .stripMargin)
+        } else {
+          // be conservative and fail if there are too many columns
+          throw new AnalysisException(
+            s"""Extra data columns to write into $relation:
+               |Data columns: ${data.output.mkString(", ")}
+               |Table columns: ${outputNames.mkString(", ")}""".stripMargin)
+        }
+      } else {
+        // check for reordered names and warn. this may be on purpose, so it isn't an error.
+        if (outputNames.toSet == inputNames.toSet && outputNames != inputNames) {
+          logWarning(
+            s"""Data column names match the table in a different order:
+               |Data columns: ${inputNames.mkString(", ")}
+               |Table columns: ${outputNames.mkString(", ")}
+               |To map columns by name, use df.write.byName.insertInto(...)""".stripMargin)
+        }
+      }
+
+      data.output.zip(output).map {
+        case (in, out) if !in.dataType.sameType(out.dataType) =>
+          Alias(Cast(in, out.dataType), out.name)()
+        case (in, out) if in.name != out.name =>
+          Alias(in, out.name)()
+        case (in, _) => in
+      }
+    }
+
+    private def expectedColumns(
+        data: LogicalPlan,
+        partitionData: Map[String, Option[String]]): Seq[Attribute] = {
+      data match {
+        case catalogRelation: CatalogRelation =>
+          expectedColumnsFromCatalog(catalogRelation, partitionData)
+
+        case maybe: MaybeCatalogRelation =>
+          maybe.asCatalogRelation match {
+            case Some(catalogRelation) =>
+              expectedColumnsFromCatalog(catalogRelation, partitionData)
+            case _ => data.output
+          }
+
+        case _ => data.output
+      }
+    }
+
+    private def expectedColumnsFromCatalog(
+        catalog: CatalogRelation,
+        partitionData: Map[String, Option[String]]): Seq[Attribute] = {
+      val tablePartitionNames = catalog.catalogTable.partitionColumnNames
+      val (inputPartCols, dataColumns) = catalog.output.partition { attr =>
+        tablePartitionNames.exists(resolver(_, attr.name))
+      }
+      // Get the dynamic partition columns in partition order
+      val dynamicNames = tablePartitionNames.filter { partName =>
+        partitionData.find(t => resolver(t._1, partName)).map(_._2).getOrElse(None).isEmpty
+      }
+      val dynamicPartCols = dynamicNames.map { name =>
+        inputPartCols.find(col => resolver(col.name, name)).getOrElse(
+          throw new AnalysisException(s"Cannot find partition column $name"))
+      }
+
+      dataColumns ++ dynamicPartCols
     }
   }
 

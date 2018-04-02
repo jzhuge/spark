@@ -1022,6 +1022,26 @@ class HiveQuerySuite extends HiveComparisonTest with SQLTestUtils with BeforeAnd
     }
   }
 
+  test("SPARK-14543: AnalysisException for missing partition columns") {
+    loadTestTable("srcpart")
+    sql("DROP TABLE IF EXISTS withparts")
+    sql("CREATE TABLE withparts LIKE srcpart")
+    sql("SET hive.exec.dynamic.partition.mode=nonstrict")
+    sql("CREATE TABLE IF NOT EXISTS withparts LIKE srcpart")
+
+    intercept[AnalysisException] {
+      // src doesn't have ds and hr partition columns
+      sql("INSERT INTO TABLE withparts PARTITION(ds, hr) SELECT key, value FROM src")
+          .queryExecution.analyzed
+    }
+
+    intercept[AnalysisException] {
+      // ds and hr partition columns aren't selected
+      sql("INSERT INTO TABLE withparts PARTITION(ds, hr) SELECT key, value FROM srcpart")
+          .queryExecution.analyzed
+    }
+  }
+
   test("parse HQL set commands") {
     // Adapted from its SQL counterpart.
     val testKey = "spark.sql.key.usedfortestonly"
