@@ -647,6 +647,30 @@ private[spark] class Client(
     }
 
     /**
+      * Distribute the python virtual environment archive if one is defined and
+      * put it into the public distributed cache.
+      */
+    var pysparkVenv = sparkConf.get(PYSPARK_VENV_ARCHIVE)
+    if(pysparkVenv.isDefined) {
+      var venv = pysparkVenv.get
+      var uri = Utils.resolveURI(venv)
+      distribute(uri.toString,
+        resType = LocalResourceType.ARCHIVE,
+        destName = Some(LOCALIZED_VENV_DIR),
+        makePublic = true)
+
+      val defaultPython = "./__venv__/bin/python"
+
+      if(!sparkConf.contains("spark.yarn.appMasterEnv.PYSPARK_PYTHON")) {
+        sparkConf.set("spark.yarn.appMasterEnv.PYSPARK_PYTHON", defaultPython)
+      }
+      
+      if(!sparkConf.contains("spark.executorEnv.PYSPARK_PYTHON")) {
+        sparkConf.set("spark.executorEnv.PYSPARK_PYTHON", defaultPython)
+      }
+    }
+
+    /**
      * Do the same for any additional resources passed in through ClientArguments.
      * Each resource category is represented by a 3-tuple of:
      *   (1) comma separated list of resources in this category,
@@ -1339,6 +1363,9 @@ private object Client extends Logging {
 
   // Subdirectory where Spark libraries will be placed.
   val LOCALIZED_LIB_DIR = "__spark_libs__"
+
+  // Subdirectory where PySpark virtualenv will be placed
+  val LOCALIZED_VENV_DIR = "__venv__"
 
   /**
    * Return the path to the given application's staging directory.

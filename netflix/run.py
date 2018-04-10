@@ -26,6 +26,7 @@ import shutil
 import commands
 import xml.etree.ElementTree as xml_parser
 
+
 DEFAULT_DRIVER_MEM_MB = {
         'client': 5120,
         'cluster': 5120
@@ -171,6 +172,18 @@ def clean_delimiter_args(command, command_args):
     args.extend(command_args[delim+1:])
     return args
 
+def get_venv_path(profile):
+    ''' Gets the latest published version of the big data image python environment built
+
+    :param profile: one of python2 or python3
+    :return:
+    '''
+    venv_path = 's3://netflix-dataplatform-code/hadoop/venv/{}/bdp-python-meta/current.tar.gz'.format(profile)
+
+    sys.stderr.write("Using Python virtual environment: {} ".format(venv_path))
+
+    return venv_path
+
 
 def main(command_args):
     """main entry point"""
@@ -246,6 +259,19 @@ def main(command_args):
         deploy_mode = 'client'
     spark_args.append('--deploy-mode')
     spark_args.append(deploy_mode)
+
+    # get the python environment
+    venv_profile, command_args = get_value(command_args, '--venv')
+    if venv_profile:
+        spark_args.append('--conf')
+        spark_args.append('spark.yarn.python.venv={}'.format(get_venv_path(venv_profile)))
+        spark_args.append('--conf')
+        spark_args.append('spark.executorEnv.PYSPARK_PYTHON=./__venv__/bin/python')
+        spark_args.append('--conf')
+        spark_args.append('spark.yarn.appMasterEnv.PYSPARK_PYTHON=./__venv__/bin/python')
+        # Allow for extra time before AM timeout due to unpacking tar
+        spark_args.append('--conf')
+        spark_args.append('spark.yarn.am.waitTime=60s')
 
     # get the command args file
     command_args_file, command_args = get_value(command_args, '--command-arg-file')
