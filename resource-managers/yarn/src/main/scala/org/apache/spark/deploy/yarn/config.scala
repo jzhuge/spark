@@ -97,6 +97,11 @@ package object config {
     .toSequence
     .createOptional
 
+  private[spark] val PYSPARK_VENV_ARCHIVE = ConfigBuilder("spark.yarn.python.venv")
+    .doc("Location of python virtual environment to use with PySpark")
+    .stringConf
+    .createOptional
+
   private[spark] val ARCHIVES_TO_DISTRIBUTE = ConfigBuilder("spark.yarn.dist.archives")
     .stringConf
     .toSequence
