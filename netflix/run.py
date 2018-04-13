@@ -294,7 +294,7 @@ def main(command_args):
         os.environ['SPARK_PRINT_LAUNCH_COMMAND'] = 'True'
         sys.stderr.write("Execv: %s %s\n" % (spark_executable, repr(spark_args)))
 
-    if command == 'sparklyr':
+    if command == 'sparklyr' or command == 'sparklyr-kernel':
         # spark args are passed via configuration file instead of direct
         write_config_yml(spark_args)
 
