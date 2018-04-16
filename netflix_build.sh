@@ -25,9 +25,6 @@ fi
 
 export NETFLIX_ENVIRONMENT=prod
 
-# get maven repository of dependencies from stash
-[[ -d "spark-repo" ]] || git clone ssh://git@stash.corp.netflix.com:7999/bdp/spark-repo.git -b netflix/2.1.1 spark-repo
-
 # this is the version used for output files to distinguish this branch
 BASE_VERSION=2.1.1
 # default to unstable if SPARK_VERSION and BUILD_VERSION are not in the environment
@@ -56,7 +53,7 @@ build/zinc-0.3.9/bin/zinc -shutdown || echo "No zinc server running."
 # set the maven version to include the build number
 build/mvn versions:set -DnewVersion=$SPARK_VERSION -DgenerateBackupPoms=false
 
-dev/make-distribution.sh --tgz -P${HADOOP_VERSION_PROFILE} -Dmaven.repo.local=spark-repo -Pmesos -Pyarn -Phive-thriftserver -Psparkr -Pkinesis-asl -Phadoop-provided
+dev/make-distribution.sh --tgz -P${HADOOP_VERSION_PROFILE} -Pmesos -Pyarn -Phive-thriftserver -Psparkr -Pkinesis-asl -Phadoop-provided
 
 rm -rf spark-*-bin-${HADOOP_VERSION}
 tar -xf spark-${SPARK_VERSION}-bin-${HADOOP_VERSION}.tgz
@@ -74,11 +71,6 @@ rm -rf spark-${BUILD_VERSION}/examples/
 rm -rf spark-${BUILD_VERSION}/conf/
 rm -rf spark-${BUILD_VERSION}/data/
 rm -rf spark-${BUILD_VERSION}/ec2/
-
-# Add extra dependency jars
-cp ${WORKSPACE}/spark-repo/org/datanucleus/datanucleus-core/3.2.10/datanucleus-core-3.2.10.jar spark-${BUILD_VERSION}/jars/
-cp ${WORKSPACE}/spark-repo/org/datanucleus/datanucleus-rdbms/3.2.9/datanucleus-rdbms-3.2.9.jar spark-${BUILD_VERSION}/jars/
-cp ${WORKSPACE}/spark-repo/org/datanucleus/datanucleus-api-jdo/3.2.6/datanucleus-api-jdo-3.2.6.jar spark-${BUILD_VERSION}/jars/
 
 # Add spark-defaults.conf and spark-env.sh
 mkdir -p ${WORKSPACE}/spark-${BUILD_VERSION}/conf
