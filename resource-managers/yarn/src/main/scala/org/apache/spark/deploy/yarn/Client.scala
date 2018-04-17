@@ -635,9 +635,9 @@ private[spark] class Client(
     }
 
     /**
-      * Distribute the python virtual environment archive if one is defined and
-      * put it into the public distributed cache.
-      */
+     * Distribute the python virtual environment archive if one is defined and
+     * put it into the public distributed cache.
+     */
     var pysparkVenv = sparkConf.get(PYSPARK_VENV_ARCHIVE)
     if(pysparkVenv.isDefined) {
       var venv = pysparkVenv.get
@@ -652,7 +652,7 @@ private[spark] class Client(
       if(!sparkConf.contains("spark.yarn.appMasterEnv.PYSPARK_PYTHON")) {
         sparkConf.set("spark.yarn.appMasterEnv.PYSPARK_PYTHON", defaultPython)
       }
-      
+
       if(!sparkConf.contains("spark.executorEnv.PYSPARK_PYTHON")) {
         sparkConf.set("spark.executorEnv.PYSPARK_PYTHON", defaultPython)
       }
