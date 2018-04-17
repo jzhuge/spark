@@ -1057,17 +1057,16 @@ class DAGScheduler(
       // the stage as completed here in case there are no tasks to run
       markStageAsFinished(stage, None)
 
-      val debugString = stage match {
+      stage match {
         case stage: ShuffleMapStage =>
-          s"Stage ${stage} is actually done; " +
-            s"(available: ${stage.isAvailable}," +
-            s"available outputs: ${stage.numAvailableOutputs}," +
-            s"partitions: ${stage.numPartitions})"
+          logDebug(s"Stage ${stage} is actually done; " +
+              s"(available: ${stage.isAvailable}," +
+              s"available outputs: ${stage.numAvailableOutputs}," +
+              s"partitions: ${stage.numPartitions})")
+          markMapStageJobsAsFinished(stage)
         case stage : ResultStage =>
-          s"Stage ${stage} is actually done; (partitions: ${stage.numPartitions})"
+          logDebug(s"Stage ${stage} is actually done; (partitions: ${stage.numPartitions})")
       }
-      logDebug(debugString)
-
       submitWaitingChildStages(stage)
     }
   }
@@ -1228,13 +1227,7 @@ class DAGScheduler(
                   shuffleStage.findMissingPartitions().mkString(", "))
                 submitStage(shuffleStage)
               } else {
-                // Mark any map-stage jobs waiting on this stage as finished
-                if (shuffleStage.mapStageJobs.nonEmpty) {
-                  val stats = mapOutputTracker.getStatistics(shuffleStage.shuffleDep)
-                  for (job <- shuffleStage.mapStageJobs) {
-                    markMapStageJobAsFinished(job, stats)
-                  }
-                }
+                markMapStageJobsAsFinished(shuffleStage)
                 submitWaitingChildStages(shuffleStage)
               }
             }
@@ -1317,6 +1310,16 @@ class DAGScheduler(
       case _: ExecutorLostFailure | _: TaskKilled | UnknownReason =>
         // Unrecognized failure - also do nothing. If the task fails repeatedly, the TaskScheduler
         // will abort the job.
+    }
+  }
+
+  private[scheduler] def markMapStageJobsAsFinished(shuffleStage: ShuffleMapStage): Unit = {
+    // Mark any map-stage jobs waiting on this stage as finished
+    if (shuffleStage.isAvailable && shuffleStage.mapStageJobs.nonEmpty) {
+      val stats = mapOutputTracker.getStatistics(shuffleStage.shuffleDep)
+      for (job <- shuffleStage.mapStageJobs) {
+        markMapStageJobAsFinished(job, stats)
+      }
     }
   }
 
