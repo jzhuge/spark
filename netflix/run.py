@@ -263,15 +263,19 @@ def main(command_args):
     # get the python environment
     venv_profile, command_args = get_value(command_args, '--venv')
     if venv_profile:
+        venv_python = './__venv__/bin/python'
+
         spark_args.append('--conf')
         spark_args.append('spark.yarn.python.venv={}'.format(get_venv_path(venv_profile)))
         spark_args.append('--conf')
-        spark_args.append('spark.executorEnv.PYSPARK_PYTHON=./__venv__/bin/python')
+        spark_args.append('spark.executorEnv.PYSPARK_PYTHON={}'.format(venv_python))
         spark_args.append('--conf')
-        spark_args.append('spark.yarn.appMasterEnv.PYSPARK_PYTHON=./__venv__/bin/python')
+        spark_args.append('spark.yarn.appMasterEnv.PYSPARK_PYTHON={}'.format(venv_python))
         # Allow for extra time before AM timeout due to unpacking tar
         spark_args.append('--conf')
         spark_args.append('spark.yarn.am.waitTime=60s')
+        # Need to set this env so that in client mode the right python exec is passed through
+        os.environ['PYSPARK_PYTHON'] = venv_python
 
     # get the command args file
     command_args_file, command_args = get_value(command_args, '--command-arg-file')
