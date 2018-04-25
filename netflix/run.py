@@ -299,7 +299,7 @@ def main(command_args):
         write_config_yml(spark_args)
 
         # command_args contains: ['sparklyr',executable,args...]
-        os.execv(command_args[1], command_args[2:])
+        os.execv(command_args[1], command_args[1:])
 
     else:
         # last, add user's command line args
