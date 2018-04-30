@@ -41,7 +41,7 @@ case class DataSourceV2Relation(
     table: Option[TableIdentifier] = None,
     projection: Option[Seq[AttributeReference]] = None,
     filters: Option[Seq[Expression]] = None,
-    userSchema: Option[StructType] = None) extends LeafNode with CatalogRelation
+    userSpecifiedSchema: Option[StructType] = None) extends LeafNode with CatalogRelation
     with SupportsPhysicalStats {
 
   override def simpleString: String = {
@@ -87,8 +87,14 @@ case class DataSourceV2Relation(
     }
   }
 
-  lazy val (reader: DataSourceReader, unsupportedFilters: Seq[Expression]) = {
-    val newReader = userSchema match {
+  // postScanFilters: filters that need to be evaluated after the scan.
+  // pushedFilters: filters that will be pushed down and evaluated in the underlying data sources.
+  // Note: postScanFilters and pushedFilters can overlap, e.g. the parquet row group filter.
+  lazy val (
+      reader: DataSourceReader,
+      postScanFilters: Seq[Expression],
+      pushedFilters: Seq[Expression]) = {
+    val newReader = userSpecifiedSchema match {
       case Some(s) =>
         asReadSupportWithSchema.createReader(s, v2Options)
       case _ =>
@@ -99,14 +105,16 @@ case class DataSourceV2Relation(
       DataSourceV2Relation.pushRequiredColumns(newReader, attrs.toStructType)
     }
 
-    val remainingFilters = filters match {
+    val (postScanFilters, pushedFilters) = filters match {
       case Some(filterSeq) =>
         DataSourceV2Relation.pushFilters(newReader, filterSeq)
       case _ =>
-        Nil
+        (Nil, Nil)
     }
+    logInfo(s"Post-Scan Filters: ${postScanFilters.mkString(",")}")
+    logInfo(s"Pushed Filters: ${pushedFilters.mkString(", ")}")
 
-    (newReader, remainingFilters)
+    (newReader, postScanFilters, pushedFilters)
   }
 
   def writer(dfSchema: StructType, mode: SaveMode): Option[DataSourceWriter] = {
@@ -206,32 +214,41 @@ object DataSourceV2Relation {
     }
   }
 
-  private def pushFilters(reader: DataSourceReader, filters: Seq[Expression]): Seq[Expression] = {
+  private def pushFilters(
+      reader: DataSourceReader,
+      filters: Seq[Expression]): (Seq[Expression], Seq[Expression]) = {
     reader match {
-      case catalystFilterSupport: SupportsPushDownCatalystFilters =>
-        catalystFilterSupport.pushCatalystFilters(filters.toArray)
+      case r: SupportsPushDownCatalystFilters =>
+        val postScanFilters = r.pushCatalystFilters(filters.toArray)
+        val pushedFilters = r.pushedCatalystFilters()
+        (postScanFilters, pushedFilters)
 
-      case filterSupport: SupportsPushDownFilters =>
-        // A map from original Catalyst expressions to corresponding translated data source
-        // filters. If a predicate is not in this map, it means it cannot be pushed down.
-        val translatedMap: Map[Expression, Filter] = filters.flatMap { p =>
-          DataSourceStrategy.translateFilter(p).map(f => p -> f)
-        }.toMap
+      case r: SupportsPushDownFilters =>
+        // A map from translated data source filters to original catalyst filter expressions.
+        val translatedFilterToExpr = scala.collection.mutable.HashMap.empty[Filter, Expression]
+        // Catalyst filter expression that can't be translated to data source filters.
+        val untranslatableExprs = scala.collection.mutable.ArrayBuffer.empty[Expression]
 
-        // Catalyst predicate expressions that cannot be converted to data source filters.
-        val nonConvertiblePredicates = filters.filterNot(translatedMap.contains)
+        for (filterExpr <- filters) {
+          val translated = DataSourceStrategy.translateFilter(filterExpr)
+          if (translated.isDefined) {
+            translatedFilterToExpr(translated.get) = filterExpr
+          } else {
+            untranslatableExprs += filterExpr
+          }
+        }
 
-        // Data source filters that cannot be pushed down. An unhandled filter means
-        // the data source cannot guarantee the rows returned can pass the filter.
+        // Data source filters that need to be evaluated again after scanning. which means
+        // the data source cannot guarantee the rows returned can pass these filters.
         // As a result we must return it so Spark can plan an extra filter operator.
-        val unhandledFilters = filterSupport.pushFilters(translatedMap.values.toArray).toSet
-        val unhandledPredicates = translatedMap.filter { case (_, f) =>
-          unhandledFilters.contains(f)
-        }.keys
+        val postScanFilters =
+          r.pushFilters(translatedFilterToExpr.keys.toArray).map(translatedFilterToExpr)
+        // The filters which are marked as pushed to this data source
+        val pushedFilters = r.pushedFilters().map(translatedFilterToExpr)
 
-        nonConvertiblePredicates ++ unhandledPredicates
+        (untranslatableExprs ++ postScanFilters, pushedFilters)
 
-      case _ => filters
+      case _ => (filters, Nil)
     }
   }
 }

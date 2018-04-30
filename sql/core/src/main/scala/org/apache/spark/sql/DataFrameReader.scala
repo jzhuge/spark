@@ -163,7 +163,8 @@ class DataFrameReader private[sql](sparkSession: SparkSession) extends Logging {
       }
 
       Dataset.ofRows(sparkSession, DataSourceV2Relation(
-        source, extraOptions.toMap, pathOption, tableOption, userSchema = userSpecifiedSchema))
+        source, extraOptions.toMap, pathOption, tableOption,
+        userSpecifiedSchema = userSpecifiedSchema))
 
     } else {
       // Code path for data source v1.
