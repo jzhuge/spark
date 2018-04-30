@@ -19,7 +19,7 @@ package org.apache.spark.sql.execution.datasources.v2
 
 import java.util.Objects
 
-import org.apache.spark.sql.catalyst.expressions.Attribute
+import org.apache.spark.sql.catalyst.expressions.AttributeReference
 import org.apache.spark.sql.sources.v2.reader._
 
 /**
@@ -28,14 +28,14 @@ import org.apache.spark.sql.sources.v2.reader._
 trait DataSourceReaderHolder {
 
   /**
-   * The output of the data source reader, w.r.t. column pruning.
-   */
-  def output: Seq[Attribute]
-
-  /**
    * The held data source reader.
    */
   def reader: DataSourceReader
+
+  /**
+   * The output of the data source reader.
+   */
+  def output: Seq[AttributeReference]
 
   /**
    * The metadata of this data source reader that can be used for equality test.
