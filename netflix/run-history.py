@@ -23,6 +23,7 @@ Spark History server run script
 import os, sys
 import commands
 import tempfile
+import urllib, urlparse
 
 # java -cp "$SPARK_HOME/jars/*:`$HADOOP_HOME/bin/hadoop classpath`" -Xmx9000m -Dspark.history.fs.max.size=14530242360 -Dspark.history.fs.cleaner.maxAge=365d -Dspark.history.ui.port=0 org.apache.spark.deploy.history.HistoryServer --dir history
 
@@ -66,6 +67,10 @@ def get_value(args, arg_key):
     return (value, remaining)
 
 
+def path2url(path):
+    return urlparse.urljoin('file:', urllib.pathname2url(os.path.abspath(path)))
+
+
 def main(args):
     """Main entry point
     """
@@ -75,7 +80,7 @@ def main(args):
     java_home = getenv('JAVA_HOME')
 
     # the original command defaulted to using spark-history in the local directory
-    history_dir = 'spark-history'
+    history_dir = path2url('spark-history')
     if len(args) == 1 and not args[0].startswith('-'):
         file_or_dir = args[0]
         if file_or_dir.startswith('hdfs:'):
@@ -86,7 +91,7 @@ def main(args):
                             hadoop_home, file_or_dir, temp_dir
                         )
                 )
-            history_dir = temp_dir
+            history_dir = path2url(temp_dir)
 
         elif file_or_dir.startswith('application_'):
             # download the file from HDFS
@@ -96,7 +101,7 @@ def main(args):
                             hadoop_home, file_or_dir, temp_dir
                         )
                 )
-            history_dir = temp_dir
+            history_dir = path2url(temp_dir)
 
         else:
             history_dir = file_or_dir
