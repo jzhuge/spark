@@ -558,7 +558,7 @@ class DataFrame(object):
 
         Returns a new DF based on the underlying materialized RDD.
         """
-        return self._jdf.materialize()
+        return DataFrame(self._jdf.materialize(), self.sql_ctx)
 
     @property
     @since(2.1)
