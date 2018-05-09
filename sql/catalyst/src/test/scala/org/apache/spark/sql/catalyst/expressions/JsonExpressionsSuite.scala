@@ -615,7 +615,7 @@ class JsonExpressionsSuite extends SparkFunSuite with ExpressionEvalHelper with 
 
     checkEvaluation(
       StructsToJson(Map.empty, struct, gmtId),
-      """{"t":"2016-01-01T00:00:00.000Z"}"""
+      """{"t":"2016-01-01T00:00:00.000+00:00"}"""
     )
     checkEvaluation(
       StructsToJson(Map.empty, struct, Option("PST")),
