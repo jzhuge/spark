@@ -122,7 +122,7 @@ class RateStreamMicroBatchReader(options: DataSourceOptions)
     RateStreamOffset(Serialization.read[Map[Int, ValueRunTimeMsPair]](json))
   }
 
-  override def createDataReaderFactories(): java.util.List[DataReaderFactory[Row]] = {
+  override def planInputPartitions(): java.util.List[InputPartition[Row]] = {
     val startMap = start.partitionToValueAndRunTimeMs
     val endMap = end.partitionToValueAndRunTimeMs
     endMap.keys.toSeq.map { part =>
@@ -138,7 +138,7 @@ class RateStreamMicroBatchReader(options: DataSourceOptions)
         outTimeMs += msPerPartitionBetweenRows
       }
 
-      RateStreamBatchTask(packedRows).asInstanceOf[DataReaderFactory[Row]]
+      RateStreamBatchTask(packedRows).asInstanceOf[InputPartition[Row]]
     }.toList.asJava
   }
 
@@ -146,11 +146,11 @@ class RateStreamMicroBatchReader(options: DataSourceOptions)
   override def stop(): Unit = {}
 }
 
-case class RateStreamBatchTask(vals: Seq[(Long, Long)]) extends DataReaderFactory[Row] {
-  override def createDataReader(): DataReader[Row] = new RateStreamBatchReader(vals)
+case class RateStreamBatchTask(vals: Seq[(Long, Long)]) extends InputPartition[Row] {
+  override def createPartitionReader(): InputPartitionReader[Row] = new RateStreamBatchReader(vals)
 }
 
-class RateStreamBatchReader(vals: Seq[(Long, Long)]) extends DataReader[Row] {
+class RateStreamBatchReader(vals: Seq[(Long, Long)]) extends InputPartitionReader[Row] {
   var currentIndex = -1
 
   override def next(): Boolean = {

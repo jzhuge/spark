@@ -20,30 +20,28 @@ package org.apache.spark.sql.execution.streaming.continuous
 import java.util.concurrent.{ArrayBlockingQueue, BlockingQueue, TimeUnit}
 import java.util.concurrent.atomic.AtomicBoolean
 
-import scala.collection.JavaConverters._
-
 import org.apache.spark._
 import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.{Row, SQLContext}
 import org.apache.spark.sql.catalyst.expressions.UnsafeRow
-import org.apache.spark.sql.execution.datasources.v2.{DataSourceRDDPartition, RowToUnsafeDataReader}
+import org.apache.spark.sql.execution.datasources.v2.{DataSourceRDDPartition, RowToUnsafeInputPartitionReader}
 import org.apache.spark.sql.sources.v2.reader._
-import org.apache.spark.sql.sources.v2.reader.streaming.{ContinuousDataReader, PartitionOffset}
+import org.apache.spark.sql.sources.v2.reader.streaming.{ContinuousInputPartitionReader, PartitionOffset}
 import org.apache.spark.util.ThreadUtils
 
 class ContinuousDataSourceRDD(
     sc: SparkContext,
     sqlContext: SQLContext,
-    @transient private val readerFactories: java.util.List[DataReaderFactory[UnsafeRow]])
+    @transient private val readerFactories: Seq[InputPartition[UnsafeRow]])
   extends RDD[UnsafeRow](sc, Nil) {
 
   private val dataQueueSize = sqlContext.conf.continuousStreamingExecutorQueueSize
   private val epochPollIntervalMs = sqlContext.conf.continuousStreamingExecutorPollIntervalMs
 
   override protected def getPartitions: Array[Partition] = {
-    readerFactories.asScala.zipWithIndex.map {
-      case (readerFactory, index) => new DataSourceRDDPartition(index, readerFactory)
+    readerFactories.zipWithIndex.map {
+      case (inputPartition, index) => new DataSourceRDDPartition(index, inputPartition)
     }.toArray
   }
 
@@ -54,7 +52,7 @@ class ContinuousDataSourceRDD(
     }
 
     val reader = split.asInstanceOf[DataSourceRDDPartition[UnsafeRow]]
-      .readerFactory.createDataReader()
+      .inputPartition.createPartitionReader()
 
     val coordinatorId = context.getLocalProperty(ContinuousExecution.EPOCH_COORDINATOR_ID_KEY)
 
@@ -133,7 +131,7 @@ class ContinuousDataSourceRDD(
   }
 
   override def getPreferredLocations(split: Partition): Seq[String] = {
-    split.asInstanceOf[DataSourceRDDPartition[UnsafeRow]].readerFactory.preferredLocations()
+    split.asInstanceOf[DataSourceRDDPartition[UnsafeRow]].inputPartition.preferredLocations()
   }
 }
 
@@ -168,7 +166,7 @@ class EpochPollRunnable(
 }
 
 class DataReaderThread(
-    reader: DataReader[UnsafeRow],
+    reader: InputPartitionReader[UnsafeRow],
     queue: BlockingQueue[(UnsafeRow, PartitionOffset)],
     context: TaskContext,
     failedFlag: AtomicBoolean)
@@ -210,11 +208,12 @@ class DataReaderThread(
 }
 
 object ContinuousDataSourceRDD {
-  private[continuous] def getBaseReader(reader: DataReader[UnsafeRow]): ContinuousDataReader[_] = {
+  private[continuous] def getBaseReader(
+      reader: InputPartitionReader[UnsafeRow]): ContinuousInputPartitionReader[_] = {
     reader match {
-      case r: ContinuousDataReader[UnsafeRow] => r
-      case wrapped: RowToUnsafeDataReader =>
-        wrapped.rowReader.asInstanceOf[ContinuousDataReader[Row]]
+      case r: ContinuousInputPartitionReader[UnsafeRow] => r
+      case wrapped: RowToUnsafeInputPartitionReader =>
+        wrapped.rowReader.asInstanceOf[ContinuousInputPartitionReader[Row]]
       case _ =>
         throw new IllegalStateException(s"Unknown continuous reader type ${reader.getClass}")
     }
