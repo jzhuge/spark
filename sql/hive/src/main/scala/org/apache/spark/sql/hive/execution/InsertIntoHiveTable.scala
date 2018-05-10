@@ -27,10 +27,12 @@ import scala.util.control.NonFatal
 
 import org.apache.hadoop.fs.{FileSystem, Path}
 import org.apache.hadoop.hive.common.FileUtils
-import org.apache.hadoop.hive.ql.exec.TaskRunner
 import org.apache.hadoop.hive.ql.ErrorMsg
+import org.apache.hadoop.hive.ql.exec.TaskRunner
 import org.apache.hadoop.mapred.{FileOutputFormat, JobConf}
 
+import org.apache.spark.SparkException
+import org.apache.spark.internal.io.FileCommitProtocol
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.AnalysisException
 import org.apache.spark.sql.catalyst.InternalRow
@@ -39,8 +41,6 @@ import org.apache.spark.sql.catalyst.plans.physical.{AllTuples, ClusteredDistrib
 import org.apache.spark.sql.execution.{SparkPlan, UnaryExecNode}
 import org.apache.spark.sql.hive._
 import org.apache.spark.sql.hive.HiveShim.{ShimFileSinkDesc => FileSinkDesc}
-import org.apache.spark.SparkException
-import org.apache.spark.internal.io.FileCommitProtocol
 import org.apache.spark.util.SerializableJobConf
 
 
@@ -209,6 +209,7 @@ case class InsertIntoHiveTable(
       SparkHiveWriterContainer.createPathFromString(fileSinkConf.getDirName(), conf.value))
     log.debug("Saving as hadoop file of type " + valueClass.getSimpleName)
     writerContainer.driverSideSetup()
+
     try {
       val taskCommits = sqlContext.sparkContext.runJob(
         rdd, writerContainer.writeToFile _).map(_._1)
@@ -216,6 +217,7 @@ case class InsertIntoHiveTable(
     } catch {
       case t: Throwable =>
         writerContainer.abortJob()
+        throw new SparkException("Aborting write, job failed", t)
     }
   }
 
