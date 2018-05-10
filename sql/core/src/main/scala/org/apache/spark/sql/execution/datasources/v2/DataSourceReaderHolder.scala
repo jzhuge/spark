@@ -17,9 +17,7 @@
 
 package org.apache.spark.sql.execution.datasources.v2
 
-import java.util.Objects
-
-import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference}
+import org.apache.spark.sql.catalyst.expressions.AttributeReference
 import org.apache.spark.sql.sources.v2.reader._
 
 /**
@@ -47,18 +45,5 @@ trait DataSourceReaderHolder {
       case _ => Nil
     }
     Seq(output, reader.getClass, reader.readSchema(), filters)
-  }
-
-  def canEqual(other: Any): Boolean
-
-  override def equals(other: Any): Boolean = other match {
-    case other: DataSourceReaderHolder =>
-      canEqual(other) && metadata.length == other.metadata.length &&
-        metadata.zip(other.metadata).forall { case (l, r) => l == r }
-    case _ => false
-  }
-
-  override def hashCode(): Int = {
-    metadata.map(Objects.hashCode).foldLeft(0)((a, b) => 31 * a + b)
   }
 }

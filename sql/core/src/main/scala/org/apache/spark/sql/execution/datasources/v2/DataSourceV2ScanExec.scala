@@ -43,22 +43,34 @@ case class DataSourceV2ScanExec(
 
   override def canEqual(other: Any): Boolean = other.isInstanceOf[DataSourceV2ScanExec]
 
-  override def references: AttributeSet = AttributeSet.empty
+  // TODO: unify the equal/hashCode implementation for all data source v2 query plans.
+  override def equals(other: Any): Boolean = other match {
+    case other: DataSourceV2ScanExec =>
+      output == other.output && reader.getClass == other.reader.getClass && options == other.options
+    case _ => false
+  }
+
+  override def hashCode(): Int = {
+    Seq(output, source, options).hashCode()
+  }
+
+  private lazy val partitions: Seq[InputPartition[UnsafeRow]] = reader match {
+    case r: SupportsScanUnsafeRow => r.planUnsafeInputPartitions().asScala
+    case _ =>
+      reader.planInputPartitions().asScala.map {
+        new RowToUnsafeRowInputPartition(_, reader.readSchema()): InputPartition[UnsafeRow]
+      }
+  }
+
+  private lazy val inputRDD: RDD[InternalRow] = reader match {
+    case _ =>
+      new DataSourceRDD(sparkContext, partitions).asInstanceOf[RDD[InternalRow]]
+  }
 
   override lazy val metrics = Map(
     "numOutputRows" -> SQLMetrics.createMetric(sparkContext, "number of output rows"))
 
   override protected def doExecute(): RDD[InternalRow] = {
-    val readTasks: java.util.List[DataReaderFactory[UnsafeRow]] = reader match {
-      case r: SupportsScanUnsafeRow => r.createUnsafeRowReaderFactories()
-      case _ =>
-        reader.createDataReaderFactories().asScala.map {
-          new RowToUnsafeRowDataReaderFactory(_, reader.readSchema()): DataReaderFactory[UnsafeRow]
-        }.asJava
-    }
-
-    val inputRDD = new DataSourceRDD(sparkContext, readTasks)
-      .asInstanceOf[RDD[InternalRow]]
     val numOutputRows = longMetric("numOutputRows")
     inputRDD.map { r =>
       numOutputRows += 1
@@ -67,19 +79,22 @@ case class DataSourceV2ScanExec(
   }
 }
 
-class RowToUnsafeRowDataReaderFactory(rowReaderFactory: DataReaderFactory[Row], schema: StructType)
-  extends DataReaderFactory[UnsafeRow] {
+class RowToUnsafeRowInputPartition(partition: InputPartition[Row], schema: StructType)
+  extends InputPartition[UnsafeRow] {
 
-  override def preferredLocations: Array[String] = rowReaderFactory.preferredLocations
+  override def preferredLocations: Array[String] = partition.preferredLocations
 
-  override def createDataReader: DataReader[UnsafeRow] = {
-    new RowToUnsafeDataReader(
-      rowReaderFactory.createDataReader, RowEncoder.apply(schema).resolveAndBind())
+  override def createPartitionReader: InputPartitionReader[UnsafeRow] = {
+    new RowToUnsafeInputPartitionReader(
+      partition.createPartitionReader, RowEncoder.apply(schema).resolveAndBind())
   }
 }
 
-class RowToUnsafeDataReader(rowReader: DataReader[Row], encoder: ExpressionEncoder[Row])
-  extends DataReader[UnsafeRow] {
+class RowToUnsafeInputPartitionReader(
+    val rowReader: InputPartitionReader[Row],
+    encoder: ExpressionEncoder[Row])
+
+  extends InputPartitionReader[UnsafeRow] {
 
   override def next: Boolean = rowReader.next
 
