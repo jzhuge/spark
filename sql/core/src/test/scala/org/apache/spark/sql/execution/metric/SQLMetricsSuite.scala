@@ -17,11 +17,6 @@
 
 package org.apache.spark.sql.execution.metric
 
-import java.io.File
-
-import scala.collection.mutable.HashMap
-import scala.util.Random
-
 import org.apache.spark.SparkFunSuite
 import org.apache.spark.sql._
 import org.apache.spark.sql.catalyst.plans.logical.LocalRelation
@@ -35,18 +30,18 @@ import org.apache.spark.util.{AccumulatorContext, JsonProtocol}
 class SQLMetricsSuite extends SparkFunSuite with SharedSQLContext {
   import testImplicits._
 
-
   /**
-   * Call `df.collect()` and collect necessary metrics from execution data.
+   * Call `df.collect()` and verify if the collected metrics are same as "expectedMetrics".
    *
    * @param df `DataFrame` to run
    * @param expectedNumOfJobs number of jobs that will run
-   * @param expectedNodeIds the node ids of the metrics to collect from execution data.
+   * @param expectedMetrics the expected metrics. The format is
+   *                        `nodeId -> (operatorName, metric name -> metric value)`.
    */
-  private def getSparkPlanMetrics(
+  private def testSparkPlanMetrics(
       df: DataFrame,
       expectedNumOfJobs: Int,
-      expectedNodeIds: Set[Long]): Option[Map[Long, (String, Map[String, Any])]] = {
+      expectedMetrics: Map[Long, (String, Map[String, Any])]): Unit = {
     val previousExecutionIds = spark.sharedState.listener.executionIdToData.keySet
     withSQLConf("spark.sql.codegen.wholeStage" -> "false") {
       df.collect()
@@ -63,9 +58,9 @@ class SQLMetricsSuite extends SparkFunSuite with SharedSQLContext {
     if (jobs.size == expectedNumOfJobs) {
       // If we can track all jobs, check the metric values
       val metricValues = spark.sharedState.listener.getExecutionMetrics(executionId)
-      val metrics = SparkPlanGraph(SparkPlanInfo.fromSparkPlan(
+      val actualMetrics = SparkPlanGraph(SparkPlanInfo.fromSparkPlan(
         df.queryExecution.executedPlan)).allNodes.filter { node =>
-        expectedNodeIds.contains(node.id)
+        expectedMetrics.contains(node.id)
       }.map { node =>
         val nodeMetrics = node.metrics.map { metric =>
           val metricValue = metricValues(metric.accumulatorId)
@@ -73,30 +68,7 @@ class SQLMetricsSuite extends SparkFunSuite with SharedSQLContext {
         }.toMap
         (node.id, node.name -> nodeMetrics)
       }.toMap
-      Some(metrics)
-    } else {
-      // TODO Remove this "else" once we fix the race condition that missing the JobStarted event.
-      // Since we cannot track all jobs, the metric values could be wrong and we should not check
-      // them.
-      logWarning("Due to a race condition, we miss some jobs and cannot verify the metric values")
-      None
-    }
-  }
 
-  /**
-   * Call `df.collect()` and verify if the collected metrics are same as "expectedMetrics".
-   *
-   * @param df `DataFrame` to run
-   * @param expectedNumOfJobs number of jobs that will run
-   * @param expectedMetrics the expected metrics. The format is
-   *                        `nodeId -> (operatorName, metric name -> metric value)`.
-   */
-  private def testSparkPlanMetrics(
-      df: DataFrame,
-      expectedNumOfJobs: Int,
-      expectedMetrics: Map[Long, (String, Map[String, Any])]): Unit = {
-    val optActualMetrics = getSparkPlanMetrics(df, expectedNumOfJobs, expectedMetrics.keySet)
-    optActualMetrics.map { actualMetrics =>
       assert(expectedMetrics.keySet === actualMetrics.keySet)
       for (nodeId <- expectedMetrics.keySet) {
         val (expectedNodeName, expectedMetricsMap) = expectedMetrics(nodeId)
@@ -106,6 +78,11 @@ class SQLMetricsSuite extends SparkFunSuite with SharedSQLContext {
           assert(expectedMetricsMap(metricName).toString === actualMetricsMap(metricName))
         }
       }
+    } else {
+      // TODO Remove this "else" once we fix the race condition that missing the JobStarted event.
+      // Since we cannot track all jobs, the metric values could be wrong and we should not check
+      // them.
+      logWarning("Due to a race condition, we miss some jobs and cannot verify the metric values")
     }
   }
 
@@ -148,62 +125,16 @@ class SQLMetricsSuite extends SparkFunSuite with SharedSQLContext {
     // ... -> HashAggregate(nodeId = 2) -> Exchange(nodeId = 1)
     // -> HashAggregate(nodeId = 0)
     val df = testData2.groupBy().count() // 2 partitions
-    val expected1 = Seq(
-      Map("number of output rows" -> 2L,
-        "avg hashmap probe (min, med, max)" -> "\n(1, 1, 1)"),
-      Map("number of output rows" -> 1L,
-        "avg hashmap probe (min, med, max)" -> "\n(1, 1, 1)"))
     testSparkPlanMetrics(df, 1, Map(
-      2L -> ("HashAggregate", expected1(0)),
-      0L -> ("HashAggregate", expected1(1)))
+      2L -> ("HashAggregate", Map("number of output rows" -> 2L)),
+      0L -> ("HashAggregate", Map("number of output rows" -> 1L)))
     )
 
     // 2 partitions and each partition contains 2 keys
     val df2 = testData2.groupBy('a).count()
-    val expected2 = Seq(
-      Map("number of output rows" -> 4L,
-        "avg hashmap probe (min, med, max)" -> "\n(1, 1, 1)"),
-      Map("number of output rows" -> 3L,
-        "avg hashmap probe (min, med, max)" -> "\n(1, 1, 1)"))
     testSparkPlanMetrics(df2, 1, Map(
-      2L -> ("HashAggregate", expected2(0)),
-      0L -> ("HashAggregate", expected2(1)))
-    )
-  }
-
-  test("Aggregate metrics: track avg probe") {
-    val random = new Random()
-    val manyBytes = (0 until 65535).map { _ =>
-      val byteArrSize = random.nextInt(100)
-      val bytes = new Array[Byte](byteArrSize)
-      random.nextBytes(bytes)
-      (bytes, random.nextInt(100))
-    }
-    val df = manyBytes.toSeq.toDF("a", "b").repartition(1).groupBy('a).count()
-    val metrics = getSparkPlanMetrics(df, 1, Set(2L, 0L)).get
-    Seq(metrics(2L)._2("avg hashmap probe (min, med, max)"),
-        metrics(0L)._2("avg hashmap probe (min, med, max)")).foreach { probes =>
-      probes.toString.stripPrefix("\n(").stripSuffix(")").split(", ").foreach { probe =>
-        assert(probe.toInt > 1)
-      }
-    }
-  }
-
-  ignore("ObjectHashAggregate metrics") {
-    // Assume the execution plan is
-    // ... -> ObjectHashAggregate(nodeId = 2) -> Exchange(nodeId = 1)
-    // -> ObjectHashAggregate(nodeId = 0)
-    val df = testData2.groupBy().agg(collect_set('a)) // 2 partitions
-    testSparkPlanMetrics(df, 1, Map(
-      2L -> ("ObjectHashAggregate", Map("number of output rows" -> 2L)),
-      0L -> ("ObjectHashAggregate", Map("number of output rows" -> 1L)))
-    )
-
-    // 2 partitions and each partition contains 2 keys
-    val df2 = testData2.groupBy('a).agg(collect_set('a))
-    testSparkPlanMetrics(df2, 1, Map(
-      2L -> ("ObjectHashAggregate", Map("number of output rows" -> 4L)),
-      0L -> ("ObjectHashAggregate", Map("number of output rows" -> 3L)))
+      2L -> ("HashAggregate", Map("number of output rows" -> 4L)),
+      0L -> ("HashAggregate", Map("number of output rows" -> 3L)))
     )
   }
 

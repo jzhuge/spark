@@ -111,7 +111,8 @@ class UnsafeFixedWidthAggregationMapSuite
       groupKeySchema,
       taskMemoryManager,
       1024, // initial capacity,
-      PAGE_SIZE_BYTES
+      PAGE_SIZE_BYTES,
+      false // disable perf metrics
     )
     assert(!map.iterator().next())
     map.free()
@@ -124,7 +125,8 @@ class UnsafeFixedWidthAggregationMapSuite
       groupKeySchema,
       taskMemoryManager,
       1024, // initial capacity
-      PAGE_SIZE_BYTES
+      PAGE_SIZE_BYTES,
+      false // disable perf metrics
     )
     val groupKey = InternalRow(UTF8String.fromString("cats"))
 
@@ -150,7 +152,8 @@ class UnsafeFixedWidthAggregationMapSuite
       groupKeySchema,
       taskMemoryManager,
       128, // initial capacity
-      PAGE_SIZE_BYTES
+      PAGE_SIZE_BYTES,
+      false // disable perf metrics
     )
     val rand = new Random(42)
     val groupKeys: Set[String] = Seq.fill(512)(rand.nextString(1024)).toSet
@@ -175,7 +178,8 @@ class UnsafeFixedWidthAggregationMapSuite
       groupKeySchema,
       taskMemoryManager,
       128, // initial capacity
-      PAGE_SIZE_BYTES
+      PAGE_SIZE_BYTES,
+      false // disable perf metrics
     )
 
     val keys = randomStrings(1024).take(512)
@@ -222,7 +226,8 @@ class UnsafeFixedWidthAggregationMapSuite
       groupKeySchema,
       taskMemoryManager,
       128, // initial capacity
-      PAGE_SIZE_BYTES
+      PAGE_SIZE_BYTES,
+      false // disable perf metrics
     )
     val sorter = map.destructAndCreateExternalSorter()
 
@@ -262,7 +267,8 @@ class UnsafeFixedWidthAggregationMapSuite
       StructType(Nil),
       taskMemoryManager,
       128, // initial capacity
-      PAGE_SIZE_BYTES
+      PAGE_SIZE_BYTES,
+      false // disable perf metrics
     )
     (1 to 10).foreach { i =>
       val buf = map.getAggregationBuffer(UnsafeRow.createFromByteArray(0, 0))
@@ -306,7 +312,8 @@ class UnsafeFixedWidthAggregationMapSuite
       groupKeySchema,
       taskMemoryManager,
       128, // initial capacity
-      pageSize
+      pageSize,
+      false // disable perf metrics
     )
 
     val rand = new Random(42)
@@ -343,7 +350,8 @@ class UnsafeFixedWidthAggregationMapSuite
       groupKeySchema,
       taskMemoryManager,
       128, // initial capacity
-      pageSize
+      pageSize,
+      false // disable perf metrics
     )
 
     val rand = new Random(42)
