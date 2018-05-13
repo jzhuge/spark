@@ -512,12 +512,14 @@ private[spark] class Client(
             val expectedChecksum = checksum(localPath)
             val publicPath = publicSharedPath(expectedChecksum, localPath.getName)
 
-            if (publicPath.getFileSystem(hadoopConf).exists(publicPath)) {
-              publicPath
-            } else {
+            if (!publicPath.getFileSystem(hadoopConf).exists(publicPath)) {
+              val stageName = publicPath.getName + "." + UUID.randomUUID().toString
               copyFileToRemote(publicPath.getParent, localPath, replication,
-                destName = Some(publicPath.getName), symlinkCache = symlinkCache)
+                destName = Some(stageName), symlinkCache = symlinkCache)
+              publicPath.getFileSystem(hadoopConf)
+                .rename(new Path(publicPath.getParent, stageName), publicPath)
             }
+            publicPath
           } else {
             copyFileToRemote(destDir, localPath, replication, symlinkCache)
           }
