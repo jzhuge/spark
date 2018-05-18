@@ -85,7 +85,7 @@ class RateStreamContinuousReader(options: DataSourceOptions)
       val start = partitionStartMap(i)
       // Have each partition advance by numPartitions each row, with starting points staggered
       // by their partition index.
-      RateStreamContinuousDataReaderFactory(
+      RateStreamContinuousInputPartition(
         start.value,
         start.runTimeMs,
         i,
@@ -100,7 +100,7 @@ class RateStreamContinuousReader(options: DataSourceOptions)
 
 }
 
-case class RateStreamContinuousDataReaderFactory(
+case class RateStreamContinuousInputPartition(
     startValue: Long,
     startTimeMs: Long,
     partitionIndex: Int,
