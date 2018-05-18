@@ -166,7 +166,7 @@ class RateSourceV2Suite extends StreamTest {
 
     val data = scala.collection.mutable.ListBuffer[Row]()
     tasks.asScala.foreach {
-      case t: RateStreamContinuousDataReaderFactory =>
+      case t: RateStreamContinuousInputPartition =>
         val startTimeMs = reader.getStartOffset()
           .asInstanceOf[RateStreamOffset]
           .partitionToValueAndRunTimeMs(t.partitionIndex)
