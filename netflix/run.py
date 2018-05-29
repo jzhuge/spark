@@ -300,7 +300,19 @@ def main(command_args):
 
         # command_args contains: ['sparklyr',executable,args...]
         os.execv(command_args[1], command_args[1:])
-
+    elif command == 'spark-session':
+        # if this is a spark-session job, append properties it needs to run
+        spark_args.extend(command_args[1:])
+        spark_args.append('--deploy-mode')
+        spark_args.append('client')
+        spark_args.append('--conf')
+        spark_args.append('spark.scheduler.mode=FAIR')
+        spark_args.append('--conf')
+        spark_args.append('spark.scheduler.defaultpool.mode=fair')
+        spark_args.append('--class')
+        spark_args.append('com.netflix.queryservice.SparkQueryServer')
+        spark_args.append(os.environ['QUERY_SERVICE_LITE_JAR'])
+        os.execv(spark_executable, spark_args)
     else:
         # last, add user's command line args
         spark_args.extend(command_args[1:])
