@@ -20,11 +20,13 @@ package org.apache.spark.metrics
 import java.io.{FileInputStream, InputStream}
 import java.util.Properties
 
+import org.apache.hadoop.fs.Path
 import scala.collection.JavaConverters._
 import scala.collection.mutable
 import scala.util.matching.Regex
 
 import org.apache.spark.SparkConf
+import org.apache.spark.deploy.SparkHadoopUtil
 import org.apache.spark.internal.Logging
 import org.apache.spark.util.Utils
 
@@ -129,8 +131,11 @@ private[spark] class MetricsConfig(conf: SparkConf) extends Logging {
     var is: InputStream = null
     try {
       is = path match {
-        case Some(f) => new FileInputStream(f)
-        case None => Utils.getSparkClassLoader.getResourceAsStream(DEFAULT_METRICS_CONF_FILENAME)
+        case Some(f) =>
+          val hadoopPath = new Path(Utils.resolveURI(f))
+          Utils.getHadoopFileSystem(hadoopPath.toUri, SparkHadoopUtil.get.conf).open(hadoopPath)
+        case None =>
+          Utils.getSparkClassLoader.getResourceAsStream(DEFAULT_METRICS_CONF_FILENAME)
       }
 
       if (is != null) {
