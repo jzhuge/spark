@@ -150,6 +150,7 @@ statement
     | SET ROLE .*?                                                     #failNativeCommand
     | SET .*?                                                          #setConfiguration
     | RESET                                                            #resetConfiguration
+    | DELETE FROM tableIdentifier WHERE expression                     #deleteFrom
     | unsupportedHiveNativeCommands .*?                                #failNativeCommand
     ;
 
@@ -200,7 +201,6 @@ unsupportedHiveNativeCommands
     | kw1=COMMIT
     | kw1=ROLLBACK
     | kw1=DFS
-    | kw1=DELETE kw2=FROM
     ;
 
 createTableHeader
