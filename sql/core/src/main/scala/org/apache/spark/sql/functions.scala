@@ -19,9 +19,8 @@ package org.apache.spark.sql
 
 import scala.collection.JavaConverters._
 import scala.language.implicitConversions
-import scala.reflect.runtime.universe.{typeTag, TypeTag}
+import scala.reflect.runtime.universe.{TypeTag, typeTag}
 import scala.util.Try
-
 import org.apache.spark.annotation.{Experimental, InterfaceStability}
 import org.apache.spark.sql.catalyst.ScalaReflection
 import org.apache.spark.sql.catalyst.analysis.{Star, UnresolvedFunction}
@@ -29,6 +28,7 @@ import org.apache.spark.sql.catalyst.encoders.ExpressionEncoder
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.expressions.aggregate._
 import org.apache.spark.sql.catalyst.plans.logical.BroadcastHint
+import org.apache.spark.sql.catalyst.util.NetflixDateTimeUtils.DEFAULT_DUMMY_ARGUMENT
 import org.apache.spark.sql.execution.SparkSqlParser
 import org.apache.spark.sql.expressions.UserDefinedFunction
 import org.apache.spark.sql.internal.SQLConf
@@ -3237,5 +3237,149 @@ object functions {
   @scala.annotation.varargs
   def callUDF(udfName: String, cols: Column*): Column = withExpr {
     UnresolvedFunction(udfName, cols.map(_.expr), isDistinct = false)
+  }
+
+  def nf_dateint(input: Column): Column = withExpr {
+    NfDateInt(input.expr, Literal(DEFAULT_DUMMY_ARGUMENT))
+  }
+
+  def nf_dateint(input: Column, format: String): Column = withExpr {
+    NfDateInt(input.expr, Literal(format))
+  }
+
+  def nf_dateint_today(): Column = withExpr { NfDateIntToday() }
+
+  def nf_datestr(input: Column): Column = withExpr {
+    NfDateString(input.expr, Literal(DEFAULT_DUMMY_ARGUMENT))
+  }
+
+  def nf_datestr(input: Column, format: String): Column = withExpr {
+    NfDateString(input.expr, Literal(format))
+  }
+
+  def nf_datestr_today(): Column = withExpr { NfDateStringToday() }
+
+  def nf_unixtime_now(): Column = withExpr { NfUnixTimeNow() }
+
+  def nf_unixtime_now_ms(): Column = withExpr { NfUnixTimeNowMs() }
+
+  def nf_to_unixtime(input: Column): Column = withExpr {
+    NfToUnixTime(input.expr, Literal(DEFAULT_DUMMY_ARGUMENT))
+  }
+
+  def nf_to_unixtime(input: Column, format: String): Column = withExpr {
+    NfToUnixTime(input.expr, Literal(format))
+  }
+
+  def nf_to_unixtime_ms(input: Column): Column = withExpr {
+    NfToUnixTimeMs(input.expr, Literal(DEFAULT_DUMMY_ARGUMENT))
+  }
+
+  def nf_tounixtime_ms(input: Column, format: String): Column = withExpr {
+    NfToUnixTimeMs(input.expr, Literal(format))
+  }
+
+  def nf_from_unixtime(input: Column): Column = withExpr {
+    NfFromUnixTime(input.expr, Literal(DEFAULT_DUMMY_ARGUMENT))
+  }
+
+  def nf_from_unixtime(input: Column, format: String): Column = withExpr {
+    NfFromUnixTime(input.expr, Literal(format))
+  }
+
+  def nf_from_unixtime_ms(input: Column): Column = withExpr {
+    NfFromUnixTimeMs(input.expr, Literal(DEFAULT_DUMMY_ARGUMENT))
+  }
+
+  def nf_from_unixtime_ms(input: Column, format: String): Column = withExpr {
+    NfFromUnixTimeMs(input.expr, Literal(format))
+  }
+
+  def nf_from_unixtime_tz(input: Column, timezone: String): Column = withExpr {
+    NfFromUnixTimeTz(input.expr, Literal(timezone))
+  }
+
+  def nf_from_unixtime_ms_tz(input: Column, timezone: String): Column = withExpr {
+    NfFromUnixTimeMsTz(input.expr, Literal(timezone))
+  }
+
+  def nf_date(input: Column): Column = withExpr {
+    NfDate(input.expr, Literal(DEFAULT_DUMMY_ARGUMENT))
+  }
+
+  def nf_date(input: Column, format: String): Column = withExpr {
+    NfDate(input.expr, Literal(format))
+  }
+
+  def nf_date_today(): Column = withExpr { NfDateToday() }
+
+  def nf_timestamp(input: Column): Column = withExpr {
+    NfTimestamp(input.expr, Literal(DEFAULT_DUMMY_ARGUMENT))
+  }
+
+  def nf_timestamp(input: Column, format: String): Column = withExpr {
+    NfTimestamp(input.expr, Literal(format))
+  }
+
+  def nf_timestamp_now(): Column = withExpr { NfTimestampNow() }
+
+  def nf_dateadd(input1: Column, input2: Column): Column = withExpr {
+    NfDateAdd(input1.expr, input2.expr, Literal(DEFAULT_DUMMY_ARGUMENT))
+  }
+
+  def nf_dateadd(input1: Column, input2: Column, input3: Column): Column = withExpr {
+    NfDateAdd(input1.expr, input2.expr, input3.expr)
+  }
+
+  def nf_datediff(input1: Column, input2: Column): Column = withExpr {
+    NfDateDiff(input1.expr, input2.expr, Literal(DEFAULT_DUMMY_ARGUMENT))
+  }
+
+  def nf_datediff(input1: Column, input2: Column, input3: Column): Column = withExpr {
+    NfDateDiff(input1.expr, input2.expr, input3.expr)
+  }
+
+  def nf_datetrunc(input1: Column, input2: Column): Column = withExpr {
+    NfDateTrunc(input1.expr, input2.expr)
+  }
+
+  def nf_dateformat(input1: Column, input2: Column): Column = withExpr {
+    NfDateFormat(input1.expr, input2.expr)
+  }
+
+  def nf_year(input: Column): Column = withExpr {
+    NfYear(input.expr)
+  }
+
+  def nf_month(input: Column): Column = withExpr {
+    NfMonth(input.expr)
+  }
+
+  def nf_day(input: Column): Column = withExpr {
+    NfDay(input.expr)
+  }
+
+  def nf_hour(input: Column): Column = withExpr {
+    NfHour(input.expr)
+  }
+
+  def nf_minute(input: Column): Column = withExpr {
+    NfMinute(input.expr)
+  }
+
+  def nf_second(input: Column): Column = withExpr {
+    NfSecond(input.expr)
+  }
+
+  def nf_millisecond(input: Column): Column = withExpr {
+    NfMillisecond(input.expr)
+  }
+
+  def nf_week(input: Column): Column = withExpr {
+    NfWeek(input.expr)
+  }
+
+  def nf_quarter(input: Column): Column = withExpr {
+    NfQuarter(input.expr)
   }
 }

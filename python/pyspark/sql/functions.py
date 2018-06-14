@@ -1876,6 +1876,127 @@ __all__ = [k for k, v in globals().items()
            if not k.startswith('_') and k[0].islower() and callable(v) and k not in blacklist]
 __all__.sort()
 
+def nf_dateint(input, format="-"):
+    sc = SparkContext._active_spark_context
+    return Column(sc._jvm.functions.nf_dateint(_to_java_column(input), format))
+
+def nf_dateint_today():
+    sc = SparkContext._active_spark_context
+    return Column(sc._jvm.functions.nf_dateint_today())
+
+def nf_datestr(input, format="-"):
+    sc = SparkContext._active_spark_context
+    return Column(sc._jvm.functions.nf_datestring(_to_java_column(input), format))
+
+def nf_datestr_today():
+    sc = SparkContext._active_spark_context
+    return Column(sc._jvm.functions.nf_datestring_today())
+
+def nf_unixtime_now():
+    sc = SparkContext._active_spark_context
+    return Column(sc._jvm.functions.nf_unixtime_now())
+
+def nf_unixtime_now_ms():
+    sc = SparkContext._active_spark_context
+    return Column(sc._jvm.functions.nf_unixtime_now_ms())
+
+def nf_to_unixtime(input, format="-"):
+    sc = SparkContext._active_spark_context
+    return Column(sc._jvm.functions.nf_to_unixtime(_to_java_column(input), format))
+
+def nf_to_unixtime_ms(input, format="-"):
+    sc = SparkContext._active_spark_context
+    return Column(sc._jvm.functions.nf_to_unixtime_ms(_to_java_column(input), format))
+
+def nf_from_unixtime(input, format="-"):
+    sc = SparkContext._active_spark_context
+    return Column(sc._jvm.functions.nf_from_unixtime(_to_java_column(input), format))
+
+def nf_from_unixtime_ms(input, format="-"):
+    sc = SparkContext._active_spark_context
+    return Column(sc._jvm.functions.nf_from_unixtime_ms(_to_java_column(input), format))
+
+def nf_from_unixtime_tz(input, timezone):
+    sc = SparkContext._active_spark_context
+    return Column(sc._jvm.functions.nf_from_unixtime_tz(_to_java_column(input), timezone))
+
+def nf_from_unixtime_ms_tz(input, timezone):
+    sc = SparkContext._active_spark_context
+    return Column(sc._jvm.functions.nf_from_unixtime_ms_tz(_to_java_column(input), timezone))
+
+def nf_date(input, format="-"):
+    sc = SparkContext._active_spark_context
+    return Column(sc._jvm.functions.nf_date(_to_java_column(input), format))
+
+def nf_date_today():
+    sc = SparkContext._active_spark_context
+    return Column(sc._jvm.functions.nf_date_today())
+
+def nf_timestamp(input, format="-"):
+    sc = SparkContext._active_spark_context
+    return Column(sc._jvm.functions.nf_timestamp(_to_java_column(input), format))
+
+def nf_timestamp_now():
+    sc = SparkContext._active_spark_context
+    return Column(sc._jvm.functions.nf_timestamp_now())
+
+def nf_dateadd(input1, input2, input3="-"):
+    sc = SparkContext._active_spark_context
+    if input3 == "-":
+        return Column(sc._jvm.functions.nf_dateadd(_to_java_column(input1), input2, input3))
+    else:
+        return Column(sc._jvm.functions.nf_dateadd(input1, input2, _to_java_column(input3)))
+
+def nf_datediff(input1, input2, input3="-"):
+    sc = SparkContext._active_spark_context
+    if input3 == "-":
+        return Column(sc._jvm.functions.nf_datediff(_to_java_column(input1), input2, input3))
+    else:
+        return Column(sc._jvm.functions.nf_datediff(input1, input2, _to_java_column(input3)))
+
+def nf_datetrunc(input1, input2):
+    sc = SparkContext._active_spark_context
+    return Column(sc._jvm.functions.nf_datetrunc(_to_java_column(input1), _to_java_column(input2)))
+
+def nf_dateformat(input1, input2):
+    sc = SparkContext._active_spark_context
+    return Column(sc._jvm.functions.nf_dateformat(_to_java_column(input1), _to_java_column(input2)))
+
+def nf_year(input):
+    sc = SparkContext._active_spark_context
+    return Column(sc._jvm.functions.nf_year(_to_java_column(input)))
+
+def nf_month(input):
+    sc = SparkContext._active_spark_context
+    return Column(sc._jvm.functions.nf_month(_to_java_column(input)))
+
+def nf_day(input):
+    sc = SparkContext._active_spark_context
+    return Column(sc._jvm.functions.nf_day(_to_java_column(input)))
+
+def nf_hour(input):
+    sc = SparkContext._active_spark_context
+    return Column(sc._jvm.functions.nf_hour(_to_java_column(input)))
+
+def nf_minute(input):
+    sc = SparkContext._active_spark_context
+    return Column(sc._jvm.functions.nf_minute(_to_java_column(input)))
+
+def nf_second(input):
+    sc = SparkContext._active_spark_context
+    return Column(sc._jvm.functions.nf_second(_to_java_column(input)))
+
+def nf_milliseond(input):
+    sc = SparkContext._active_spark_context
+    return Column(sc._jvm.functions.nf_millisecond(_to_java_column(input)))
+
+def nf_week(input):
+    sc = SparkContext._active_spark_context
+    return Column(sc._jvm.functions.nf_week(_to_java_column(input)))
+
+def nf_quarter(input):
+    sc = SparkContext._active_spark_context
+    return Column(sc._jvm.functions.nf_quarter(_to_java_column(input)))
 
 def _test():
     import doctest

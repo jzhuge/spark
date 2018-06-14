@@ -43,12 +43,31 @@ object ComputeCurrentTime extends Rule[LogicalPlan] {
   def apply(plan: LogicalPlan): LogicalPlan = {
     val dateExpr = CurrentDate()
     val timeExpr = CurrentTimestamp()
+    val nfDateIntExpr = NfDateIntToday()
+    val nfDateStringExpr = NfDateStringToday()
+    val nfDateExpr = NfDateToday()
+    val nfTimestampExpr = NfTimestampNow()
+    val nfUnixTimeExpr = NfUnixTimeNow()
+    val nfUnixTimeMsExpr = NfUnixTimeNowMs()
     val currentDate = Literal.create(dateExpr.eval(EmptyRow), dateExpr.dataType)
     val currentTime = Literal.create(timeExpr.eval(EmptyRow), timeExpr.dataType)
+    val nfDateIntToday = Literal.create(nfDateIntExpr.eval(EmptyRow), nfDateIntExpr.dataType)
+    val nfDateStringToday = Literal.create(nfDateStringExpr.eval(EmptyRow),
+      nfDateStringExpr.dataType)
+    val nfDateToday = Literal.create(nfDateExpr.eval(EmptyRow), nfDateExpr.dataType)
+    val nfUnixTimeNow = Literal.create(nfUnixTimeExpr.eval(EmptyRow), nfUnixTimeExpr.dataType)
+    val nfUnixTimeNowMs = Literal.create(nfUnixTimeMsExpr.eval(EmptyRow), nfUnixTimeMsExpr.dataType)
+    val nfTimestampNow = Literal.create(nfTimestampExpr.eval(EmptyRow), nfTimestampExpr.dataType)
 
     plan transformAllExpressions {
       case CurrentDate() => currentDate
       case CurrentTimestamp() => currentTime
+      case NfDateIntToday() => nfDateIntToday
+      case NfDateStringToday() => nfDateStringToday
+      case NfDateToday() => nfDateToday
+      case NfUnixTimeNow() => nfUnixTimeNow
+      case NfUnixTimeNowMs() => nfUnixTimeNowMs
+      case NfTimestampNow() => nfTimestampNow
     }
   }
 }
