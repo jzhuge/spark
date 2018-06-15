@@ -20,10 +20,10 @@ package org.apache.spark.sql.execution.datasources.v2
 import java.util.UUID
 
 import scala.collection.JavaConverters._
-import scala.collection.mutable
 
 import org.apache.spark.sql.{AnalysisException, SaveMode}
 import org.apache.spark.sql.catalyst.TableIdentifier
+import org.apache.spark.sql.catalyst.analysis.MultiInstanceRelation
 import org.apache.spark.sql.catalyst.catalog.{CatalogRelation, CatalogStorageFormat, CatalogTable, CatalogTableType}
 import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Expression, NamedExpression}
 import org.apache.spark.sql.catalyst.plans.logical.{LeafNode, Statistics, SupportsPhysicalStats}
@@ -36,168 +36,78 @@ import org.apache.spark.sql.types.StructType
 
 case class DataSourceV2Relation(
     source: DataSourceV2,
+    output: Seq[AttributeReference],
     options: Map[String, String],
-    path: Option[String] = None,
-    table: Option[TableIdentifier] = None,
-    projection: Option[Seq[AttributeReference]] = None,
-    filters: Option[Seq[Expression]] = None,
-    userSpecifiedSchema: Option[StructType] = None) extends LeafNode with CatalogRelation
-    with SupportsPhysicalStats {
+    userSpecifiedSchema: Option[StructType] = None)
+  extends LeafNode with MultiInstanceRelation with CatalogRelation with SupportsPhysicalStats {
+
+  import DataSourceV2Relation._
 
   override def simpleString: String = {
-    s"DataSourceV2Relation(source=$sourceName, schema=$schema, options=$options)"
+    s"DataSourceV2Relation(source=$source.name, schema=$schema, options=$options)"
   }
 
-  override lazy val schema: StructType = reader.readSchema()
+  lazy val v2Options: DataSourceOptions = makeV2Options(options)
 
-  override lazy val output: Seq[AttributeReference] = {
-    projection match {
-      case Some(attrs) =>
-        // use the projection attributes to avoid assigning new ids. fields that are not projected
-        // will be assigned new ids, which is okay because they are not projected.
-        val attrMap = attrs.map(a => a.name -> a).toMap
-        schema.map(f => attrMap.getOrElse(f.name,
-          AttributeReference(f.name, f.dataType, f.nullable, f.metadata)()))
-      case _ =>
-        schema.toAttributes
-    }
+  def newReader: DataSourceReader = userSpecifiedSchema match {
+    case Some(userSchema) =>
+      source.asReadSupportWithSchema.createReader(userSchema, v2Options)
+    case None =>
+      source.asReadSupport.createReader(v2Options)
   }
 
-  private lazy val v2Options: DataSourceOptions = {
-    // ensure path and table options are set correctly
-    val updatedOptions = new mutable.HashMap[String, String]
-
-    updatedOptions ++= options
-
-    path.map(p => updatedOptions.put("path", p))
-    table.map { ident =>
-      updatedOptions.put("table", ident.table)
-      ident.database.map(db => updatedOptions.put("database", db))
-    }
-
-    new  DataSourceOptions(updatedOptions.asJava)
-  }
-
-  private val sourceName: String = {
-    source match {
-      case registered: DataSourceRegister =>
-        registered.shortName()
-      case _ =>
-        source.getClass.getSimpleName
-    }
-  }
-
-  // postScanFilters: filters that need to be evaluated after the scan.
-  // pushedFilters: filters that will be pushed down and evaluated in the underlying data sources.
-  // Note: postScanFilters and pushedFilters can overlap, e.g. the parquet row group filter.
-  lazy val (
-      reader: DataSourceReader,
-      postScanFilters: Seq[Expression],
-      pushedFilters: Seq[Expression]) = {
-    val newReader = userSpecifiedSchema match {
-      case Some(s) =>
-        asReadSupportWithSchema.createReader(s, v2Options)
-      case _ =>
-        asReadSupport.createReader(v2Options)
-    }
-
-    projection.foreach { attrs =>
-      DataSourceV2Relation.pushRequiredColumns(newReader, attrs.toStructType)
-    }
-
-    val (postScanFilters, pushedFilters) = filters match {
-      case Some(filterSeq) =>
-        DataSourceV2Relation.pushFilters(newReader, filterSeq)
-      case _ =>
-        (Nil, Nil)
-    }
-    logInfo(s"Post-Scan Filters: ${postScanFilters.mkString(",")}")
-    logInfo(s"Pushed Filters: ${pushedFilters.mkString(", ")}")
-
-    (newReader, postScanFilters, pushedFilters)
-  }
-
-  def writer(dfSchema: StructType, mode: SaveMode): Option[DataSourceWriter] = {
-    val writer = asWriteSupport.createWriter(UUID.randomUUID.toString, dfSchema, mode, v2Options)
+  def newWriter(dfSchema: StructType, mode: SaveMode): Option[DataSourceWriter] = {
+    val writer = source.asWriteSupport.createWriter(
+      UUID.randomUUID.toString, dfSchema, mode, v2Options)
     if (writer.isPresent) Some(writer.get()) else None
   }
 
-  private lazy val asReadSupport: ReadSupport = {
-    source match {
-      case support: ReadSupport =>
-        support
-      case _: ReadSupportWithSchema =>
-        // this method is only called if there is no user-supplied schema. if there is no
-        // user-supplied schema and ReadSupport was not implemented, throw a helpful exception.
-        throw new AnalysisException(s"Data source requires a user-supplied schema: $sourceName")
-      case _ =>
-        throw new AnalysisException(s"Data source is not readable: $sourceName")
-    }
+  override def newInstance(): DataSourceV2Relation = {
+    copy(output = output.map(_.newInstance()))
   }
 
-  private lazy val asReadSupportWithSchema: ReadSupportWithSchema = {
-    source match {
-      case support: ReadSupportWithSchema =>
-        support
-      case _: ReadSupport =>
-        throw new AnalysisException(
-          s"Data source does not support user-supplied schema: $sourceName")
-      case _ =>
-        throw new AnalysisException(s"Data source is not readable: $sourceName")
-    }
+  lazy val tableIdentifier: TableIdentifier = {
+    options.get("table").map(TableIdentifier(_, options.get("database")))
+        .orElse(options.get("path").map(p => TableIdentifier(p.substring(p.lastIndexOf("/") + 1))))
+        .getOrElse(TableIdentifier("unknown"))
   }
 
-  private lazy val asWriteSupport: WriteSupport = {
-    source match {
-      case support: WriteSupport =>
-        support
-      case _ =>
-        throw new AnalysisException(s"Data source is not writable: $sourceName")
-    }
-  }
-
-  override def catalogTable: CatalogTable = CatalogTable(
-    table.getOrElse(path
-        .map(p => TableIdentifier(p.substring(p.lastIndexOf("/") + 1)))
-        .getOrElse(TableIdentifier("unknown"))),
+  lazy val catalogTable: CatalogTable = CatalogTable(
+    tableIdentifier,
     CatalogTableType.EXTERNAL,
     CatalogStorageFormat(options.get("path"), None, None, None, compressed = true, options),
     schema,
-    Some(sourceName)
+    Some(source.name)
   )
-
-  override def canEqual(other: Any): Boolean = other.isInstanceOf[DataSourceV2Relation]
 
   /**
    * Used to return statistics when filters and projection are available.
    */
   override def computeStats(
       projection: Seq[NamedExpression],
-      filters: Seq[Expression]): Statistics = {
-    asReadSupport.createReader(v2Options) match {
-      case r: SupportsReportStatistics =>
-        DataSourceV2Relation.pushFilters(r, filters)
-        val stats = r.getStatistics
+      filters: Seq[Expression]): Statistics = newReader match {
+    case r: SupportsReportStatistics =>
+      DataSourceV2Relation.pushFilters(r, filters)
+      val stats = r.getStatistics
 
-        if (stats.numRows.isPresent) {
-          val numRows = stats.numRows.getAsLong
-          val rowSizeEstimate = projection.map(_.dataType.defaultSize).sum + 8
-          val sizeEstimate = numRows * rowSizeEstimate
-          logInfo(s"Row-based size estimate for ${catalogTable.identifier}: " +
-              s"$numRows rows * $rowSizeEstimate bytes = $sizeEstimate bytes")
-          Statistics(sizeInBytes = sizeEstimate, rowCount = Some(numRows))
-        } else {
-          logInfo(s"Fallback size estimate for ${catalogTable.identifier}: ${stats.sizeInBytes}")
-          Statistics(sizeInBytes = r.getStatistics.sizeInBytes().orElse(conf.defaultSizeInBytes))
-        }
+      if (stats.numRows.isPresent) {
+        val numRows = stats.numRows.getAsLong
+        val rowSizeEstimate = projection.map(_.dataType.defaultSize).sum + 8
+        val sizeEstimate = numRows * rowSizeEstimate
+        logInfo(s"Row-based size estimate for ${catalogTable.identifier}: " +
+            s"$numRows rows * $rowSizeEstimate bytes = $sizeEstimate bytes")
+        Statistics(sizeInBytes = sizeEstimate, rowCount = Some(numRows))
+      } else {
+        logInfo(s"Fallback size estimate for ${catalogTable.identifier}: ${stats.sizeInBytes}")
+        Statistics(sizeInBytes = r.getStatistics.sizeInBytes().orElse(conf.defaultSizeInBytes))
+      }
 
-      case _ =>
-        logInfo(s"Default size estimate for ${catalogTable.identifier}: ${conf.defaultSizeInBytes}")
-        Statistics(sizeInBytes = conf.defaultSizeInBytes)
-    }
+    case _ =>
+      logInfo(s"Default size estimate for ${catalogTable.identifier}: ${conf.defaultSizeInBytes}")
+      Statistics(sizeInBytes = conf.defaultSizeInBytes)
   }
 
-  override def statistics: Statistics = reader match {
+  override def statistics: Statistics = newReader match {
     case r: SupportsReportStatistics =>
       Statistics(sizeInBytes = r.getStatistics.sizeInBytes().orElse(conf.defaultSizeInBytes))
     case _ =>
@@ -206,15 +116,92 @@ case class DataSourceV2Relation(
 }
 
 object DataSourceV2Relation {
-  private def pushRequiredColumns(reader: DataSourceReader, struct: StructType): Unit = {
-    reader match {
-      case projectionSupport: SupportsPushDownRequiredColumns =>
-        projectionSupport.pruneColumns(struct)
-      case _ =>
+  private implicit class SourceHelpers(source: DataSourceV2) {
+    def asReadSupport: ReadSupport = {
+      source match {
+        case support: ReadSupport =>
+          support
+        case _: ReadSupportWithSchema =>
+          // this method is only called if there is no user-supplied schema. if there is no
+          // user-supplied schema and ReadSupport was not implemented, throw a helpful exception.
+          throw new AnalysisException(s"Data source requires a user-supplied schema: $name")
+        case _ =>
+          throw new AnalysisException(s"Data source is not readable: $name")
+      }
+    }
+
+    def asReadSupportWithSchema: ReadSupportWithSchema = {
+      source match {
+        case support: ReadSupportWithSchema =>
+          support
+        case _: ReadSupport =>
+          throw new AnalysisException(
+            s"Data source does not support user-supplied schema: $name")
+        case _ =>
+          throw new AnalysisException(s"Data source is not readable: $name")
+      }
+    }
+
+    def asWriteSupport: WriteSupport = {
+      source match {
+        case support: WriteSupport =>
+          support
+        case _ =>
+          throw new AnalysisException(s"Data source is not writable: $name")
+      }
+    }
+
+    def name: String = {
+      source match {
+        case registered: DataSourceRegister =>
+          registered.shortName()
+        case _ =>
+          source.getClass.getSimpleName
+      }
     }
   }
 
-  private def pushFilters(
+  private def makeV2Options(options: Map[String, String]): DataSourceOptions = {
+    new DataSourceOptions(options.asJava)
+  }
+
+  private def schema(
+      source: DataSourceV2,
+      v2Options: DataSourceOptions,
+      userSchema: Option[StructType]): StructType = {
+    val reader = userSchema match {
+      case Some(s) =>
+        source.asReadSupportWithSchema.createReader(s, v2Options)
+      case _ =>
+        source.asReadSupport.createReader(v2Options)
+    }
+    reader.readSchema()
+  }
+
+  def create(
+      source: DataSourceV2,
+      options: Map[String, String],
+      userSpecifiedSchema: Option[StructType] = None): DataSourceV2Relation = {
+    val output = schema(source, makeV2Options(options), userSpecifiedSchema).toAttributes
+    DataSourceV2Relation(source, output, options, userSpecifiedSchema)
+  }
+
+  def pushRequiredColumns(
+      relation: DataSourceV2Relation,
+      reader: DataSourceReader,
+      struct: StructType): Seq[AttributeReference] = {
+    reader match {
+      case projectionSupport: SupportsPushDownRequiredColumns =>
+        projectionSupport.pruneColumns(struct)
+        // return the output columns from the relation that were projected
+        val attrMap = relation.output.map(a => a.name -> a).toMap
+        projectionSupport.readSchema().map(f => attrMap(f.name))
+      case _ =>
+        relation.output
+    }
+  }
+
+  def pushFilters(
       reader: DataSourceReader,
       filters: Seq[Expression]): (Seq[Expression], Seq[Expression]) = {
     reader match {

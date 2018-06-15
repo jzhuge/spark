@@ -24,7 +24,7 @@ import test.org.apache.spark.sql.sources.v2._
 import org.apache.spark.{SparkConf, SparkException}
 import org.apache.spark.sql.{AnalysisException, DataFrame, QueryTest, Row}
 import org.apache.spark.sql.catalyst.expressions.UnsafeRow
-import org.apache.spark.sql.execution.datasources.v2.DataSourceV2ScanExec
+import org.apache.spark.sql.execution.datasources.v2.{DataSourceV2Relation, DataSourceV2ScanExec}
 import org.apache.spark.sql.functions._
 import org.apache.spark.sql.sources.{Filter, GreaterThan}
 import org.apache.spark.sql.sources.v2.reader._
@@ -248,7 +248,6 @@ class DataSourceV2Suite extends QueryTest with SharedSQLContext {
       withTempPath { file =>
         val path = file.getCanonicalPath
         assert(spark.read.format(cls.getName).option("path", path).load().collect().isEmpty)
-
         val numPartition = 6
         spark.range(0, 10, 1, numPartition).select('id as 'i, -'id as 'j).write.format(cls.getName)
           .option("path", path).save()
@@ -260,6 +259,25 @@ class DataSourceV2Suite extends QueryTest with SharedSQLContext {
           "method onDataWriterCommit should be called as many as the number of partitions")
       }
     }
+  }
+
+  test("SPARK-23315: get output from canonicalized data source v2 related plans") {
+    def checkCanonicalizedOutput(
+        df: DataFrame, logicalNumOutput: Int, physicalNumOutput: Int): Unit = {
+      val logical = df.queryExecution.optimizedPlan.collect {
+        case d: DataSourceV2Relation => d
+      }.head
+      assert(logical.canonicalized.output.length == logicalNumOutput)
+
+      val physical = df.queryExecution.executedPlan.collect {
+        case d: DataSourceV2ScanExec => d
+      }.head
+      assert(physical.canonicalized.output.length == physicalNumOutput)
+    }
+
+    val df = spark.read.format(classOf[AdvancedDataSourceV2].getName).load()
+    checkCanonicalizedOutput(df, 2, 2)
+    checkCanonicalizedOutput(df.select('i), 2, 1)
   }
 }
 

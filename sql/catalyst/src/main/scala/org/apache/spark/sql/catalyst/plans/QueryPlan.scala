@@ -363,7 +363,7 @@ abstract class QueryPlan[PlanType <: QueryPlan[PlanType]] extends TreeNode[PlanT
   /**
    * Canonicalized copy of this query plan.
    */
-  protected lazy val canonicalized: PlanType = this
+  lazy val canonicalized: PlanType = this
 
   /**
    * Returns true when the given query plan will return the same results as this query plan.

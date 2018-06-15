@@ -224,25 +224,24 @@ final class DataFrameWriter[T] private[sql](ds: Dataset[T]) {
       // save variants always match columns by name
       extraOptions.put("matchByName", "true")
 
-      val (pathOption, tableOption) = extraOptions.get("path") match {
+      val options: Map[String, String] = extraOptions.get("path") match {
         case Some(path) if !path.contains("/") =>
           // without "/", this cannot be a full path. parse it as a table name
           val ident = df.sparkSession.sessionState.sqlParser.parseTableIdentifier(path)
           // ensure the database is set correctly
-          val db = ident.database.getOrElse(df.sparkSession.catalog.currentDatabase)
-          (None, Some(ident.copy(database = Some(db))))
-        case Some(path) =>
-          (Some(path), None)
+          (extraOptions ++ Map(
+            "database" -> ident.database.getOrElse(df.sparkSession.catalog.currentDatabase),
+            "table" -> ident.table)).toMap
         case _ =>
-          (None, None)
+          extraOptions.toMap
       }
 
       val partitions = normalizedParCols.map(_.map(col => col -> (None: Option[String])).toMap)
-      val relation = DataSourceV2Relation(dataSource, extraOptions.toMap, pathOption, tableOption)
+      val relation = DataSourceV2Relation.create(dataSource, options)
 
       val (overwrite, ifNotExists) = mode match {
         case SaveMode.Ignore =>
-          if (relation.writer(df.logicalPlan.schema, mode).isEmpty) {
+          if (relation.newWriter(df.logicalPlan.schema, mode).isEmpty) {
             return
           }
           (false, false)

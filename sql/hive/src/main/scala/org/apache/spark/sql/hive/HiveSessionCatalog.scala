@@ -77,9 +77,7 @@ private[sql] class HiveSessionCatalog(
           case m: MetastoreRelation
             if m.catalogTable.properties.get("table_type").exists("iceberg".equalsIgnoreCase) =>
 
-            DataSourceV2Relation(icebergTables,
-              Map("database" -> db, "table" -> table),
-              table = Some(TableIdentifier(table, Some(db))))
+            DataSourceV2Relation.create(icebergTables, Map("database" -> db, "table" -> table))
 
           case other => other
         }

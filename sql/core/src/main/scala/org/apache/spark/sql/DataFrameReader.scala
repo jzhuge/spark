@@ -149,22 +149,20 @@ class DataFrameReader private[sql](sparkSession: SparkSession) extends Logging {
     val cls = DataSource.lookupDataSource(source)
     if (classOf[DataSourceV2].isAssignableFrom(cls)) {
       val source = cls.newInstance().asInstanceOf[DataSourceV2]
-      val (pathOption, tableOption) = extraOptions.get("path") match {
+      val options: Map[String, String] = extraOptions.get("path") match {
         case Some(path) if !path.contains("/") =>
           // without "/", this cannot be a full path. parse it as a table name
           val ident = sparkSession.sessionState.sqlParser.parseTableIdentifier(path)
           // ensure the database is set correctly
-          val db = ident.database.getOrElse(sparkSession.catalog.currentDatabase)
-          (None, Some(ident.copy(database = Some(db))))
-        case Some(path) =>
-          (Some(path), None)
+          (extraOptions ++ Map(
+            "database" -> ident.database.getOrElse(sparkSession.catalog.currentDatabase),
+            "table" -> ident.table)).toMap
         case _ =>
-          (None, None)
+          extraOptions.toMap
       }
 
-      Dataset.ofRows(sparkSession, DataSourceV2Relation(
-        source, extraOptions.toMap, pathOption, tableOption,
-        userSpecifiedSchema = userSpecifiedSchema))
+      Dataset.ofRows(sparkSession, DataSourceV2Relation.create(
+        source, options, userSpecifiedSchema = userSpecifiedSchema))
 
     } else {
       // Code path for data source v1.
