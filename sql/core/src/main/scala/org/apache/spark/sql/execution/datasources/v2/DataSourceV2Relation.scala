@@ -27,7 +27,6 @@ import org.apache.spark.sql.catalyst.TableIdentifier
 import org.apache.spark.sql.catalyst.analysis.MultiInstanceRelation
 import org.apache.spark.sql.catalyst.catalog._
 import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Expression}
-import org.apache.spark.sql.catalyst.plans.QueryPlan
 import org.apache.spark.sql.catalyst.plans.logical.{LeafNode, LogicalPlan, Statistics}
 import org.apache.spark.sql.execution.datasources.DataSourceStrategy
 import org.apache.spark.sql.sources.{DataSourceRegister, Filter}
@@ -37,56 +36,26 @@ import org.apache.spark.sql.types.StructType
 
 case class DataSourceV2Relation(
     source: DataSourceV2,
+    output: Seq[AttributeReference],
     options: Map[String, String],
-    projection: Seq[AttributeReference],
     path: Option[String] = None,
     table: Option[TableIdentifier] = None,
-    filters: Option[Seq[Expression]] = None,
     userSpecifiedSchema: Option[StructType] = None)
   extends LeafNode with MultiInstanceRelation with CatalogRelation with DataSourceV2StringFormat {
 
   import DataSourceV2Relation._
 
+  override def pushedFilters: Seq[Expression] = Seq.empty
+
   override def simpleString: String = "RelationV2 " + metadataString
 
-  override lazy val schema: StructType = reader.readSchema()
+  lazy val v2Options: DataSourceOptions = makeV2Options(options, path, table)
 
-  override lazy val output: Seq[AttributeReference] = {
-    // use the projection attributes to avoid assigning new ids. fields that are not projected
-    // will be assigned new ids, which is okay because they are not projected.
-    val attrMap = projection.map(a => a.name -> a).toMap
-    schema.map(f => attrMap.getOrElse(f.name,
-      AttributeReference(f.name, f.dataType, f.nullable, f.metadata)()))
-  }
-
-  private lazy val v2Options: DataSourceOptions = makeV2Options(options, path, table)
-
-  // postScanFilters: filters that need to be evaluated after the scan.
-  // pushedFilters: filters that will be pushed down and evaluated in the underlying data sources.
-  // Note: postScanFilters and pushedFilters can overlap, e.g. the parquet row group filter.
-  lazy val (
-      reader: DataSourceReader,
-      postScanFilters: Seq[Expression],
-      pushedFilters: Seq[Expression]) = {
-    val newReader = userSpecifiedSchema match {
-      case Some(s) =>
-        source.asReadSupportWithSchema.createReader(s, v2Options)
-      case _ =>
-        source.asReadSupport.createReader(v2Options)
-    }
-
-    DataSourceV2Relation.pushRequiredColumns(newReader, projection.toStructType)
-
-    val (postScanFilters, pushedFilters) = filters match {
-      case Some(filterSeq) =>
-        DataSourceV2Relation.pushFilters(newReader, filterSeq)
-      case _ =>
-        (Nil, Nil)
-    }
-    logInfo(s"Post-Scan Filters: ${postScanFilters.mkString(",")}")
-    logInfo(s"Pushed Filters: ${pushedFilters.mkString(", ")}")
-
-    (newReader, postScanFilters, pushedFilters)
+  def newReader: DataSourceReader = userSpecifiedSchema match {
+    case Some(userSchema) =>
+      source.asReadSupportWithSchema.createReader(userSchema, v2Options)
+    case None =>
+      source.asReadSupport.createReader(v2Options)
   }
 
   lazy val writer = (dfSchema: StructType, mode: SaveMode) => {
@@ -95,19 +64,7 @@ case class DataSourceV2Relation(
     if (writer.isPresent) Some(writer.get()) else None
   }
 
-  override def doCanonicalize(): LogicalPlan = {
-    val c = super.doCanonicalize().asInstanceOf[DataSourceV2Relation]
-
-    // override output with canonicalized output to avoid attempting to configure a reader
-    val canonicalOutput: Seq[AttributeReference] = this.output
-      .map(a => QueryPlan.normalizeExprId(a, projection))
-
-    new DataSourceV2Relation(c.source, c.options, c.projection, c.path, c.table) {
-      override lazy val output: Seq[AttributeReference] = canonicalOutput
-    }
-  }
-
-  override def computeStats(): Statistics = reader match {
+  override def computeStats(): Statistics = newReader match {
     case r: SupportsReportStatistics =>
       Statistics(sizeInBytes = r.getStatistics.sizeInBytes().orElse(conf.defaultSizeInBytes))
     case _ =>
@@ -126,9 +83,7 @@ case class DataSourceV2Relation(
   )
 
   override def newInstance(): DataSourceV2Relation = {
-    // projection is used to maintain id assignment.
-    // if projection is not set, use output so the copy is not equal to the original
-    copy(projection = projection.map(_.newInstance()))
+    copy(output = output.map(_.newInstance()))
   }
 }
 
@@ -260,26 +215,28 @@ object DataSourceV2Relation {
       options: Map[String, String],
       path: Option[String] = None,
       table: Option[TableIdentifier] = None,
-      filters: Option[Seq[Expression]] = None,
       userSpecifiedSchema: Option[StructType] = None): DataSourceV2Relation = {
-    val projection =
-      schema(source, makeV2Options(options, path, table), userSpecifiedSchema).toAttributes
-    DataSourceV2Relation(source, options, projection, path, table, filters,
-      // if the source does not implement ReadSupportWithSchema, then the userSpecifiedSchema must
-      // be equal to the reader's schema. the schema method enforces this. because the user schema
-      // and the reader's schema are identical, drop the user schema.
-      if (source.isInstanceOf[ReadSupportWithSchema]) userSpecifiedSchema else None)
+    val output = schema(source, makeV2Options(options, path, table), userSpecifiedSchema)
+      .toAttributes
+    DataSourceV2Relation(source, output, options, path, table, userSpecifiedSchema)
   }
 
-  private def pushRequiredColumns(reader: DataSourceReader, struct: StructType): Unit = {
+  def pushRequiredColumns(
+      relation: DataSourceV2Relation,
+      reader: DataSourceReader,
+      struct: StructType): Seq[AttributeReference] = {
     reader match {
       case projectionSupport: SupportsPushDownRequiredColumns =>
         projectionSupport.pruneColumns(struct)
+        // return the output columns from the relation that were projected
+        val attrMap = relation.output.map(a => a.name -> a).toMap
+        projectionSupport.readSchema().map(f => attrMap(f.name))
       case _ =>
+        relation.output
     }
   }
 
-  private def pushFilters(
+  def pushFilters(
       reader: DataSourceReader,
       filters: Seq[Expression]): (Seq[Expression], Seq[Expression]) = {
     reader match {
@@ -307,7 +264,7 @@ object DataSourceV2Relation {
         // the data source cannot guarantee the rows returned can pass these filters.
         // As a result we must return it so Spark can plan an extra filter operator.
         val postScanFilters =
-          r.pushFilters(translatedFilterToExpr.keys.toArray).map(translatedFilterToExpr)
+        r.pushFilters(translatedFilterToExpr.keys.toArray).map(translatedFilterToExpr)
         // The filters which are marked as pushed to this data source
         val pushedFilters = r.pushedFilters().map(translatedFilterToExpr)
 
