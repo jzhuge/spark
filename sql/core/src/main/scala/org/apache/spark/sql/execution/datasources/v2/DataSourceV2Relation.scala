@@ -27,18 +27,25 @@ import org.apache.spark.sql.catalyst.analysis.MultiInstanceRelation
 import org.apache.spark.sql.catalyst.catalog.{CatalogRelation, CatalogStorageFormat, CatalogTable, CatalogTableType}
 import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Expression, NamedExpression}
 import org.apache.spark.sql.catalyst.plans.logical.{LeafNode, Statistics, SupportsPhysicalStats}
-import org.apache.spark.sql.execution.datasources.DataSourceStrategy
-import org.apache.spark.sql.sources.{DataSourceRegister, Filter}
+import org.apache.spark.sql.sources.DataSourceRegister
 import org.apache.spark.sql.sources.v2.{DataSourceOptions, DataSourceV2, ReadSupport, ReadSupportWithSchema, WriteSupport}
 import org.apache.spark.sql.sources.v2.reader._
 import org.apache.spark.sql.sources.v2.writer.DataSourceWriter
 import org.apache.spark.sql.types.StructType
 
+/**
+ * A logical plan representing a data source v2 scan.
+ *
+ * @param source An instance of a [[DataSourceV2]] implementation.
+ * @param options The options for this scan. Used to create fresh [[DataSourceReader]].
+ * @param userSpecifiedSchema The user-specified schema for this scan. Used to create fresh
+ *                            [[DataSourceReader]].
+ */
 case class DataSourceV2Relation(
     source: DataSourceV2,
     output: Seq[AttributeReference],
     options: Map[String, String],
-    userSpecifiedSchema: Option[StructType] = None)
+    userSpecifiedSchema: Option[StructType])
   extends LeafNode with MultiInstanceRelation with CatalogRelation with SupportsPhysicalStats {
 
   import DataSourceV2Relation._
@@ -47,18 +54,11 @@ case class DataSourceV2Relation(
     s"DataSourceV2Relation(source=$source.name, schema=$schema, options=$options)"
   }
 
-  lazy val v2Options: DataSourceOptions = makeV2Options(options)
-
-  def newReader: DataSourceReader = userSpecifiedSchema match {
-    case Some(userSchema) =>
-      source.asReadSupportWithSchema.createReader(userSchema, v2Options)
-    case None =>
-      source.asReadSupport.createReader(v2Options)
-  }
+  def newReader(): DataSourceReader = source.createReader(options, userSpecifiedSchema)
 
   def newWriter(dfSchema: StructType, mode: SaveMode): Option[DataSourceWriter] = {
     val writer = source.asWriteSupport.createWriter(
-      UUID.randomUUID.toString, dfSchema, mode, v2Options)
+      UUID.randomUUID.toString, dfSchema, mode, new DataSourceOptions(options.asJava))
     if (writer.isPresent) Some(writer.get()) else None
   }
 
@@ -85,9 +85,9 @@ case class DataSourceV2Relation(
    */
   override def computeStats(
       projection: Seq[NamedExpression],
-      filters: Seq[Expression]): Statistics = newReader match {
+      filters: Seq[Expression]): Statistics = newReader() match {
     case r: SupportsReportStatistics =>
-      DataSourceV2Relation.pushFilters(r, filters)
+      DataSourceV2Strategy.pushFilters(r, filters)
       val stats = r.getStatistics
 
       if (stats.numRows.isPresent) {
@@ -107,7 +107,7 @@ case class DataSourceV2Relation(
       Statistics(sizeInBytes = conf.defaultSizeInBytes)
   }
 
-  override def statistics: Statistics = newReader match {
+  override def statistics: Statistics = newReader() match {
     case r: SupportsReportStatistics =>
       Statistics(sizeInBytes = r.getStatistics.sizeInBytes().orElse(conf.defaultSizeInBytes))
     case _ =>
@@ -159,83 +159,25 @@ object DataSourceV2Relation {
           source.getClass.getSimpleName
       }
     }
-  }
 
-  private def makeV2Options(options: Map[String, String]): DataSourceOptions = {
-    new DataSourceOptions(options.asJava)
-  }
-
-  private def schema(
-      source: DataSourceV2,
-      v2Options: DataSourceOptions,
-      userSchema: Option[StructType]): StructType = {
-    val reader = userSchema match {
-      case Some(s) =>
-        source.asReadSupportWithSchema.createReader(s, v2Options)
-      case _ =>
-        source.asReadSupport.createReader(v2Options)
+    def createReader(
+        options: Map[String, String],
+        userSpecifiedSchema: Option[StructType]): DataSourceReader = {
+      val v2Options = new DataSourceOptions(options.asJava)
+      userSpecifiedSchema match {
+        case Some(s) =>
+          asReadSupportWithSchema.createReader(s, v2Options)
+        case _ =>
+          asReadSupport.createReader(v2Options)
+      }
     }
-    reader.readSchema()
   }
 
   def create(
       source: DataSourceV2,
       options: Map[String, String],
       userSpecifiedSchema: Option[StructType] = None): DataSourceV2Relation = {
-    val output = schema(source, makeV2Options(options), userSpecifiedSchema).toAttributes
-    DataSourceV2Relation(source, output, options, userSpecifiedSchema)
-  }
-
-  def pushRequiredColumns(
-      relation: DataSourceV2Relation,
-      reader: DataSourceReader,
-      struct: StructType): Seq[AttributeReference] = {
-    reader match {
-      case projectionSupport: SupportsPushDownRequiredColumns =>
-        projectionSupport.pruneColumns(struct)
-        // return the output columns from the relation that were projected
-        val attrMap = relation.output.map(a => a.name -> a).toMap
-        projectionSupport.readSchema().map(f => attrMap(f.name))
-      case _ =>
-        relation.output
-    }
-  }
-
-  def pushFilters(
-      reader: DataSourceReader,
-      filters: Seq[Expression]): (Seq[Expression], Seq[Expression]) = {
-    reader match {
-      case r: SupportsPushDownCatalystFilters =>
-        val postScanFilters = r.pushCatalystFilters(filters.toArray)
-        val pushedFilters = r.pushedCatalystFilters()
-        (postScanFilters, pushedFilters)
-
-      case r: SupportsPushDownFilters =>
-        // A map from translated data source filters to original catalyst filter expressions.
-        val translatedFilterToExpr = scala.collection.mutable.HashMap.empty[Filter, Expression]
-        // Catalyst filter expression that can't be translated to data source filters.
-        val untranslatableExprs = scala.collection.mutable.ArrayBuffer.empty[Expression]
-
-        for (filterExpr <- filters) {
-          val translated = DataSourceStrategy.translateFilter(filterExpr)
-          if (translated.isDefined) {
-            translatedFilterToExpr(translated.get) = filterExpr
-          } else {
-            untranslatableExprs += filterExpr
-          }
-        }
-
-        // Data source filters that need to be evaluated again after scanning. which means
-        // the data source cannot guarantee the rows returned can pass these filters.
-        // As a result we must return it so Spark can plan an extra filter operator.
-        val postScanFilters =
-          r.pushFilters(translatedFilterToExpr.keys.toArray).map(translatedFilterToExpr)
-        // The filters which are marked as pushed to this data source
-        val pushedFilters = r.pushedFilters().map(translatedFilterToExpr)
-
-        (untranslatableExprs ++ postScanFilters, pushedFilters)
-
-      case _ => (filters, Nil)
-    }
+    val reader = source.createReader(options, userSpecifiedSchema)
+    DataSourceV2Relation(source, reader.readSchema().toAttributes, options, userSpecifiedSchema)
   }
 }
