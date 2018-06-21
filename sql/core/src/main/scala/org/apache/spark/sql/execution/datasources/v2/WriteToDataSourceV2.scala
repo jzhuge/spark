@@ -107,7 +107,8 @@ object DataWritingSparkTask extends Logging {
 
       val msg = if (useCommitCoordinator) {
         val coordinator = SparkEnv.get.outputCommitCoordinator
-        val commitAuthorized = coordinator.canCommit(context.stageId(), partId, attemptId)
+        val commitAuthorized = coordinator.canCommit(context.stageId(),
+          context.stageAttemptNumber(), partId, attemptId)
         if (commitAuthorized) {
           logInfo(s"Writer for stage $stageId, task $partId.$attemptId is authorized to commit.")
           dataWriter.commit()
