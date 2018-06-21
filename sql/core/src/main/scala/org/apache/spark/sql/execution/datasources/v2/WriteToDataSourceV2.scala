@@ -97,6 +97,7 @@ object DataWritingSparkTask extends Logging {
       iter: Iterator[InternalRow],
       useCommitCoordinator: Boolean): WriterCommitMessage = {
     val stageId = context.stageId()
+    val stageAttempt = context.stageAttemptNumber()
     val partId = context.partitionId()
     val tid = context.taskAttemptId().toInt // see SPARK-24552
     val dataWriter = writeTask.createDataWriter(partId, tid)
@@ -107,13 +108,15 @@ object DataWritingSparkTask extends Logging {
 
       val msg = if (useCommitCoordinator) {
         val coordinator = SparkEnv.get.outputCommitCoordinator
-        val commitAuthorized = coordinator.canCommit(context.stageId(), partId, tid)
+        val commitAuthorized = coordinator.canCommit(stageId, stageAttempt, partId, tid)
         if (commitAuthorized) {
-          logInfo(s"Writer for stage $stageId, task $partId (TID $tid) is authorized to commit.")
+          logInfo(s"Writer for stage $stageId.$stageAttempt, " +
+              s"task $partId (TID $tid) is authorized to commit.")
           dataWriter.commit()
 
         } else {
-          val message = s"Stage $stageId, task $partId (TID $tid): driver did not authorize commit"
+          val message = s"Stage $stageId.$stageAttempt, " +
+              s"task $partId (TID $tid): driver did not authorize commit"
           logInfo(message)
           // throwing CommitDeniedException will trigger the catch block for abort
           throw new CommitDeniedException(message, stageId, partId, tid)
