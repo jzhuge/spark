@@ -97,7 +97,11 @@ case class NfDateInt(left: Expression, right: Expression) extends BinaryExpressi
             toDateInt(LocalDate.parse(dateString))
           } else {
             // Assume its timestamp represented as a string
-            val timestamp: SQLTimestamp = DateTimeUtils.stringToTimestamp(inputDate.asInstanceOf[UTF8String]).get
+            val timestampOption = DateTimeUtils.stringToTimestamp(inputDate.asInstanceOf[UTF8String])
+            if (timestampOption.isEmpty) {
+              throw new IllegalArgumentException("Could not convert string to timestamp")
+            }
+            val timestamp: SQLTimestamp = timestampOption.get
             val epochMicros = timestamp.asInstanceOf[Long]
             toDateInt(toLocalDate(epochMicros / 1000L))
           }
@@ -177,7 +181,11 @@ case class NfDateString(left: Expression, right: Expression) extends BinaryExpre
             UTF8String.fromString(dateString)
           } else {
             // Assume its timestamp represented as a string
-            val timestamp: SQLTimestamp = DateTimeUtils.stringToTimestamp(inputDate.asInstanceOf[UTF8String]).get
+            val timestampOption = DateTimeUtils.stringToTimestamp(inputDate.asInstanceOf[UTF8String])
+            if (timestampOption.isEmpty) {
+              throw new IllegalArgumentException("Could not convert string to timestamp")
+            }
+            val timestamp: SQLTimestamp = timestampOption.get
             val epochMicros = timestamp.asInstanceOf[Long]
             UTF8String.fromString(toLocalDate(epochMicros / 1000L).toString)
           }
@@ -285,7 +293,11 @@ case class NfToUnixTime(left: Expression, right: Expression) extends BinaryExpre
             toUnixTime(LocalDate.parse(dateString))
           } else {
             // Assume its timestamp represented as a string
-            val timestamp: SQLTimestamp = DateTimeUtils.stringToTimestamp(inputDate.asInstanceOf[UTF8String]).get
+            val timestampOption = DateTimeUtils.stringToTimestamp(inputDate.asInstanceOf[UTF8String])
+            if (timestampOption.isEmpty) {
+              throw new IllegalArgumentException("Could not convert string to timestamp")
+            }
+            val timestamp: SQLTimestamp = timestampOption.get
             val epochMicros = timestamp.asInstanceOf[Long]
             epochMicros / 1000000L
           }
@@ -357,7 +369,11 @@ case class NfToUnixTimeMs(left: Expression, right: Expression) extends BinaryExp
             toUnixTime(LocalDate.parse(dateString)) * 1000L
           } else {
             // Assume its timestamp represented as a string
-            val timestamp: SQLTimestamp = DateTimeUtils.stringToTimestamp(inputDate.asInstanceOf[UTF8String]).get
+            val timestampOption = DateTimeUtils.stringToTimestamp(inputDate.asInstanceOf[UTF8String])
+            if (timestampOption.isEmpty) {
+              throw new IllegalArgumentException("Could not convert string to timestamp")
+            }
+            val timestamp: SQLTimestamp = timestampOption.get
             val epochMicros = timestamp.asInstanceOf[Long]
             epochMicros / 1000L
           }
@@ -368,7 +384,7 @@ case class NfToUnixTimeMs(left: Expression, right: Expression) extends BinaryExp
                 toUnixTimeMs(toLocalDateTime(dateString, inputDateFormat))
               } catch {
                 case e: DateTimeParseException =>
-                  toUnixTime(toLocalDate(dateString, inputDateFormat))
+                  toUnixTime(toLocalDate(dateString, inputDateFormat)) * 1000L
                 case e: Exception => throw e
               }
             case _ => throw new IllegalArgumentException(
@@ -519,7 +535,11 @@ case class NfDate(left: Expression, right: Expression) extends BinaryExpression
             LocalDate.parse(dateString).toEpochDay.toInt
           } else {
             // Assume its timestamp represented as a string
-            val timestamp: SQLTimestamp = DateTimeUtils.stringToTimestamp(inputDate.asInstanceOf[UTF8String]).get
+            val timestampOption = DateTimeUtils.stringToTimestamp(inputDate.asInstanceOf[UTF8String])
+            if (timestampOption.isEmpty) {
+              throw new IllegalArgumentException("Could not convert string to timestamp")
+            }
+            val timestamp: SQLTimestamp = timestampOption.get
             val epochMicros = timestamp.asInstanceOf[Long]
             toLocalDate(epochMicros / 1000L).toEpochDay.toInt
           }
@@ -597,7 +617,11 @@ case class NfTimestamp(left: Expression, right: Expression) extends BinaryExpres
             toUnixTime(LocalDate.parse(dateString)) * 1000000L
           } else {
             // Assume its timestamp represented as a string
-            val timestamp: SQLTimestamp = DateTimeUtils.stringToTimestamp(inputDate.asInstanceOf[UTF8String]).get
+            val timestampOption = DateTimeUtils.stringToTimestamp(inputDate.asInstanceOf[UTF8String])
+            if (timestampOption.isEmpty) {
+              throw new IllegalArgumentException("Could not convert string to timestamp")
+            }
+            val timestamp: SQLTimestamp = timestampOption.get
             timestamp.asInstanceOf[Long]
           }
         } else {
@@ -728,7 +752,11 @@ case class NfDateAdd(param1: Expression, param2: Expression, param3: Expression)
             LocalDate.parse(dateString).toEpochDay)).toString)
         } else {
           // Assume its timestamp represented as a string
-          val timestamp: SQLTimestamp = DateTimeUtils.stringToTimestamp(input.asInstanceOf[UTF8String]).get
+          val timestampOption = DateTimeUtils.stringToTimestamp(input.asInstanceOf[UTF8String])
+          if (timestampOption.isEmpty) {
+            throw new IllegalArgumentException("Could not convert string to timestamp")
+          }
+          val timestamp: SQLTimestamp = timestampOption.get
           val epochMicros = timestamp.asInstanceOf[Long]
           UTF8String.fromString(DateTimeUtils.timestampToString(addFieldValueTimestamp(unit,
             value, epochMicros / 1000L) * 1000L))
@@ -820,9 +848,16 @@ case class NfDateDiff(param1: Expression, param2: Expression, param3: Expression
               LocalDate.parse(dateString2).toEpochDay)
           } else {
             // Assume its timestamp represented as a string
-            val timestamp1: SQLTimestamp = DateTimeUtils.stringToTimestamp(input1.asInstanceOf[UTF8String]).get
-            val timestamp2: SQLTimestamp = DateTimeUtils.stringToTimestamp(
-              input2.asInstanceOf[UTF8String]).get
+            val timestampOption1 = DateTimeUtils.stringToTimestamp(input1.asInstanceOf[UTF8String])
+            if (timestampOption1.isEmpty) {
+              throw new IllegalArgumentException("Could not convert string to timestamp")
+            }
+            val timestamp1: SQLTimestamp = timestampOption1.get
+            val timestampOption2 = DateTimeUtils.stringToTimestamp(input2.asInstanceOf[UTF8String])
+            if (timestampOption2.isEmpty) {
+              throw new IllegalArgumentException("Could not convert string to timestamp")
+            }
+            val timestamp2: SQLTimestamp = timestampOption2.get
             val epochMicros1 = timestamp1.asInstanceOf[Long]
             val epochMicros2 = timestamp2.asInstanceOf[Long]
             diffTimestamp(unit, epochMicros1 / 1000L, epochMicros2 / 1000L)
@@ -880,7 +915,11 @@ case class NfDateTrunc(left: Expression, right: Expression) extends BinaryExpres
             LocalDate.parse(dateString).toEpochDay)).toString)
         } else {
           // Assume its timestamp represented as a string
-          val timestamp: SQLTimestamp = DateTimeUtils.stringToTimestamp(second.asInstanceOf[UTF8String]).get
+          val timestampOption = DateTimeUtils.stringToTimestamp(second.asInstanceOf[UTF8String])
+          if (timestampOption.isEmpty) {
+            throw new IllegalArgumentException("Could not convert string to timestamp")
+          }
+          val timestamp: SQLTimestamp = timestampOption.get
           val epochMicros = timestamp.asInstanceOf[Long]
           UTF8String.fromString(DateTimeUtils.timestampToString(
             truncateTimestamp(unit, epochMicros / 1000L) * 1000L))
@@ -937,7 +976,11 @@ case class NfDateFormat(left: Expression, right: Expression) extends BinaryExpre
             LocalDate.parse(dateString)) * 1000L, format))
         } else {
           // Assume its timestamp represented as a string
-          val timestamp: SQLTimestamp = DateTimeUtils.stringToTimestamp(first.asInstanceOf[UTF8String]).get
+          val timestampOption = DateTimeUtils.stringToTimestamp(first.asInstanceOf[UTF8String])
+          if (timestampOption.isEmpty) {
+            throw new IllegalArgumentException("Could not convert string to timestamp")
+          }
+          val timestamp: SQLTimestamp = timestampOption.get
           val epochMicros = timestamp.asInstanceOf[Long]
           UTF8String.fromString(formatDatetime(epochMicros / 1000L, format))
         }
@@ -989,7 +1032,11 @@ case class NfYear(child: Expression) extends UnaryExpression
           yearFromDate(LocalDate.parse(dateString).toEpochDay)
         } else {
           // Assume its timestamp represented as a string
-          val timestamp: SQLTimestamp = DateTimeUtils.stringToTimestamp(inputDate.asInstanceOf[UTF8String]).get
+          val timestampOption = DateTimeUtils.stringToTimestamp(inputDate.asInstanceOf[UTF8String])
+          if (timestampOption.isEmpty) {
+            throw new IllegalArgumentException("Could not convert string to timestamp")
+          }
+          val timestamp: SQLTimestamp = timestampOption.get
           val epochMicros = timestamp.asInstanceOf[Long]
           yearFromTimestamp(epochMicros / 1000L)
         }
@@ -1039,7 +1086,11 @@ case class NfMonth(child: Expression) extends UnaryExpression
           monthFromDate(LocalDate.parse(dateString).toEpochDay)
         } else {
           // Assume its timestamp represented as a string
-          val timestamp: SQLTimestamp = DateTimeUtils.stringToTimestamp(inputDate.asInstanceOf[UTF8String]).get
+          val timestampOption = DateTimeUtils.stringToTimestamp(inputDate.asInstanceOf[UTF8String])
+          if (timestampOption.isEmpty) {
+            throw new IllegalArgumentException("Could not convert string to timestamp")
+          }
+          val timestamp: SQLTimestamp = timestampOption.get
           val epochMicros = timestamp.asInstanceOf[Long]
           monthFromTimestamp(epochMicros / 1000L)
         }
@@ -1089,7 +1140,11 @@ case class NfDay(child: Expression) extends UnaryExpression
           dayFromDate(LocalDate.parse(dateString).toEpochDay)
         } else {
           // Assume its timestamp represented as a string
-          val timestamp: SQLTimestamp = DateTimeUtils.stringToTimestamp(inputDate.asInstanceOf[UTF8String]).get
+          val timestampOption = DateTimeUtils.stringToTimestamp(inputDate.asInstanceOf[UTF8String])
+          if (timestampOption.isEmpty) {
+            throw new IllegalArgumentException("Could not convert string to timestamp")
+          }
+          val timestamp: SQLTimestamp = timestampOption.get
           val epochMicros = timestamp.asInstanceOf[Long]
           dayFromTimestamp(epochMicros / 1000L)
         }
@@ -1139,7 +1194,11 @@ case class NfHour(child: Expression) extends UnaryExpression
           hourFromTimestamp(toUnixTime(LocalDate.parse(dateString)) * 1000L)
         } else {
           // Assume its timestamp represented as a string
-          val timestamp: SQLTimestamp = DateTimeUtils.stringToTimestamp(inputDate.asInstanceOf[UTF8String]).get
+          val timestampOption = DateTimeUtils.stringToTimestamp(inputDate.asInstanceOf[UTF8String])
+          if (timestampOption.isEmpty) {
+            throw new IllegalArgumentException("Could not convert string to timestamp")
+          }
+          val timestamp: SQLTimestamp = timestampOption.get
           val epochMicros = timestamp.asInstanceOf[Long]
           hourFromTimestamp(epochMicros / 1000L)
         }
@@ -1189,7 +1248,11 @@ case class NfMinute(child: Expression) extends UnaryExpression
           minuteFromTimestamp(toUnixTime(LocalDate.parse(dateString)) * 1000L)
         } else {
           // Assume its timestamp represented as a string
-          val timestamp: SQLTimestamp = DateTimeUtils.stringToTimestamp(inputDate.asInstanceOf[UTF8String]).get
+          val timestampOption = DateTimeUtils.stringToTimestamp(inputDate.asInstanceOf[UTF8String])
+          if (timestampOption.isEmpty) {
+            throw new IllegalArgumentException("Could not convert string to timestamp")
+          }
+          val timestamp: SQLTimestamp = timestampOption.get
           val epochMicros = timestamp.asInstanceOf[Long]
           minuteFromTimestamp(epochMicros / 1000L)
         }
@@ -1239,7 +1302,11 @@ case class NfSecond(child: Expression) extends UnaryExpression
           secondFromTimestamp(toUnixTime(LocalDate.parse(dateString)) * 1000L)
         } else {
           // Assume its timestamp represented as a string
-          val timestamp: SQLTimestamp = DateTimeUtils.stringToTimestamp(inputDate.asInstanceOf[UTF8String]).get
+          val timestampOption = DateTimeUtils.stringToTimestamp(inputDate.asInstanceOf[UTF8String])
+          if (timestampOption.isEmpty) {
+            throw new IllegalArgumentException("Could not convert string to timestamp")
+          }
+          val timestamp: SQLTimestamp = timestampOption.get
           val epochMicros = timestamp.asInstanceOf[Long]
           secondFromTimestamp(epochMicros / 1000L)
         }
@@ -1289,7 +1356,11 @@ case class NfMillisecond(child: Expression) extends UnaryExpression
           millisecondFromTimestamp(toUnixTime(LocalDate.parse(dateString)) * 1000L)
         } else {
           // Assume its timestamp represented as a string
-          val timestamp: SQLTimestamp = DateTimeUtils.stringToTimestamp(inputDate.asInstanceOf[UTF8String]).get
+          val timestampOption = DateTimeUtils.stringToTimestamp(inputDate.asInstanceOf[UTF8String])
+          if (timestampOption.isEmpty) {
+            throw new IllegalArgumentException("Could not convert string to timestamp")
+          }
+          val timestamp: SQLTimestamp = timestampOption.get
           val epochMicros = timestamp.asInstanceOf[Long]
           millisecondFromTimestamp(epochMicros / 1000L)
         }
@@ -1339,7 +1410,11 @@ case class NfWeek(child: Expression) extends UnaryExpression
           weekFromDate(LocalDate.parse(dateString).toEpochDay)
         } else {
           // Assume its timestamp represented as a string
-          val timestamp: SQLTimestamp = DateTimeUtils.stringToTimestamp(inputDate.asInstanceOf[UTF8String]).get
+          val timestampOption = DateTimeUtils.stringToTimestamp(inputDate.asInstanceOf[UTF8String])
+          if (timestampOption.isEmpty) {
+            throw new IllegalArgumentException("Could not convert string to timestamp")
+          }
+          val timestamp: SQLTimestamp = timestampOption.get
           val epochMicros = timestamp.asInstanceOf[Long]
           weekFromTimestamp(epochMicros / 1000L)
         }
@@ -1389,7 +1464,11 @@ case class NfQuarter(child: Expression) extends UnaryExpression
           quarterFromDate(LocalDate.parse(dateString).toEpochDay)
         } else {
           // Assume its timestamp represented as a string
-          val timestamp: SQLTimestamp = DateTimeUtils.stringToTimestamp(inputDate.asInstanceOf[UTF8String]).get
+          val timestampOption = DateTimeUtils.stringToTimestamp(inputDate.asInstanceOf[UTF8String])
+          if (timestampOption.isEmpty) {
+            throw new IllegalArgumentException("Could not convert string to timestamp")
+          }
+          val timestamp: SQLTimestamp = timestampOption.get
           val epochMicros = timestamp.asInstanceOf[Long]
           quarterFromTimestamp(epochMicros / 1000L)
         }
