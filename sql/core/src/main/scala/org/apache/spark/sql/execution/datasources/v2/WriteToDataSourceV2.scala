@@ -98,8 +98,8 @@ object DataWritingSparkTask extends Logging {
       useCommitCoordinator: Boolean): WriterCommitMessage = {
     val stageId = context.stageId()
     val partId = context.partitionId()
-    val attemptId = context.attemptNumber()
-    val dataWriter = writeTask.createDataWriter(partId, attemptId)
+    val attemptId = context.taskAttemptId().toInt // see SPARK-24552
+    val dataWriter = writeTask.createDataWriter(context.partitionId(), attemptId)
 
     // write the data and commit this writer.
     Utils.tryWithSafeFinallyAndFailureCallbacks(block = {
