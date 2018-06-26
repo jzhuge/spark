@@ -97,7 +97,8 @@ case class NfDateInt(left: Expression, right: Expression) extends BinaryExpressi
             toDateInt(LocalDate.parse(dateString))
           } else {
             // Assume its timestamp represented as a string
-            val timestampOption = DateTimeUtils.stringToTimestamp(inputDate.asInstanceOf[UTF8String])
+            val timestampOption = DateTimeUtils.stringToTimestamp(
+              inputDate.asInstanceOf[UTF8String])
             if (timestampOption.isEmpty) {
               throw new IllegalArgumentException("Could not convert string to timestamp")
             }
@@ -181,7 +182,8 @@ case class NfDateString(left: Expression, right: Expression) extends BinaryExpre
             UTF8String.fromString(dateString)
           } else {
             // Assume its timestamp represented as a string
-            val timestampOption = DateTimeUtils.stringToTimestamp(inputDate.asInstanceOf[UTF8String])
+            val timestampOption = DateTimeUtils.stringToTimestamp(
+              inputDate.asInstanceOf[UTF8String])
             if (timestampOption.isEmpty) {
               throw new IllegalArgumentException("Could not convert string to timestamp")
             }
@@ -293,7 +295,8 @@ case class NfToUnixTime(left: Expression, right: Expression) extends BinaryExpre
             toUnixTime(LocalDate.parse(dateString))
           } else {
             // Assume its timestamp represented as a string
-            val timestampOption = DateTimeUtils.stringToTimestamp(inputDate.asInstanceOf[UTF8String])
+            val timestampOption = DateTimeUtils.stringToTimestamp(
+              inputDate.asInstanceOf[UTF8String])
             if (timestampOption.isEmpty) {
               throw new IllegalArgumentException("Could not convert string to timestamp")
             }
@@ -369,7 +372,8 @@ case class NfToUnixTimeMs(left: Expression, right: Expression) extends BinaryExp
             toUnixTime(LocalDate.parse(dateString)) * 1000L
           } else {
             // Assume its timestamp represented as a string
-            val timestampOption = DateTimeUtils.stringToTimestamp(inputDate.asInstanceOf[UTF8String])
+            val timestampOption = DateTimeUtils.stringToTimestamp(
+              inputDate.asInstanceOf[UTF8String])
             if (timestampOption.isEmpty) {
               throw new IllegalArgumentException("Could not convert string to timestamp")
             }
@@ -468,7 +472,8 @@ case class NfFromUnixTimeMs(left: Expression, right: Expression) extends BinaryE
 }
 
 @ExpressionDescription(
-  usage = "_FUNC_(input date, timezone) - Converts epoch seconds to timestamp in a given timezone.")
+  usage = "_FUNC_(input date, timezone) - Converts epoch seconds to timestamp " +
+    "in a given timezone.")
 case class NfFromUnixTimeTz(left: Expression, right: Expression) extends BinaryExpression
   with CodegenFallback with ImplicitCastInputTypes {
   override def dataType: DataType = TimestampType
@@ -535,7 +540,8 @@ case class NfDate(left: Expression, right: Expression) extends BinaryExpression
             LocalDate.parse(dateString).toEpochDay.toInt
           } else {
             // Assume its timestamp represented as a string
-            val timestampOption = DateTimeUtils.stringToTimestamp(inputDate.asInstanceOf[UTF8String])
+            val timestampOption = DateTimeUtils.stringToTimestamp(
+              inputDate.asInstanceOf[UTF8String])
             if (timestampOption.isEmpty) {
               throw new IllegalArgumentException("Could not convert string to timestamp")
             }
@@ -617,7 +623,8 @@ case class NfTimestamp(left: Expression, right: Expression) extends BinaryExpres
             toUnixTime(LocalDate.parse(dateString)) * 1000000L
           } else {
             // Assume its timestamp represented as a string
-            val timestampOption = DateTimeUtils.stringToTimestamp(inputDate.asInstanceOf[UTF8String])
+            val timestampOption = DateTimeUtils.stringToTimestamp(
+              inputDate.asInstanceOf[UTF8String])
             if (timestampOption.isEmpty) {
               throw new IllegalArgumentException("Could not convert string to timestamp")
             }
@@ -848,12 +855,14 @@ case class NfDateDiff(param1: Expression, param2: Expression, param3: Expression
               LocalDate.parse(dateString2).toEpochDay)
           } else {
             // Assume its timestamp represented as a string
-            val timestampOption1 = DateTimeUtils.stringToTimestamp(input1.asInstanceOf[UTF8String])
+            val timestampOption1 = DateTimeUtils.stringToTimestamp(
+              input1.asInstanceOf[UTF8String])
             if (timestampOption1.isEmpty) {
               throw new IllegalArgumentException("Could not convert string to timestamp")
             }
             val timestamp1: SQLTimestamp = timestampOption1.get
-            val timestampOption2 = DateTimeUtils.stringToTimestamp(input2.asInstanceOf[UTF8String])
+            val timestampOption2 = DateTimeUtils.stringToTimestamp(
+              input2.asInstanceOf[UTF8String])
             if (timestampOption2.isEmpty) {
               throw new IllegalArgumentException("Could not convert string to timestamp")
             }
@@ -915,7 +924,8 @@ case class NfDateTrunc(left: Expression, right: Expression) extends BinaryExpres
             LocalDate.parse(dateString).toEpochDay)).toString)
         } else {
           // Assume its timestamp represented as a string
-          val timestampOption = DateTimeUtils.stringToTimestamp(second.asInstanceOf[UTF8String])
+          val timestampOption = DateTimeUtils.stringToTimestamp(
+            second.asInstanceOf[UTF8String])
           if (timestampOption.isEmpty) {
             throw new IllegalArgumentException("Could not convert string to timestamp")
           }
@@ -1032,7 +1042,8 @@ case class NfYear(child: Expression) extends UnaryExpression
           yearFromDate(LocalDate.parse(dateString).toEpochDay)
         } else {
           // Assume its timestamp represented as a string
-          val timestampOption = DateTimeUtils.stringToTimestamp(inputDate.asInstanceOf[UTF8String])
+          val timestampOption = DateTimeUtils.stringToTimestamp(
+            inputDate.asInstanceOf[UTF8String])
           if (timestampOption.isEmpty) {
             throw new IllegalArgumentException("Could not convert string to timestamp")
           }
@@ -1086,7 +1097,8 @@ case class NfMonth(child: Expression) extends UnaryExpression
           monthFromDate(LocalDate.parse(dateString).toEpochDay)
         } else {
           // Assume its timestamp represented as a string
-          val timestampOption = DateTimeUtils.stringToTimestamp(inputDate.asInstanceOf[UTF8String])
+          val timestampOption = DateTimeUtils.stringToTimestamp(
+            inputDate.asInstanceOf[UTF8String])
           if (timestampOption.isEmpty) {
             throw new IllegalArgumentException("Could not convert string to timestamp")
           }
@@ -1140,7 +1152,8 @@ case class NfDay(child: Expression) extends UnaryExpression
           dayFromDate(LocalDate.parse(dateString).toEpochDay)
         } else {
           // Assume its timestamp represented as a string
-          val timestampOption = DateTimeUtils.stringToTimestamp(inputDate.asInstanceOf[UTF8String])
+          val timestampOption = DateTimeUtils.stringToTimestamp(
+            inputDate.asInstanceOf[UTF8String])
           if (timestampOption.isEmpty) {
             throw new IllegalArgumentException("Could not convert string to timestamp")
           }
@@ -1194,7 +1207,8 @@ case class NfHour(child: Expression) extends UnaryExpression
           hourFromTimestamp(toUnixTime(LocalDate.parse(dateString)) * 1000L)
         } else {
           // Assume its timestamp represented as a string
-          val timestampOption = DateTimeUtils.stringToTimestamp(inputDate.asInstanceOf[UTF8String])
+          val timestampOption = DateTimeUtils.stringToTimestamp(
+            inputDate.asInstanceOf[UTF8String])
           if (timestampOption.isEmpty) {
             throw new IllegalArgumentException("Could not convert string to timestamp")
           }
@@ -1248,7 +1262,8 @@ case class NfMinute(child: Expression) extends UnaryExpression
           minuteFromTimestamp(toUnixTime(LocalDate.parse(dateString)) * 1000L)
         } else {
           // Assume its timestamp represented as a string
-          val timestampOption = DateTimeUtils.stringToTimestamp(inputDate.asInstanceOf[UTF8String])
+          val timestampOption = DateTimeUtils.stringToTimestamp(
+            inputDate.asInstanceOf[UTF8String])
           if (timestampOption.isEmpty) {
             throw new IllegalArgumentException("Could not convert string to timestamp")
           }
@@ -1302,7 +1317,8 @@ case class NfSecond(child: Expression) extends UnaryExpression
           secondFromTimestamp(toUnixTime(LocalDate.parse(dateString)) * 1000L)
         } else {
           // Assume its timestamp represented as a string
-          val timestampOption = DateTimeUtils.stringToTimestamp(inputDate.asInstanceOf[UTF8String])
+          val timestampOption = DateTimeUtils.stringToTimestamp(
+            inputDate.asInstanceOf[UTF8String])
           if (timestampOption.isEmpty) {
             throw new IllegalArgumentException("Could not convert string to timestamp")
           }
@@ -1327,7 +1343,8 @@ case class NfSecond(child: Expression) extends UnaryExpression
 }
 
 @ExpressionDescription(
-  usage = "_FUNC_(input) - Extracts millisecond of second as an integer from the input (0 to 999)")
+  usage = "_FUNC_(input) - Extracts millisecond of second as an integer " +
+    "from the input (0 to 999)")
 case class NfMillisecond(child: Expression) extends UnaryExpression
   with CodegenFallback {
   override def dataType: DataType = IntegerType
@@ -1356,7 +1373,8 @@ case class NfMillisecond(child: Expression) extends UnaryExpression
           millisecondFromTimestamp(toUnixTime(LocalDate.parse(dateString)) * 1000L)
         } else {
           // Assume its timestamp represented as a string
-          val timestampOption = DateTimeUtils.stringToTimestamp(inputDate.asInstanceOf[UTF8String])
+          val timestampOption = DateTimeUtils.stringToTimestamp(
+            inputDate.asInstanceOf[UTF8String])
           if (timestampOption.isEmpty) {
             throw new IllegalArgumentException("Could not convert string to timestamp")
           }
@@ -1410,7 +1428,8 @@ case class NfWeek(child: Expression) extends UnaryExpression
           weekFromDate(LocalDate.parse(dateString).toEpochDay)
         } else {
           // Assume its timestamp represented as a string
-          val timestampOption = DateTimeUtils.stringToTimestamp(inputDate.asInstanceOf[UTF8String])
+          val timestampOption = DateTimeUtils.stringToTimestamp(
+            inputDate.asInstanceOf[UTF8String])
           if (timestampOption.isEmpty) {
             throw new IllegalArgumentException("Could not convert string to timestamp")
           }
@@ -1464,7 +1483,8 @@ case class NfQuarter(child: Expression) extends UnaryExpression
           quarterFromDate(LocalDate.parse(dateString).toEpochDay)
         } else {
           // Assume its timestamp represented as a string
-          val timestampOption = DateTimeUtils.stringToTimestamp(inputDate.asInstanceOf[UTF8String])
+          val timestampOption = DateTimeUtils.stringToTimestamp(
+            inputDate.asInstanceOf[UTF8String])
           if (timestampOption.isEmpty) {
             throw new IllegalArgumentException("Could not convert string to timestamp")
           }

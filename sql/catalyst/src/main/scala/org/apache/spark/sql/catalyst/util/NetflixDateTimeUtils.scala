@@ -198,4 +198,3 @@ object NetflixDateTimeUtils {
     QUARTER_OF_YEAR.getField(UTC_CHRONOLOGY).get(DAYS.toMillis(date))
   }
 }
-
