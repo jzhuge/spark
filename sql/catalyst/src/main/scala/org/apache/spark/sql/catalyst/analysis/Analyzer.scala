@@ -728,10 +728,12 @@ class Analyzer(
         }
 
         // select dynamic: parts(name) is null or it is missing
-        val dynamicPartitionNames = newPartsMap.filter(_._2.isEmpty).keys
+        val dynamicPartitionNames = newPartsMap.filter(_._2.isEmpty)
+        val orderedDynamicPartitionNames = tablePartitionNames.filter(name =>
+          dynamicPartitionNames.contains(name))
 
         // PARTITION clause references are matched by name for data frames
-        val dynamicPartColumns = dynamicPartitionNames.flatMap { name =>
+        val dynamicPartColumns = orderedDynamicPartitionNames.flatMap { name =>
           inputPartCols.find(input => resolver(input.name, name))
         }
 
