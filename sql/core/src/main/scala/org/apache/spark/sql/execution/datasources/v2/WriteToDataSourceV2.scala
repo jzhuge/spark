@@ -98,8 +98,8 @@ object DataWritingSparkTask extends Logging {
       useCommitCoordinator: Boolean): WriterCommitMessage = {
     val stageId = context.stageId()
     val partId = context.partitionId()
-    val tid = context.taskAttemptId().toInt // see SPARK-24552
-    val dataWriter = writeTask.createDataWriter(partId, tid)
+    val attemptId = context.attemptNumber()
+    val dataWriter = writeTask.createDataWriter(partId, attemptId)
 
     // write the data and commit this writer.
     Utils.tryWithSafeFinallyAndFailureCallbacks(block = {
@@ -107,16 +107,16 @@ object DataWritingSparkTask extends Logging {
 
       val msg = if (useCommitCoordinator) {
         val coordinator = SparkEnv.get.outputCommitCoordinator
-        val commitAuthorized = coordinator.canCommit(context.stageId(), partId, tid)
+        val commitAuthorized = coordinator.canCommit(context.stageId(), partId, attemptId)
         if (commitAuthorized) {
-          logInfo(s"Writer for stage $stageId, task $partId (TID $tid) is authorized to commit.")
+          logInfo(s"Writer for stage $stageId, task $partId.$attemptId is authorized to commit.")
           dataWriter.commit()
 
         } else {
-          val message = s"Stage $stageId, task $partId (TID $tid): driver did not authorize commit"
+          val message = s"Stage $stageId, task $partId.$attemptId: driver did not authorize commit"
           logInfo(message)
           // throwing CommitDeniedException will trigger the catch block for abort
-          throw new CommitDeniedException(message, stageId, partId, tid)
+          throw new CommitDeniedException(message, stageId, partId, attemptId)
         }
 
       } else {
@@ -124,15 +124,15 @@ object DataWritingSparkTask extends Logging {
         dataWriter.commit()
       }
 
-      logInfo(s"Writer for stage $stageId, task $partId (TID $tid) committed.")
+      logInfo(s"Writer for stage $stageId, task $partId.$attemptId committed.")
 
       msg
 
     })(catchBlock = {
       // If there is an error, abort this writer
-      logError(s"Writer for stage $stageId, task $partId (TID $tid) is aborting.")
+      logError(s"Writer for stage $stageId, task $partId.$attemptId is aborting.")
       dataWriter.abort()
-      logError(s"Writer for stage $stageId, task $partId (TID $tid) aborted.")
+      logError(s"Writer for stage $stageId, task $partId.$attemptId aborted.")
     })
   }
 }
