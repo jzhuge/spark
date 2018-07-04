@@ -500,6 +500,7 @@ object FunctionRegistry {
     // json
     expression[StructsToJson]("to_json"),
     expression[JsonToStructs]("from_json"),
+    expression[SchemaOfJson]("schema_of_json"),
 
     // cast
     expression[Cast]("cast"),
