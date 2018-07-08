@@ -285,6 +285,7 @@ def main(command_args):
     if None in java_options:
         java_options.remove(None)
     java_options.append('-Djava.io.tmpdir=%s' % current_job_tmp_dir)
+    java_options.append('-Dspark.log.path=spark.log')
     os.environ['_JAVA_OPTIONS'] = ' '.join(java_options)
 
     # this is overridden by spark.driver.memory
