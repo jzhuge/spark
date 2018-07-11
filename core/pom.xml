@@ -34,8 +34,8 @@
   <url>http://spark.apache.org/</url>
   <dependencies>
     <dependency>
-      <groupId>com.netflix.bdp</groupId>
-      <artifactId>bdp-fs</artifactId>
+      <groupId>com.netflix.bdp.s3</groupId>
+      <artifactId>s3committer</artifactId>
     </dependency>
     <dependency>
       <groupId>com.netflix.bdp</groupId>
