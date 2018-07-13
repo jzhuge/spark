@@ -88,4 +88,8 @@ object Utils {
   def createTaskId(taskId: String): TaskID = {
     TaskID.newBuilder().setValue(taskId).build()
   }
+
+  def createFilter(limitSec: Int): Filters = {
+    Filters.newBuilder().setRefuseSeconds(limitSec).build()
+  }
 }

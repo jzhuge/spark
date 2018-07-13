@@ -133,6 +133,14 @@ private[spark] class MesosCoarseGrainedSchedulerBackend(
   private val rejectOfferDurationForReachedMaxCores =
     getRejectOfferDurationForReachedMaxCores(sc)
 
+  // Reject offers when we reached the current executor limit
+  private val rejectOfferDurationForReachedExecutorLimit =
+    getRejectOfferDurationForReachedExecutorLimit(sc.conf)
+
+  // Reject offers that we cannot use for other reasons
+  private val rejectOfferDuration =
+    getRejectOfferDuration(sc.conf)
+
   // A client for talking to the external shuffle service
   private val mesosExternalShuffleClient: Option[MesosExternalShuffleClient] = {
     if (shuffleServiceEnabled) {
@@ -342,7 +350,9 @@ private[spark] class MesosCoarseGrainedSchedulerBackend(
    */
   private def handleMatchedOffers(
       d: org.apache.mesos.SchedulerDriver, offers: mutable.Buffer[Offer]): Unit = {
-    val tasks = buildMesosTasks(offers)
+    // Current executor limit
+    val maxExecutors = executorLimit
+    val tasks = buildMesosTasks(offers, maxExecutors)
     for (offer <- offers) {
       val offerAttributes = toAttributeMap(offer.getAttributesList)
       val offerMem = getResource(offer.getResourcesList, "mem")
@@ -374,8 +384,12 @@ private[spark] class MesosCoarseGrainedSchedulerBackend(
         // Reject an offer for a configurable amount of time to avoid starving other frameworks
         declineOffer(d, offer, Some("reached spark.cores.max"),
           Some(rejectOfferDurationForReachedMaxCores))
+      } else if (numExecutors() >= maxExecutors) {
+        declineOffer(d, offer, Some("reached current executor limit"),
+          Some(rejectOfferDurationForReachedExecutorLimit))
       } else {
-        declineOffer(d, offer)
+        declineOffer(d, offer, None,
+          Some(rejectOfferDuration))
       }
     }
   }
@@ -387,7 +401,9 @@ private[spark] class MesosCoarseGrainedSchedulerBackend(
    * @param offers Mesos offers that match attribute constraints
    * @return A map from OfferID to a list of Mesos tasks to launch on that offer
    */
-  private def buildMesosTasks(offers: mutable.Buffer[Offer]): Map[OfferID, List[MesosTaskInfo]] = {
+  private def buildMesosTasks(
+      offers: mutable.Buffer[Offer],
+      maxExecutors: Int): Map[OfferID, List[MesosTaskInfo]] = {
     // offerID -> tasks
     val tasks = new mutable.HashMap[OfferID, List[MesosTaskInfo]].withDefaultValue(Nil)
 
@@ -408,7 +424,7 @@ private[spark] class MesosCoarseGrainedSchedulerBackend(
         val offerId = offer.getId.getValue
         val resources = remainingResources(offerId)
 
-        if (canLaunchTask(slaveId, resources)) {
+        if (canLaunchTask(slaveId, resources, maxExecutors)) {
           // Create a task
           launchTasks = true
           val taskId = newMesosTaskId()
@@ -479,7 +495,10 @@ private[spark] class MesosCoarseGrainedSchedulerBackend(
       cpuResourcesToUse ++ memResourcesToUse ++ portResourcesToUse ++ gpuResourcesToUse)
   }
 
-  private def canLaunchTask(slaveId: String, resources: JList[Resource]): Boolean = {
+  private def canLaunchTask(
+      slaveId: String,
+      resources: JList[Resource],
+      maxExecutors: Int): Boolean = {
     val offerMem = getResource(resources, "mem")
     val offerCPUs = getResource(resources, "cpus").toInt
     val cpus = executorCores(offerCPUs)
@@ -491,7 +510,7 @@ private[spark] class MesosCoarseGrainedSchedulerBackend(
       cpus <= offerCPUs &&
       cpus + totalCoresAcquired <= maxCores &&
       mem <= offerMem &&
-      numExecutors() < executorLimit &&
+      numExecutors() < maxExecutors &&
       slaves.get(slaveId).map(_.taskFailures).getOrElse(0) < MAX_SLAVE_FAILURES &&
       meetsPortRequirements
   }

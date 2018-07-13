@@ -59,14 +59,12 @@ class MesosCoarseGrainedSchedulerBackendSuite extends SparkFunSuite
   implicit override val patienceConfig = PatienceConfig(timeout = Duration(0, TimeUnit.SECONDS))
 
   test("mesos supports killing and limiting executors") {
-    setBackend()
-    sparkConf.set("spark.driver.host", "driverHost")
-    sparkConf.set("spark.driver.port", "1234")
+    val refusalLimit = 4
+    setBackend(Map("spark.mesos.rejectOfferDurationForReachedExecutorLimit" -> s"${refusalLimit}s"))
 
     val minMem = backend.executorMemory(sc)
     val minCpu = 4
     val offers = List(Resources(minMem, minCpu))
-
     // launches a task on a valid offer
     offerResources(offers)
     verifyTaskLaunched(driver, "o1")
@@ -79,7 +77,8 @@ class MesosCoarseGrainedSchedulerBackendSuite extends SparkFunSuite
 
     // doesn't launch a new task when requested executors == 0
     offerResources(offers, 2)
-    verifyDeclinedOffer(driver, createOfferId("o2"))
+    // offers should be declined with the configured filter to avoid starvation
+    verifyDeclinedOffer(driver, createOfferId("o2"), createFilter(refusalLimit))
 
     // Launches a new task when requested executors is positive
     backend.doRequestTotalExecutors(2)
@@ -180,15 +179,23 @@ class MesosCoarseGrainedSchedulerBackendSuite extends SparkFunSuite
   }
 
 
-  test("mesos declines offers that violate attribute constraints") {
-    setBackend(Map("spark.mesos.constraints" -> "x:true"))
+  test("mesos declines offers that violate attribute constraints with a filter") {
+    val refusalLimit = 4
+    setBackend(Map(
+      "spark.mesos.constraints" -> "x:true",
+      "spark.mesos.rejectOfferDurationForUnmetConstraints" -> s"${refusalLimit}s"
+    ))
     offerResources(List(Resources(backend.executorMemory(sc), 4)))
-    verifyDeclinedOffer(driver, createOfferId("o1"), true)
+    verifyDeclinedOffer(driver, createOfferId("o1"), createFilter(refusalLimit))
   }
 
   test("mesos declines offers with a filter when reached spark.cores.max") {
     val maxCores = 3
-    setBackend(Map("spark.cores.max" -> maxCores.toString))
+    val refusalLimit = 4
+    setBackend(Map(
+      "spark.cores.max" -> maxCores.toString,
+      "spark.mesos.rejectOfferDurationForReachedMaxCores" -> s"${refusalLimit}s"
+    ))
 
     val executorMemory = backend.executorMemory(sc)
     offerResources(List(
@@ -196,7 +203,22 @@ class MesosCoarseGrainedSchedulerBackendSuite extends SparkFunSuite
       Resources(executorMemory, maxCores + 1)))
 
     verifyTaskLaunched(driver, "o1")
-    verifyDeclinedOffer(driver, createOfferId("o2"), true)
+    verifyDeclinedOffer(driver, createOfferId("o2"), createFilter(refusalLimit))
+  }
+
+  test("mesos declines offers that are too small with a filter") {
+    val executorCores = 3
+    val refusalLimit = 4
+    setBackend(Map(
+      "spark.executor.cores" -> executorCores.toString,
+      "spark.mesos.rejectOfferDuration" -> s"${refusalLimit}s"
+    ))
+
+    val executorMemory = backend.executorMemory(sc)
+    offerResources(List(
+      Resources(executorMemory, executorCores - 1)
+    ))
+    verifyDeclinedOffer(driver, createOfferId("o1"), createFilter(refusalLimit))
   }
 
   test("mesos assigns tasks round-robin on offers") {
@@ -249,13 +271,17 @@ class MesosCoarseGrainedSchedulerBackendSuite extends SparkFunSuite
   }
 
   test("Port offer decline when there is no appropriate range") {
-    setBackend(Map(BLOCK_MANAGER_PORT.key -> "30100"))
+    val refusalLimit = 4
+    setBackend(Map(
+      BLOCK_MANAGER_PORT.key -> "30100",
+      "spark.mesos.rejectOfferDuration" -> s"${refusalLimit}s"
+    ))
     val offeredPorts = (31100L, 31200L)
     val (mem, cpu) = (backend.executorMemory(sc), 4)
 
     val offer1 = createOffer("o1", "s1", mem, cpu, Some(offeredPorts))
     backend.resourceOffers(driver, List(offer1).asJava)
-    verify(driver, times(1)).declineOffer(offer1.getId)
+    verifyDeclinedOffer(driver, offer1.getId, createFilter(refusalLimit))
   }
 
   test("Port offer accepted when ephemeral ports are used") {
@@ -490,6 +516,13 @@ class MesosCoarseGrainedSchedulerBackendSuite extends SparkFunSuite
     val message = RegisterExecutor(executorId, mockEndpointRef, slaveId, cores, Map.empty)
 
     backend.driverEndpoint.askWithRetry[Boolean](message)
+  }
+
+  private def verifyDeclinedOffer(
+      driver: SchedulerDriver,
+      offerId: OfferID,
+      filter: Filters): Unit = {
+    verify(driver, times(1)).declineOffer(Matchers.eq(offerId), Matchers.eq(filter))
   }
 
   private def verifyDeclinedOffer(driver: SchedulerDriver,
