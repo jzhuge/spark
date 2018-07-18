@@ -41,9 +41,9 @@ import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.plans.logical.ColumnStat
 import org.apache.spark.sql.catalyst.util.CaseInsensitiveMap
 import org.apache.spark.sql.execution.command.DDLUtils
-import org.apache.spark.sql.execution.datasources.{PartitioningUtils, SourceOptions}
+import org.apache.spark.sql.execution.datasources.{DataSource, FileFormat, PartitioningUtils, SourceOptions}
 import org.apache.spark.sql.hive.client.HiveClient
-import org.apache.spark.sql.internal.HiveSerDe
+import org.apache.spark.sql.internal.{HiveSerDe, SQLConf}
 import org.apache.spark.sql.internal.StaticSQLConf._
 import org.apache.spark.sql.types.{DataType, StructType}
 
@@ -790,7 +790,19 @@ private[spark] class HiveExternalCatalog(conf: SparkConf, hadoopConf: Configurat
       updateLocationInStorageProps(table, newPath = None).copy(
         locationUri = tableLocation.map(CatalogUtils.stringToURI(_)))
     }
-    val partitionProvider = table.properties.get(TABLE_PARTITION_PROVIDER)
+
+    val isS3 = Option(table.location)
+        .map(new Path(_))
+        .flatMap(p => Option(p.toUri.getScheme))
+        .exists(_.startsWith("s3"))
+
+    val cls = DataSource.lookupDataSource(provider, SQLConf.get)
+    val partitionProvider =
+      if (isS3 && classOf[FileFormat].isAssignableFrom(cls)) {
+        Some(TABLE_PARTITION_PROVIDER_CATALOG)
+      } else {
+        table.properties.get(TABLE_PARTITION_PROVIDER)
+      }
 
     val schemaFromTableProps = getSchemaFromTableProperties(table)
     val partColumnNames = getPartitionColumnsFromTableProperties(table)
