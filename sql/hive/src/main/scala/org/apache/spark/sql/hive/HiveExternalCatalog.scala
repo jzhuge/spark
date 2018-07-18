@@ -41,7 +41,7 @@ import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.plans.logical.{ColumnStat, Statistics}
 import org.apache.spark.sql.catalyst.util.CaseInsensitiveMap
 import org.apache.spark.sql.execution.command.DDLUtils
-import org.apache.spark.sql.execution.datasources.PartitioningUtils
+import org.apache.spark.sql.execution.datasources.{DataSource, FileFormat, PartitioningUtils}
 import org.apache.spark.sql.hive.client.HiveClient
 import org.apache.spark.sql.internal.HiveSerDe
 import org.apache.spark.sql.internal.StaticSQLConf._
@@ -733,7 +733,18 @@ private[spark] class HiveExternalCatalog(conf: SparkConf, hadoopConf: Configurat
       // We pass None as `newPath` here, to remove the path option in storage properties.
       updateLocationInStorageProps(table, newPath = None).copy(locationUri = tableLocation)
     }
-    val partitionProvider = table.properties.get(TABLE_PARTITION_PROVIDER)
+
+    val isS3 = Option(table.location)
+        .map(new Path(_))
+        .flatMap(p => Option(p.toUri.getScheme))
+        .exists(_.startsWith("s3"))
+
+    val partitionProvider =
+      if (isS3 && classOf[FileFormat].isAssignableFrom(DataSource.lookupDataSource(provider))) {
+        Some(TABLE_PARTITION_PROVIDER_CATALOG)
+      } else {
+        table.properties.get(TABLE_PARTITION_PROVIDER)
+      }
 
     table.copy(
       provider = Some(provider),
