@@ -24,6 +24,7 @@ import org.apache.spark.sql.catalyst.analysis.MultiInstanceRelation
 import org.apache.spark.sql.catalyst.catalog.CatalogTypes
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.expressions.aggregate.AggregateExpression
+import org.apache.spark.sql.catalyst.planning.PhysicalOperation
 import org.apache.spark.sql.catalyst.plans._
 import org.apache.spark.sql.types._
 import org.apache.spark.util.Utils
@@ -60,6 +61,15 @@ case class Project(projectList: Seq[NamedExpression], child: LogicalPlan) extend
     )
 
     !expressions.exists(!_.resolved) && childrenResolved && !hasSpecialExpressions
+  }
+
+  override def statistics: Statistics = {
+    this match {
+      case PhysicalOperation(projection, filters, relation: SupportsPhysicalStats) =>
+        relation.computeStats(projection, filters)
+      case _ =>
+        super.statistics
+    }
   }
 
   override def validConstraints: Set[Expression] =
@@ -129,6 +139,15 @@ case class Filter(condition: Expression, child: LogicalPlan)
     val predicates = splitConjunctivePredicates(condition)
       .filterNot(SubqueryExpression.hasCorrelatedSubquery)
     child.constraints.union(predicates.toSet)
+  }
+
+  override def statistics: Statistics = {
+    this match {
+      case PhysicalOperation(projection, filters, relation: SupportsPhysicalStats) =>
+        relation.computeStats(projection, filters)
+      case _ =>
+        super.statistics
+    }
   }
 }
 

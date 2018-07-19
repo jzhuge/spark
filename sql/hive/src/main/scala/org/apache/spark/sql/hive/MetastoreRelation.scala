@@ -32,8 +32,8 @@ import org.apache.hadoop.hive.ql.plan.TableDesc
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.analysis.MultiInstanceRelation
 import org.apache.spark.sql.catalyst.catalog._
-import org.apache.spark.sql.catalyst.expressions.{AttributeMap, AttributeReference, Expression}
-import org.apache.spark.sql.catalyst.plans.logical.{LeafNode, LogicalPlan, Statistics}
+import org.apache.spark.sql.catalyst.expressions.{AttributeMap, AttributeReference, AttributeSet, Expression, ExpressionSet, NamedExpression}
+import org.apache.spark.sql.catalyst.plans.logical.{LeafNode, LogicalPlan, Statistics, SupportsPhysicalStats}
 import org.apache.spark.sql.execution.FileRelation
 import org.apache.spark.sql.types._
 
@@ -43,7 +43,8 @@ private[hive] case class MetastoreRelation(
     tableName: String)
     (val catalogTable: CatalogTable,
      @transient private val sparkSession: SparkSession)
-  extends LeafNode with MultiInstanceRelation with FileRelation with CatalogRelation {
+  extends LeafNode with MultiInstanceRelation with FileRelation with CatalogRelation
+      with SupportsPhysicalStats {
 
   override def equals(other: Any): Boolean = other match {
     case relation: MetastoreRelation =>
@@ -109,6 +110,78 @@ private[hive] case class MetastoreRelation(
     serdeInfo.setParameters(serdeParameters)
 
     new HiveTable(tTable)
+  }
+
+  /**
+   * Used to return statistics when filters and projection are available.
+   */
+  override def computeStats(
+      projection: Seq[NamedExpression],
+      filters: Seq[Expression]): Statistics = {
+
+    // The attribute name of predicate could be different than the one in schema in case of
+    // case insensitive, we should change them to match the one in schema, so we donot need to
+    // worry about case sensitivity anymore.
+    val normalizedFilters = filters.map { e =>
+      e transform {
+        case a: AttributeReference =>
+          a.withName(output.find(_.semanticEquals(a)).get.name)
+      }
+    }
+
+    val partitionColumns = resolve(
+        catalogTable.partitionSchema, sparkSession.sessionState.analyzer.resolver)
+    val partitionSet = AttributeSet(partitionColumns)
+    val partitionKeyFilters =
+      ExpressionSet(normalizedFilters.filter(_.references.subsetOf(partitionSet)))
+
+    val rowEstimate: Option[BigInt] = if (catalogTable.partitionColumnNames.nonEmpty) {
+      val selectedPartitions = sparkSession.sessionState.catalog.listPartitionsByFilter(
+        catalogTable.identifier, partitionKeyFilters.toSeq)
+
+      var totalRows = 0L
+      var missingRowCount = 0
+
+      selectedPartitions.foreach { p =>
+        p.parameters.get("numRows").map(_.toLong) match {
+          case Some(numRows) if numRows > 0 => totalRows += numRows
+          case _ => missingRowCount += 1
+        }
+      }
+
+      val numPartitions = selectedPartitions.size
+      // base size on row count if at least half of the partitions have a row count
+      if (missingRowCount <= numPartitions / 2) {
+        val scaleFactor = numPartitions.toFloat / (numPartitions - missingRowCount)
+        Some((scaleFactor * totalRows).toLong)
+      } else {
+        None
+      }
+
+    } else {
+      catalogTable.properties.get("numRows").map(_.toLong) match {
+        case Some(numRows) if numRows > 0 => Some(numRows)
+        case _ => None
+      }
+    }
+
+    val sizeInBytes: BigInt = rowEstimate match {
+      case Some(numRows) =>
+        // if the row count is present, use it to estimate size because size on disk may be columnar
+        // but the size that matters is the size in memory
+        val rowSizeEstimate = projection.map(_.dataType.defaultSize).sum + 8
+        val sizeEstimate = numRows * rowSizeEstimate
+        logInfo(s"Row-based size estimate for ${catalogTable.identifier}: " +
+            s"$numRows rows * $rowSizeEstimate bytes = $sizeEstimate bytes")
+        sizeEstimate
+      case _ =>
+        // fall back to the existing size estimate
+        val stats = statistics
+        logInfo(s"Fallback size estimate for ${catalogTable.identifier}: ${stats.sizeInBytes}")
+        stats.sizeInBytes
+    }
+
+    Statistics(sizeInBytes = sizeInBytes, rowCount = rowEstimate)
   }
 
   @transient override lazy val statistics: Statistics = {

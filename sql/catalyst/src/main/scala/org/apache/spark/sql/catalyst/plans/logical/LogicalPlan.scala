@@ -281,6 +281,18 @@ abstract class LeafNode extends LogicalPlan {
 }
 
 /**
+ * Leaf node with more accurate stats using the filters and projected columns that will be pushed.
+ */
+trait SupportsPhysicalStats extends LeafNode {
+  /**
+   * Used to return statistics when filters and projection are available.
+   */
+  def computeStats(projection: Seq[NamedExpression], filters: Seq[Expression]): Statistics = {
+    statistics
+  }
+}
+
+/**
  * A logical plan node with single child.
  */
 abstract class UnaryNode extends LogicalPlan {

@@ -215,6 +215,14 @@ abstract class BaseRelation {
   def sizeInBytes: Long = sqlContext.conf.defaultSizeInBytes
 
   /**
+   * Returns the estimated number of rows in the relation. If present, this will be used to estimate
+   * total size.
+   *
+   * @return estimated number of rows, or None
+   */
+  def rowCount: Option[BigInt] = None
+
+  /**
    * Whether does it need to convert the objects in Row to internal representation, for example:
    *  java.lang.String to UTF8String
    *  java.lang.Decimal to Decimal

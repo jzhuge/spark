@@ -46,6 +46,7 @@ import org.apache.spark.sql.hive.client.HiveClient
 import org.apache.spark.sql.internal.HiveSerDe
 import org.apache.spark.sql.internal.StaticSQLConf._
 import org.apache.spark.sql.types.{DataType, StructType}
+import org.apache.spark.util.Utils
 
 
 /**
@@ -740,7 +741,8 @@ private[spark] class HiveExternalCatalog(conf: SparkConf, hadoopConf: Configurat
         .exists(_.startsWith("s3"))
 
     val partitionProvider =
-      if (isS3 && classOf[FileFormat].isAssignableFrom(DataSource.lookupDataSource(provider))) {
+      if (!Utils.isTesting &&
+          isS3 && classOf[FileFormat].isAssignableFrom(DataSource.lookupDataSource(provider))) {
         Some(TABLE_PARTITION_PROVIDER_CATALOG)
       } else {
         table.properties.get(TABLE_PARTITION_PROVIDER)

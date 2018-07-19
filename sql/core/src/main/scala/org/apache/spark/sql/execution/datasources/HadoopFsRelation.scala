@@ -98,5 +98,7 @@ case class HadoopFsRelation(
 
   override def sizeInBytes: Long = location.sizeInBytes
 
+  override def rowCount: Option[BigInt] = location.rowCount
+
   override def inputFiles: Array[String] = location.inputFiles
 }

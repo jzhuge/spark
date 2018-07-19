@@ -39,7 +39,8 @@ class InMemoryFileIndex(
     override val rootPaths: Seq[Path],
     parameters: Map[String, String],
     partitionSchema: Option[StructType],
-    fileStatusCache: FileStatusCache = NoopCache)
+    fileStatusCache: FileStatusCache = NoopCache,
+    override val rowCount: Option[BigInt] = None)
   extends PartitioningAwareFileIndex(
     sparkSession, parameters, partitionSchema, fileStatusCache) {
 
