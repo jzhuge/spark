@@ -51,9 +51,32 @@ case class LogicalRelation(
     catalogTable = None)
 
   override def computeStats(): Statistics = {
-    catalogTable
-      .flatMap(_.stats.map(_.toPlanStats(output, conf.cboEnabled)))
-      .getOrElse(Statistics(sizeInBytes = relation.sizeInBytes))
+    if (conf.cboEnabled || !conf.rowCountStatsEnabled) {
+      catalogTable
+        .flatMap(_.stats.map(_.toPlanStats(output, conf.cboEnabled)))
+        .getOrElse(Statistics(sizeInBytes = relation.sizeInBytes))
+    } else {
+      val numRows = relation.rowCount
+      val tableName = catalogTable.map(_.identifier).getOrElse(relation).toString
+      val sizeInBytes: BigInt = numRows match {
+        case Some(rowEstimate) =>
+          // if the row count is present, use it to estimate size because size on disk may be
+          // columnar but the size that matters is the size in memory
+          val rowSizeEstimate = output.map(_.dataType.defaultSize).sum + 8
+          val sizeEstimate = rowEstimate * rowSizeEstimate
+          logInfo(s"Row-based size estimate for $tableName: " +
+            s"$rowEstimate rows * $rowSizeEstimate bytes = $sizeEstimate bytes")
+          sizeEstimate
+        case _ =>
+          // fall back to the size on disk
+          logInfo(s"Fallback size estimate for $tableName: ${relation.sizeInBytes}")
+          relation.sizeInBytes
+      }
+
+      catalogTable
+        .flatMap(_.stats.map(_.toPlanStats(output, conf.cboEnabled).copy(sizeInBytes, numRows)))
+        .getOrElse(Statistics(sizeInBytes = sizeInBytes, rowCount = numRows))
+    }
   }
 
   /** Used to lookup original attribute capitalization */
