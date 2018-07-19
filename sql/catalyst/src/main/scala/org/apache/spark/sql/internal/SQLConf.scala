@@ -974,6 +974,12 @@ object SQLConf {
       .intConf
       .createWithDefault(10000)
 
+  val ROW_COUNT_STATS_ENABLED =
+    buildConf("spark.sql.statistics.row.count.enabled")
+      .doc("Enables row count stats.")
+      .booleanConf
+      .createWithDefault(false)
+
   val AUTO_SIZE_UPDATE_ENABLED =
     buildConf("spark.sql.statistics.size.autoUpdate.enabled")
       .doc("Enables automatic update for table size once table's data is changed. Note that if " +
@@ -1551,6 +1557,8 @@ class SQLConf extends Serializable with Logging {
   def percentileAccuracy: Int = getConf(PERCENTILE_ACCURACY)
 
   def cboEnabled: Boolean = getConf(SQLConf.CBO_ENABLED)
+
+  def rowCountStatsEnabled: Boolean = getConf(SQLConf.ROW_COUNT_STATS_ENABLED)
 
   def autoSizeUpdateEnabled: Boolean = getConf(SQLConf.AUTO_SIZE_UPDATE_ENABLED)
 
