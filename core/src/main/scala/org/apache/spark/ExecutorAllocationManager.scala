@@ -417,7 +417,13 @@ private[spark] class ExecutorAllocationManager(
       logInfo(s"Requesting $delta new $executorsString because tasks are backlogged" +
         s" (new desired total will be $numExecutorsTarget)")
       numExecutorsToAdd = if (delta == numExecutorsToAdd) {
-        numExecutorsToAdd * 2
+        if (conf.getBoolean("spark.dynamicAllocation.interactive", false)
+          && numExecutorsToAdd == 1) {
+          val rampupFraction = conf.getDouble("spark.dynamicAllocation.rampup.fraction", 0.5)
+          (numExecutorsToAdd * rampupFraction * maxNumExecutors).toInt
+        } else {
+          numExecutorsToAdd * 2
+        }
       } else {
         1
       }
