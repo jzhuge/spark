@@ -20,7 +20,7 @@ package org.apache.spark.sql.sources.v2.reader;
 import java.util.List;
 
 import org.apache.spark.annotation.InterfaceStability;
-import org.apache.spark.sql.Row;
+import org.apache.spark.sql.catalyst.InternalRow;
 import org.apache.spark.sql.sources.v2.DataSourceOptions;
 import org.apache.spark.sql.sources.v2.ReadSupport;
 import org.apache.spark.sql.sources.v2.ReadSupportWithSchema;
@@ -40,7 +40,10 @@ import org.apache.spark.sql.types.StructType;
  *   2. Information Reporting. E.g., statistics reporting, ordering reporting, etc.
  *      Names of these interfaces start with `SupportsReporting`.
  *   3. Special scans. E.g, columnar scan, unsafe row scan, etc.
- *      Names of these interfaces start with `SupportsScan`.
+ *      Names of these interfaces start with `SupportsScan`. Note that a reader should only
+ *      implement at most one of the special scans, if more than one special scans are implemented,
+ *      only one of them would be respected, according to the priority list from high to low:
+ *      {@link SupportsScanColumnarBatch}, {@link SupportsDeprecatedScanRow}.
  *
  * If an exception was throw when applying any of these query optimizations, the action will fail
  * and no Spark job will be submitted.
@@ -73,5 +76,5 @@ public interface DataSourceReader {
    * If this method fails (by throwing an exception), the action will fail and no Spark job will be
    * submitted.
    */
-  List<InputPartition<Row>> planInputPartitions();
+  List<InputPartition<InternalRow>> planInputPartitions();
 }

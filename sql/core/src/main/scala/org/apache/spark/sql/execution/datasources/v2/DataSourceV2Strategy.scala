@@ -124,13 +124,8 @@ object DataSourceV2Strategy extends Strategy {
       val filterCondition = postScanFilters.reduceLeftOption(And)
       val withFilter = filterCondition.map(FilterExec(_, scan)).getOrElse(scan)
 
-      val withProjection = if (withFilter.output != project) {
-        ProjectExec(project, withFilter)
-      } else {
-        withFilter
-      }
-
-      withProjection :: Nil
+      // always add the projection, which will produce unsafe rows required by some operators
+      ProjectExec(project, withFilter) :: Nil
 
     case WriteToDataSourceV2(writer, query) =>
       WriteToDataSourceV2Exec(writer, planLater(query)) :: Nil
