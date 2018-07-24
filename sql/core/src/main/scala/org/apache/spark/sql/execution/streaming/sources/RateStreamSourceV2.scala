@@ -25,7 +25,7 @@ import scala.collection.mutable
 import org.json4s.DefaultFormats
 import org.json4s.jackson.Serialization
 
-import org.apache.spark.sql.Row
+import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.util.DateTimeUtils
 import org.apache.spark.sql.execution.streaming.{RateStreamOffset, ValueRunTimeMsPair}
 import org.apache.spark.sql.sources.DataSourceRegister
@@ -50,8 +50,7 @@ class RateSourceProviderV2 extends DataSourceV2 with MicroBatchReadSupport with 
   override def shortName(): String = "ratev2"
 }
 
-class RateStreamMicroBatchReader(options: DataSourceOptions)
-  extends MicroBatchReader {
+class RateStreamMicroBatchReader(options: DataSourceOptions) extends MicroBatchReader {
   implicit val defaultFormats: DefaultFormats = DefaultFormats
 
   val clock = {
@@ -122,7 +121,7 @@ class RateStreamMicroBatchReader(options: DataSourceOptions)
     RateStreamOffset(Serialization.read[Map[Int, ValueRunTimeMsPair]](json))
   }
 
-  override def planInputPartitions(): java.util.List[InputPartition[Row]] = {
+  override def planInputPartitions(): java.util.List[InputPartition[InternalRow]] = {
     val startMap = start.partitionToValueAndRunTimeMs
     val endMap = end.partitionToValueAndRunTimeMs
     endMap.keys.toSeq.map { part =>
@@ -138,7 +137,7 @@ class RateStreamMicroBatchReader(options: DataSourceOptions)
         outTimeMs += msPerPartitionBetweenRows
       }
 
-      RateStreamBatchTask(packedRows).asInstanceOf[InputPartition[Row]]
+      RateStreamBatchTask(packedRows).asInstanceOf[InputPartition[InternalRow]]
     }.toList.asJava
   }
 
@@ -146,11 +145,12 @@ class RateStreamMicroBatchReader(options: DataSourceOptions)
   override def stop(): Unit = {}
 }
 
-case class RateStreamBatchTask(vals: Seq[(Long, Long)]) extends InputPartition[Row] {
-  override def createPartitionReader(): InputPartitionReader[Row] = new RateStreamBatchReader(vals)
+case class RateStreamBatchTask(vals: Seq[(Long, Long)]) extends InputPartition[InternalRow] {
+  override def createPartitionReader(): InputPartitionReader[InternalRow] =
+    new RateStreamBatchReader(vals)
 }
 
-class RateStreamBatchReader(vals: Seq[(Long, Long)]) extends InputPartitionReader[Row] {
+class RateStreamBatchReader(vals: Seq[(Long, Long)]) extends InputPartitionReader[InternalRow] {
   var currentIndex = -1
 
   override def next(): Boolean = {
@@ -159,9 +159,9 @@ class RateStreamBatchReader(vals: Seq[(Long, Long)]) extends InputPartitionReade
     currentIndex < vals.size
   }
 
-  override def get(): Row = {
-    Row(
-      DateTimeUtils.toJavaTimestamp(DateTimeUtils.fromMillis(vals(currentIndex)._1)),
+  override def get(): InternalRow = {
+    InternalRow(
+      DateTimeUtils.fromMillis(vals(currentIndex)._1),
       vals(currentIndex)._2)
   }
 

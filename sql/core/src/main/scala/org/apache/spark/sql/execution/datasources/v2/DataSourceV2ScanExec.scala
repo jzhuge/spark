@@ -64,12 +64,13 @@ case class DataSourceV2ScanExec(
     case _ => super.outputPartitioning
   }
 
-  private lazy val partitions: Seq[InputPartition[UnsafeRow]] = reader match {
-    case r: SupportsScanUnsafeRow => r.planUnsafeInputPartitions().asScala
-    case _ =>
-      reader.planInputPartitions().asScala.map {
-        new RowToUnsafeRowInputPartition(_, reader.readSchema()): InputPartition[UnsafeRow]
+  private lazy val partitions: Seq[InputPartition[InternalRow]] = reader match {
+    case r: SupportsDeprecatedScanRow =>
+      r.planRowInputPartitions().asScala.map {
+        new RowToUnsafeRowInputPartition(_, reader.readSchema()): InputPartition[InternalRow]
       }
+    case _ =>
+      reader.planInputPartitions().asScala
   }
 
   private lazy val inputRDD: RDD[InternalRow] = reader match {
@@ -114,11 +115,11 @@ case class DataSourceV2ScanExec(
 }
 
 class RowToUnsafeRowInputPartition(partition: InputPartition[Row], schema: StructType)
-  extends InputPartition[UnsafeRow] {
+  extends InputPartition[InternalRow] {
 
   override def preferredLocations: Array[String] = partition.preferredLocations
 
-  override def createPartitionReader: InputPartitionReader[UnsafeRow] = {
+  override def createPartitionReader: InputPartitionReader[InternalRow] = {
     new RowToUnsafeInputPartitionReader(
       partition.createPartitionReader, RowEncoder.apply(schema).resolveAndBind())
   }
@@ -128,7 +129,7 @@ class RowToUnsafeInputPartitionReader(
     val rowReader: InputPartitionReader[Row],
     encoder: ExpressionEncoder[Row])
 
-  extends InputPartitionReader[UnsafeRow] {
+  extends InputPartitionReader[InternalRow] {
 
   override def next: Boolean = rowReader.next
 
