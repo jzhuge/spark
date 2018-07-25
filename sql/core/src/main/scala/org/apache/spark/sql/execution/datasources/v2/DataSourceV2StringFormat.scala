@@ -20,8 +20,6 @@ package org.apache.spark.sql.execution.datasources.v2
 import org.apache.commons.lang3.StringUtils
 
 import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression}
-import org.apache.spark.sql.sources.DataSourceRegister
-import org.apache.spark.sql.sources.v2.DataSourceV2
 import org.apache.spark.util.Utils
 
 /**
@@ -31,10 +29,9 @@ import org.apache.spark.util.Utils
 trait DataSourceV2StringFormat {
 
   /**
-   * The instance of this data source implementation. Note that we only consider its class in
-   * equals/hashCode, not the instance itself.
+   * The data source name.
    */
-  def source: DataSourceV2
+  def sourceName: String
 
   /**
    * The output of the data source reader, w.r.t. column pruning.
@@ -50,11 +47,6 @@ trait DataSourceV2StringFormat {
    * The filters which have been pushed to the data source.
    */
   def pushedFilters: Seq[Expression]
-
-  private def sourceName: String = source match {
-    case registered: DataSourceRegister => registered.shortName()
-    case _ => source.getClass.getSimpleName.stripSuffix("$")
-  }
 
   def metadataString: String = {
     val entries = scala.collection.mutable.ArrayBuffer.empty[(String, String)]
