@@ -29,12 +29,12 @@ import org.apache.spark.sql.catalog.v2.V2Relation
 import org.apache.spark.sql.catalyst.TableIdentifier
 import org.apache.spark.sql.catalyst.analysis.UnresolvedRelation
 import org.apache.spark.sql.catalyst.catalog.{BucketSpec, CatalogTable, CatalogTableType}
-import org.apache.spark.sql.catalyst.plans.logical.{AppendData, InsertIntoTable, LogicalPlan, OverwriteOptions, Project}
+import org.apache.spark.sql.catalyst.plans.logical.{AppendData, CreateTableAsSelect, InsertIntoTable, LogicalPlan, OverwriteOptions, Project, ReplaceTableAsSelect}
 import org.apache.spark.sql.execution.SQLExecution
 import org.apache.spark.sql.execution.command.DDLUtils
 import org.apache.spark.sql.execution.datasources.{CreateTable, DataSource}
 import org.apache.spark.sql.execution.datasources.v2.DataSourceV2Relation
-import org.apache.spark.sql.sources.v2.DataSourceV2
+import org.apache.spark.sql.sources.v2.{DataSourceOptions, DataSourceV2}
 import org.apache.spark.sql.types.StructType
 
 /**
@@ -213,6 +213,51 @@ final class DataFrameWriter[T] private[sql](ds: Dataset[T]) {
   def save(): Unit = {
     assertNotBucketed("save")
 
+    import org.apache.spark.sql.sources.v2.DataSourceV2Implicits._
+
+    extraOptions.get("catalog") match {
+      case Some(catalogName) if extraOptions.get(DataSourceOptions.TABLE_KEY).isDefined =>
+        val catalog = df.sparkSession.catalog(catalogName).asTableCatalog
+        val options = extraOptions.toMap
+        val identifier = options.table.get
+        val exists = catalog.tableExists(identifier)
+
+        (exists, mode) match {
+          case (true, SaveMode.ErrorIfExists) =>
+            throw new AnalysisException(s"Table already exists: ${identifier.quotedString}")
+
+          case (true, SaveMode.Overwrite) =>
+            runCommand(df.sparkSession, "save") {
+              ReplaceTableAsSelect(catalog, identifier, Seq.empty, df.logicalPlan, options)
+            }
+
+          case (true, SaveMode.Append) =>
+            val relation = DataSourceV2Relation.create(
+              catalogName, identifier, catalog.loadTable(identifier), options)
+
+            runCommand(df.sparkSession, "save") {
+              AppendData.byName(relation, df.logicalPlan)
+            }
+
+          case (false, SaveMode.Append) =>
+            throw new AnalysisException(s"Table does not exist: ${identifier.quotedString}")
+
+          case (false, SaveMode.ErrorIfExists) |
+               (false, SaveMode.Ignore) |
+               (false, SaveMode.Overwrite) =>
+
+            runCommand(df.sparkSession, "save") {
+              CreateTableAsSelect(catalog, identifier, Seq.empty, df.logicalPlan, options,
+                ignoreIfExists = mode == SaveMode.Ignore)
+            }
+
+          case _ =>
+            return // table exists and mode is ignore
+        }
+
+      case _ =>
+    }
+
     val cls = DataSource.lookupDataSource(source)
     if (classOf[DataSourceV2].isAssignableFrom(cls)) {
       val dataSource = cls.newInstance().asInstanceOf[DataSourceV2]
@@ -237,6 +282,7 @@ final class DataFrameWriter[T] private[sql](ds: Dataset[T]) {
           }
 
         case SaveMode.ErrorIfExists =>
+          // this may end up as CTAS in upstream Spark
           // ErrorIfExists => CTAS or Append with validation
           throw new SparkException("Cannot write: error is not supported")
 

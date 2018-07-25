@@ -32,7 +32,7 @@ import org.apache.spark.sql.execution.datasources.DataSource
 import org.apache.spark.sql.execution.datasources.jdbc._
 import org.apache.spark.sql.execution.datasources.json.InferSchema
 import org.apache.spark.sql.execution.datasources.v2.DataSourceV2Relation
-import org.apache.spark.sql.sources.v2.DataSourceV2
+import org.apache.spark.sql.sources.v2.{DataSourceOptions, DataSourceV2, DataSourceV2Implicits}
 import org.apache.spark.sql.types.StructType
 
 /**
@@ -146,6 +146,21 @@ class DataFrameReader private[sql](sparkSession: SparkSession) extends Logging {
    */
   @scala.annotation.varargs
   def load(paths: String*): DataFrame = {
+    import DataSourceV2Implicits._
+
+    extraOptions.get("catalog") match {
+      case Some(catalogName) if extraOptions.get(DataSourceOptions.TABLE_KEY).isDefined =>
+        val catalog = sparkSession.catalog(catalogName).asTableCatalog
+        val options = extraOptions.toMap
+        val identifier = options.table.get
+
+        return Dataset.ofRows(sparkSession,
+          DataSourceV2Relation.create(
+            catalogName, identifier, catalog.loadTable(identifier), options))
+
+      case _ =>
+    }
+
     val cls = DataSource.lookupDataSource(source)
     if (classOf[DataSourceV2].isAssignableFrom(cls)) {
       val source = cls.newInstance().asInstanceOf[DataSourceV2]

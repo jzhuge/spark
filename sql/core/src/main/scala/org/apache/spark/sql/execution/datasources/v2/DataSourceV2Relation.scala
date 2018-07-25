@@ -17,22 +17,17 @@
 
 package org.apache.spark.sql.execution.datasources.v2
 
-import java.util.UUID
-
-import scala.collection.JavaConverters._
-
-import org.apache.spark.sql.{AnalysisException, SaveMode}
-import org.apache.spark.sql.catalog.v2.V2Relation
+import org.apache.spark.sql.catalog.v2.{Table, V2Relation}
 import org.apache.spark.sql.catalyst.TableIdentifier
 import org.apache.spark.sql.catalyst.analysis.{MultiInstanceRelation, NamedRelation}
 import org.apache.spark.sql.catalyst.catalog.{CatalogRelation, CatalogStorageFormat, CatalogTable, CatalogTableType}
 import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Expression, NamedExpression}
 import org.apache.spark.sql.catalyst.plans.logical.{LeafNode, Statistics, SupportsPhysicalStats}
-import org.apache.spark.sql.sources.DataSourceRegister
-import org.apache.spark.sql.sources.v2.{DataSourceOptions, DataSourceV2, ReadSupport, WriteSupport}
+import org.apache.spark.sql.sources.v2.{DataSourceV2, DataSourceV2Implicits}
 import org.apache.spark.sql.sources.v2.reader._
 import org.apache.spark.sql.sources.v2.writer.DataSourceWriter
 import org.apache.spark.sql.types.StructType
+import org.apache.spark.util.Utils
 
 /**
  * A logical plan representing a data source v2 scan.
@@ -51,7 +46,7 @@ case class DataSourceV2Relation(
   extends LeafNode with MultiInstanceRelation with NamedRelation with CatalogRelation
       with SupportsPhysicalStats with V2Relation {
 
-  import DataSourceV2Relation._
+  import DataSourceV2Implicits._
 
   override def simpleString: String = {
     s"DataSourceV2Relation(source=$source.name, schema=$schema, options=$options)"
@@ -118,69 +113,83 @@ case class DataSourceV2Relation(
   }
 }
 
-object DataSourceV2Relation {
-  implicit class SourceHelpers(source: DataSourceV2) {
-    def asReadSupport: ReadSupport = {
-      source match {
-        case support: ReadSupport =>
-          support
-        case _ =>
-          throw new AnalysisException(s"Data source is not readable: $name")
-      }
-    }
+/**
+ * A logical plan representing a data source v2 table.
+ *
+ * @param ident The table's TableIdentifier.
+ * @param table The table.
+ * @param output The output attributes of the table.
+ * @param options The options for this scan or write.
+ */
+case class TableV2Relation(
+    catalogName: String,
+    ident: TableIdentifier,
+    table: Table,
+    output: Seq[AttributeReference],
+    options: Map[String, String])
+    extends LeafNode with MultiInstanceRelation with NamedRelation with SupportsPhysicalStats {
 
-    def asWriteSupport: WriteSupport = {
-      source match {
-        case support: WriteSupport =>
-          support
-        case _ =>
-          throw new AnalysisException(s"Data source is not writable: $name")
-      }
-    }
+  import DataSourceV2Implicits._
 
-    def name: String = {
-      source match {
-        case registered: DataSourceRegister =>
-          registered.shortName()
-        case _ =>
-          source.getClass.getSimpleName
-      }
-    }
+  override def name: String = ident.unquotedString
 
-    def createReader(
-        options: Map[String, String],
-        userSpecifiedSchema: Option[StructType]): DataSourceReader = {
-      val v2Options = new DataSourceOptions(options.asJava)
-      userSpecifiedSchema match {
-        case Some(s) =>
-          asReadSupport.createReader(s, v2Options)
-        case _ =>
-          asReadSupport.createReader(v2Options)
-      }
-    }
+  override def simpleString: String =
+    s"RelationV2 $name ${Utils.truncatedString(output, "[", ", ", "]")}"
 
-    def createWriter(
-        options: Map[String, String],
-        schema: StructType): DataSourceWriter = {
-      val v2Options = new DataSourceOptions(options.asJava)
-      asWriteSupport.createWriter(UUID.randomUUID.toString, schema, SaveMode.Append, v2Options).get
-    }
+  def newReader(): DataSourceReader = table.createReader(options, None)
+
+  /**
+   * Used to return statistics when filters and projection are available.
+   */
+  override def computeStats(
+      projection: Seq[NamedExpression],
+      filters: Seq[Expression]): Statistics = newReader() match {
+    case r: SupportsReportStatistics =>
+      DataSourceV2Strategy.pushFilters(r, filters)
+      val stats = r.getStatistics
+
+      if (stats.numRows.isPresent) {
+        val numRows = stats.numRows.getAsLong
+        val rowSizeEstimate = projection.map(_.dataType.defaultSize).sum + 8
+        val sizeEstimate = numRows * rowSizeEstimate
+        logInfo(s"Row-based size estimate for $ident: " +
+            s"$numRows rows * $rowSizeEstimate bytes = $sizeEstimate bytes")
+        Statistics(sizeInBytes = sizeEstimate, rowCount = Some(numRows))
+      } else {
+        logInfo(s"Fallback size estimate for $ident: ${stats.sizeInBytes}")
+        Statistics(sizeInBytes = r.getStatistics.sizeInBytes().orElse(conf.defaultSizeInBytes))
+      }
+
+    case _ =>
+      logInfo(s"Default size estimate for $ident: ${conf.defaultSizeInBytes}")
+      Statistics(sizeInBytes = conf.defaultSizeInBytes)
   }
+
+  override def newInstance(): TableV2Relation = {
+    copy(output = output.map(_.newInstance()))
+  }
+}
+
+object DataSourceV2Relation {
+
+  import DataSourceV2Implicits._
 
   def create(
       source: DataSourceV2,
       options: Map[String, String],
       tableIdent: Option[TableIdentifier] = None,
-      userSpecifiedSchema: Option[StructType] = None): DataSourceV2Relation = {
+      userSpecifiedSchema: Option[StructType] = None): NamedRelation = {
     val reader = source.createReader(options, userSpecifiedSchema)
-    val ident = tableIdent.orElse(tableFromOptions(options))
+    val ident = tableIdent.orElse(options.table)
     DataSourceV2Relation(
       source, reader.readSchema().toAttributes, options, ident, userSpecifiedSchema)
   }
 
-  private def tableFromOptions(options: Map[String, String]): Option[TableIdentifier] = {
-    options
-        .get(DataSourceOptions.TABLE_KEY)
-        .map(TableIdentifier(_, options.get(DataSourceOptions.DATABASE_KEY)))
+  def create(
+      catalogName: String,
+      ident: TableIdentifier,
+      table: Table,
+      options: Map[String, String]): NamedRelation = {
+    TableV2Relation(catalogName, ident, table, table.schema.toAttributes, options)
   }
 }
