@@ -20,7 +20,7 @@ package org.apache.spark.sql.test
 import java.io.File
 import java.net.URI
 import java.nio.file.Files
-import java.util.{Locale, UUID}
+import java.util.{Locale, TimeZone, UUID}
 
 import scala.concurrent.duration._
 import scala.language.implicitConversions
@@ -348,6 +348,16 @@ private[sql] trait SQLTestUtilsBase
       f
     } finally {
       Locale.setDefault(originalLocale)
+    }
+  }
+
+  /**
+   * Sets time zone to `newDefaultTimeZone` before executing `f`,
+   * then switches back to the default time zone of JVM after `f` returns.
+   */
+  def withTimeZone(newDefaultTimeZone: String)(f: => Unit): Unit = {
+    DateTimeTestUtils.withDefaultTimeZone(TimeZone.getTimeZone(newDefaultTimeZone)) {
+      f
     }
   }
 

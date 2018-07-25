@@ -24,6 +24,7 @@ import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.plans.logical._
 import org.apache.spark.sql.catalyst.rules._
 import org.apache.spark.sql.catalyst.util.DateTimeUtils
+import org.apache.spark.sql.catalyst.util.NetflixDateTimeUtils.{toDateInt, toLocalDate}
 import org.apache.spark.sql.types._
 
 
@@ -45,9 +46,17 @@ object ReplaceExpressions extends Rule[LogicalPlan] {
 object ComputeCurrentTime extends Rule[LogicalPlan] {
   def apply(plan: LogicalPlan): LogicalPlan = {
     val currentDates = mutable.Map.empty[String, Literal]
+    val currentDateInts = mutable.Map.empty[String, Literal]
+    val currentDateStrings = mutable.Map.empty[String, Literal]
+    val currentTimestamps = mutable.Map.empty[String, Literal]
     val timeExpr = CurrentTimestamp()
     val timestamp = timeExpr.eval(EmptyRow).asInstanceOf[Long]
     val currentTime = Literal.create(timestamp, timeExpr.dataType)
+    val nfTimestampExpr = NfTimestampNow()
+    val nfUnixTimeExpr = NfUnixTimeNow()
+    val nfUnixTimeMsExpr = NfUnixTimeNowMs()
+    val nfUnixTimeNow = Literal.create(nfUnixTimeExpr.eval(EmptyRow), nfUnixTimeExpr.dataType)
+    val nfUnixTimeNowMs = Literal.create(nfUnixTimeMsExpr.eval(EmptyRow), nfUnixTimeMsExpr.dataType)
 
     plan transformAllExpressions {
       case CurrentDate(Some(timeZoneId)) =>
@@ -57,10 +66,36 @@ object ComputeCurrentTime extends Rule[LogicalPlan] {
             DateType)
         })
       case CurrentTimestamp() => currentTime
+      case NfDateIntToday(Some(timeZoneId)) =>
+        currentDateInts.getOrElseUpdate(timeZoneId, {
+          Literal.create(toDateInt(toLocalDate(System.currentTimeMillis(),
+            DateTimeUtils.getTimeZone(timeZoneId).getID)), IntegerType)
+        })
+      case NfDateStringToday(Some(timeZoneId)) =>
+        currentDateStrings.getOrElseUpdate(timeZoneId, {
+          Literal.create(toLocalDate(System.currentTimeMillis(),
+            DateTimeUtils.getTimeZone(timeZoneId).getID).toString, StringType)
+        })
+      case NfDateToday(Some(timeZoneId)) =>
+        currentDates.getOrElseUpdate(timeZoneId, {
+          Literal.create(
+            DateTimeUtils.millisToDays(timestamp / 1000L, DateTimeUtils.getTimeZone(timeZoneId)),
+            DateType)
+        })
+
+      case NfTimestampNow(Some(timeZoneId)) =>
+        currentTimestamps.getOrElseUpdate(timeZoneId, {
+          Literal.create(
+            DateTimeUtils.convertTz(System.currentTimeMillis() * 1000L,
+              DateTimeUtils.defaultTimeZone(), DateTimeUtils.getTimeZone(timeZoneId)),
+            TimestampType)
+        })
+      case NfUnixTimeNow() => nfUnixTimeNow
+      case NfUnixTimeNowMs() => nfUnixTimeNowMs
+
     }
   }
 }
-
 
 /** Replaces the expression of CurrentDatabase with the current database name. */
 case class GetCurrentDatabase(sessionCatalog: SessionCatalog) extends Rule[LogicalPlan] {

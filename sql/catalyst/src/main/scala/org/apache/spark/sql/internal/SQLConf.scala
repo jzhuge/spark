@@ -1244,6 +1244,12 @@ object SQLConf {
       .booleanConf
       .createWithDefault(false)
 
+  val ENABLE_NETFLIX_UDF_STRICT_EVAL = buildConf("spark.sql.enableNetflixUdfStrictEval")
+    .doc("Whether to throw errors or return nulls for incorrect values in Netflix Udfs")
+    .booleanConf
+    .createWithDefault(false)
+
+
   object Deprecated {
     val MAPRED_REDUCE_TASKS = "mapred.reduce.tasks"
   }
@@ -1607,6 +1613,8 @@ class SQLConf extends Serializable with Logging {
 
   def partitionOverwriteMode: PartitionOverwriteMode.Value =
     PartitionOverwriteMode.withName(getConf(PARTITION_OVERWRITE_MODE))
+
+  def enableNetflixUdfStrictEval: Boolean = getConf(ENABLE_NETFLIX_UDF_STRICT_EVAL)
 
   /** ********************** SQLConf functionality methods ************ */
 
