@@ -163,6 +163,7 @@ $(document).ready(function() {
             {name: completedColumnName},
             {name: durationColumnName, type: "title-numeric"},
             {name: 'user'},
+            {name: 'version'},
             {name: 'lastUpdated'},
             {name: 'eventLog'},
           ],

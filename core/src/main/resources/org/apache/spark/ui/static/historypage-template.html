@@ -59,6 +59,11 @@
         </span>
       </th>
       <th>
+        <span data-toggle="tooltip" data-placement="top" title="The Spark version of this application">
+          Version
+        </span>
+      </th>
+      <th>
         <span data-toggle="tooltip" data-placement="top" title="The timestamp of the last updating on this application">
           Last Updated
         </span>
@@ -84,6 +89,7 @@
       <td><span title="{{durationMillisec}}">{{duration}}</span></td>
       {{/showCompletedColumns}}
       <td>{{sparkUser}}</td>
+      <td>{{appSparkVersion}}</td>
       <td>{{lastUpdated}}</td>
       <td><a href="{{log}}" class="btn btn-info btn-mini">Download</a></td>
       {{/attempts}}
