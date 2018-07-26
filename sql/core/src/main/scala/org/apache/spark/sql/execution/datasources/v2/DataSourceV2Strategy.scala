@@ -23,7 +23,7 @@ import org.apache.spark.sql.Strategy
 import org.apache.spark.sql.catalyst.analysis.NamedRelation
 import org.apache.spark.sql.catalyst.expressions.{And, AttributeReference, AttributeSet, Expression}
 import org.apache.spark.sql.catalyst.planning.PhysicalOperation
-import org.apache.spark.sql.catalyst.plans.logical.{AppendData, CreateTableAsSelect, LogicalPlan, ReplaceTableAsSelect}
+import org.apache.spark.sql.catalyst.plans.logical.{AppendData, CreateTableAsSelect, DeleteFrom, LogicalPlan, ReplaceTableAsSelect}
 import org.apache.spark.sql.execution.{FilterExec, ProjectExec, SparkPlan}
 import org.apache.spark.sql.execution.datasources.DataSourceStrategy
 import org.apache.spark.sql.sources.Filter
@@ -150,6 +150,9 @@ object DataSourceV2Strategy extends Strategy {
     case ReplaceTableAsSelect(catalog, ident, partitioning, query, writeOptions) =>
       ReplaceTableAsSelectExec(catalog, ident, partitioning, Map.empty, writeOptions,
         planLater(query)) :: Nil
+
+    case DeleteFrom(rel: TableV2Relation, expr) =>
+      DeleteFromV2Exec(rel, expr) :: Nil
 
     case _ => Nil
   }

@@ -39,12 +39,14 @@ class UnresolvedException[TreeType <: TreeNode[_]](tree: TreeType, function: Str
  */
 case class UnresolvedRelation(
     tableIdentifier: TableIdentifier,
-    alias: Option[String] = None) extends LeafNode {
+    alias: Option[String] = None) extends LeafNode with NamedRelation {
 
   /** Returns a `.` separated name for this relation. */
   def tableName: String = tableIdentifier.unquotedString
 
-  override def output: Seq[Attribute] = Nil
+  def name: String = tableName
+
+  override def output: Seq[AttributeReference] = Nil
 
   override lazy val resolved = false
 }
