@@ -503,7 +503,8 @@ final class DataFrameWriter[T] private[sql](ds: Dataset[T]) {
           provider = Some(source),
           partitionColumnNames = partitioningColumns.getOrElse(Nil),
           bucketSpec = getBucketSpec,
-          tracksPartitionsInCatalog = df.sparkSession.sessionState.conf.manageFilesourcePartitions
+          tracksPartitionsInCatalog = ((isHive || convertParquet) &&
+              df.sparkSession.sessionState.conf.manageFilesourcePartitions)
         )
 
         runCommand(df.sparkSession, "saveAsTable") {
