@@ -29,7 +29,7 @@ import org.apache.spark.sql.catalyst.catalog._
 import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Expression}
 import org.apache.spark.sql.catalyst.plans.logical.{LeafNode, LogicalPlan, Statistics}
 import org.apache.spark.sql.sources.DataSourceRegister
-import org.apache.spark.sql.sources.v2._
+import org.apache.spark.sql.sources.v2.{DataSourceOptions, DataSourceV2, ReadSupport, WriteSupport}
 import org.apache.spark.sql.sources.v2.reader.{DataSourceReader, SupportsReportStatistics}
 import org.apache.spark.sql.types.StructType
 
@@ -136,22 +136,6 @@ object DataSourceV2Relation {
       source match {
         case support: ReadSupport =>
           support
-        case _: ReadSupportWithSchema =>
-          // this method is only called if there is no user-supplied schema. if there is no
-          // user-supplied schema and ReadSupport was not implemented, throw a helpful exception.
-          throw new AnalysisException(s"Data source requires a user-supplied schema: $name")
-        case _ =>
-          throw new AnalysisException(s"Data source is not readable: $name")
-      }
-    }
-
-    def asReadSupportWithSchema: ReadSupportWithSchema = {
-      source match {
-        case support: ReadSupportWithSchema =>
-          support
-        case _: ReadSupport =>
-          throw new AnalysisException(
-            s"Data source does not support user-supplied schema: $name")
         case _ =>
           throw new AnalysisException(s"Data source is not readable: $name")
       }
@@ -181,7 +165,7 @@ object DataSourceV2Relation {
         userSpecifiedSchema: Option[StructType]): DataSourceReader = {
       userSpecifiedSchema match {
         case Some(s) =>
-          asReadSupportWithSchema.createReader(s, v2Options)
+          asReadSupport.createReader(s, v2Options)
         case _ =>
           asReadSupport.createReader(v2Options)
       }
