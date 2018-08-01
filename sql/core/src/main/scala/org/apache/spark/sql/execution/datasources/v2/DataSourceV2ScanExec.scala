@@ -20,15 +20,12 @@ package org.apache.spark.sql.execution.datasources.v2
 import scala.collection.JavaConverters._
 
 import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.Row
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.encoders.{ExpressionEncoder, RowEncoder}
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.execution.LeafExecNode
 import org.apache.spark.sql.execution.metric.SQLMetrics
 import org.apache.spark.sql.sources.v2.DataSourceV2
 import org.apache.spark.sql.sources.v2.reader._
-import org.apache.spark.sql.types.StructType
 
 /**
  * Physical plan node for scanning data from a data source.
@@ -54,13 +51,8 @@ case class DataSourceV2ScanExec(
     Seq(output, source, options).hashCode()
   }
 
-  private lazy val partitions: Seq[InputPartition[InternalRow]] = reader match {
-    case r: SupportsDeprecatedScanRow =>
-      r.planRowInputPartitions().asScala.map {
-        new RowToUnsafeRowInputPartition(_, reader.readSchema()): InputPartition[InternalRow]
-      }
-    case _ =>
-      reader.planInputPartitions().asScala
+  private lazy val partitions: Seq[InputPartition[InternalRow]] = {
+    reader.planInputPartitions().asScala
   }
 
   private lazy val inputRDD: RDD[InternalRow] = reader match {
@@ -78,28 +70,4 @@ case class DataSourceV2ScanExec(
       r
     }
   }
-}
-
-class RowToUnsafeRowInputPartition(partition: InputPartition[Row], schema: StructType)
-  extends InputPartition[InternalRow] {
-
-  override def preferredLocations: Array[String] = partition.preferredLocations
-
-  override def createPartitionReader: InputPartitionReader[InternalRow] = {
-    new RowToUnsafeInputPartitionReader(
-      partition.createPartitionReader, RowEncoder.apply(schema).resolveAndBind())
-  }
-}
-
-class RowToUnsafeInputPartitionReader(
-    val rowReader: InputPartitionReader[Row],
-    encoder: ExpressionEncoder[Row])
-
-  extends InputPartitionReader[InternalRow] {
-
-  override def next: Boolean = rowReader.next
-
-  override def get: UnsafeRow = encoder.toRow(rowReader.get).asInstanceOf[UnsafeRow]
-
-  override def close(): Unit = rowReader.close()
 }
