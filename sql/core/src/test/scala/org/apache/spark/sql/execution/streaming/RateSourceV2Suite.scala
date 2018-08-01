@@ -22,7 +22,6 @@ import java.util.concurrent.TimeUnit
 
 import scala.collection.JavaConverters._
 
-import org.apache.spark.sql.Row
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.execution.datasources.DataSource
 import org.apache.spark.sql.execution.streaming.continuous._
@@ -138,7 +137,7 @@ class RateSourceV2Suite extends StreamTest {
     assert(tasks.size == 11)
 
     val readData = tasks.asScala
-      .map(_.createPartitionReader())
+        .map(_.createPartitionReader())
       .flatMap { reader =>
         val buf = scala.collection.mutable.ListBuffer[InternalRow]()
         while (reader.next()) buf.append(reader.get())
@@ -162,10 +161,10 @@ class RateSourceV2Suite extends StreamTest {
     val reader = new RateStreamContinuousReader(
       new DataSourceOptions(Map("numPartitions" -> "2", "rowsPerSecond" -> "20").asJava))
     reader.setStartOffset(Optional.empty())
-    val tasks = reader.planRowInputPartitions()
+    val tasks = reader.planInputPartitions()
     assert(tasks.size == 2)
 
-    val data = scala.collection.mutable.ListBuffer[Row]()
+    val data = scala.collection.mutable.ListBuffer[InternalRow]()
     tasks.asScala.foreach {
       case t: RateStreamContinuousInputPartition =>
         val startTimeMs = reader.getStartOffset()
