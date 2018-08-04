@@ -23,6 +23,7 @@ import java.sql.Timestamp
 import java.util.concurrent.atomic.AtomicBoolean
 
 import org.apache.spark.{AccumulatorSuite, SparkException}
+
 import org.apache.spark.scheduler.{SparkListener, SparkListenerJobStart}
 import org.apache.spark.sql.catalyst.util.StringUtils
 import org.apache.spark.sql.execution.aggregate
@@ -2924,6 +2925,37 @@ class SQLQuerySuite extends QueryTest with SharedSQLContext {
       }
     }
 
+  }
+
+  test("SPARK-24940: coalesce and repartition hint") {
+    withTempView("nums1") {
+      val numPartitionsSrc = 10
+      spark.range(0, 100, 1, numPartitionsSrc).createOrReplaceTempView("nums1")
+      assert(spark.table("nums1").rdd.getNumPartitions == numPartitionsSrc)
+
+      withTable("nums") {
+        sql("CREATE TABLE nums (id INT) USING parquet")
+
+        Seq(5, 20, 2).foreach { numPartitions =>
+          sql(
+            s"""
+               |INSERT OVERWRITE TABLE nums
+               |SELECT /*+ REPARTITION($numPartitions) */ *
+               |FROM nums1
+             """.stripMargin)
+          assert(spark.table("nums").inputFiles.length == numPartitions)
+
+          sql(
+            s"""
+               |INSERT OVERWRITE TABLE nums
+               |SELECT /*+ COALESCE($numPartitions) */ *
+               |FROM nums1
+             """.stripMargin)
+          // Coalesce can not increase the number of partitions
+          assert(spark.table("nums").inputFiles.length == Seq(numPartitions, numPartitionsSrc).min)
+        }
+      }
+    }
   }
 }
 
