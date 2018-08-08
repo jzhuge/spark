@@ -25,12 +25,11 @@ import java.util.Properties
 import java.util.concurrent.{ConcurrentHashMap, TimeUnit}
 import javax.annotation.concurrent.GuardedBy
 
-import com.codahale.metrics.Histogram
-
 import scala.collection.JavaConverters._
 import scala.collection.mutable.{ArrayBuffer, HashMap}
 import scala.util.control.NonFatal
 
+import com.codahale.metrics.Histogram
 import com.netflix.bdp
 
 import org.apache.spark._
