@@ -22,7 +22,7 @@ import scala.collection.mutable
 import org.apache.spark.sql.{SaveMode, Strategy}
 import org.apache.spark.sql.catalyst.expressions.{And, AttributeReference, AttributeSet, Expression}
 import org.apache.spark.sql.catalyst.planning.PhysicalOperation
-import org.apache.spark.sql.catalyst.plans.logical.{InsertIntoTable, LogicalPlan}
+import org.apache.spark.sql.catalyst.plans.logical.{AppendData, InsertIntoTable, LogicalPlan}
 import org.apache.spark.sql.execution.{FilterExec, ProjectExec, SparkPlan}
 import org.apache.spark.sql.execution.datasources.DataSourceStrategy
 import org.apache.spark.sql.sources.Filter
@@ -101,6 +101,7 @@ object DataSourceV2Strategy extends Strategy {
     }
   }
 
+  import DataSourceV2Relation._
 
   override def apply(plan: LogicalPlan): Seq[SparkPlan] = plan match {
     case PhysicalOperation(project, filters, relation: DataSourceV2Relation) =>
@@ -127,10 +128,11 @@ object DataSourceV2Strategy extends Strategy {
       // always add the projection, which will produce unsafe rows required by some operators
       ProjectExec(project, withFilter) :: Nil
 
-    case WriteToDataSourceV2(writer, query) =>
-      WriteToDataSourceV2Exec(writer, planLater(query)) :: Nil
+    case AppendData(r: DataSourceV2Relation, query, _) =>
+      WriteToDataSourceV2Exec(r.newWriter(), planLater(query)) :: Nil
 
     case InsertIntoTable(relation: DataSourceV2Relation, _, child, overwrite, ifNotExists, _) =>
+      // TODO!
       val mode = (overwrite.enabled, ifNotExists) match {
         case (false, true) =>
           SaveMode.Ignore
@@ -141,7 +143,8 @@ object DataSourceV2Strategy extends Strategy {
         case (true, true) =>
           SaveMode.ErrorIfExists
       }
-      WriteToDataSourceV2Exec(relation.newWriter(child.schema, mode).get, planLater(child)) :: Nil
+      WriteToDataSourceV2Exec(
+        relation.newWriter(), planLater(child)) :: Nil
 
     case _ => Nil
   }

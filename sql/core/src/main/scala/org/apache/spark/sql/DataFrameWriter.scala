@@ -23,11 +23,12 @@ import scala.collection.JavaConverters._
 
 import org.apache.hadoop.fs.Path
 
+import org.apache.spark.SparkException
 import org.apache.spark.annotation.InterfaceStability
 import org.apache.spark.sql.catalyst.TableIdentifier
 import org.apache.spark.sql.catalyst.analysis.UnresolvedRelation
 import org.apache.spark.sql.catalyst.catalog.{BucketSpec, CatalogTable, CatalogTableType}
-import org.apache.spark.sql.catalyst.plans.logical.{InsertIntoTable, LogicalPlan, OverwriteOptions, Project}
+import org.apache.spark.sql.catalyst.plans.logical.{AppendData, InsertIntoTable, LogicalPlan, OverwriteOptions, Project}
 import org.apache.spark.sql.execution.SQLExecution
 import org.apache.spark.sql.execution.command.DDLUtils
 import org.apache.spark.sql.execution.datasources.{CreateTable, DataSource}
@@ -214,15 +215,6 @@ final class DataFrameWriter[T] private[sql](ds: Dataset[T]) {
     val cls = DataSource.lookupDataSource(source)
     if (classOf[DataSourceV2].isAssignableFrom(cls)) {
       val dataSource = cls.newInstance().asInstanceOf[DataSourceV2]
-      extraOptions.put("fromDataFrame", "true")
-
-      if (!extraOptions.contains("insertSafeCasts")) {
-        extraOptions.put("insertSafeCasts",
-          df.sparkSession.sessionState.conf.getConfString("spark.sql.insertSafeCasts", "false"))
-      }
-
-      // save variants always match columns by name
-      extraOptions.put("matchByName", "true")
 
       val options: Map[String, String] = extraOptions.get("path") match {
         case Some(path) if !path.contains("/") =>
@@ -236,31 +228,24 @@ final class DataFrameWriter[T] private[sql](ds: Dataset[T]) {
           extraOptions.toMap
       }
 
-      val partitions = normalizedParCols.map(_.map(col => col -> (None: Option[String])).toMap)
-      val relation = DataSourceV2Relation.create(dataSource, options)
-
-      val (overwrite, ifNotExists) = mode match {
-        case SaveMode.Ignore =>
-          if (relation.newWriter(df.logicalPlan.schema, mode).isEmpty) {
-            return
-          }
-          (false, false)
+      mode match {
         case SaveMode.Append =>
-          (false, false)
-        case SaveMode.Overwrite =>
-          (true, false)
-        case SaveMode.ErrorIfExists =>
-          (true, true)
-      }
+          val relation = DataSourceV2Relation.create(dataSource, options)
+          runCommand(df.sparkSession, "save") {
+            AppendData.byName(relation, df.logicalPlan)
+          }
 
-      runCommand(df.sparkSession, "save") {
-        InsertIntoTable(
-          relation,
-          partitions.getOrElse(Map.empty),
-          df.logicalPlan,
-          overwrite = OverwriteOptions(enabled = overwrite),
-          ifNotExists = ifNotExists,
-          extraOptions.toMap)
+        case SaveMode.ErrorIfExists =>
+          // ErrorIfexists => CTAS
+          throw new SparkException(s"Cannot write: error is not supported")
+
+        case SaveMode.Ignore =>
+          // Ignore => if the table exists, do nothing
+          throw new SparkException(s"Cannot write: ignore is not supported")
+
+        case SaveMode.Overwrite =>
+          // Overwrite => overwrite partitions -- in upstream this will be overwrite table
+          throw new SparkException(s"Cannot write: overwrite is not supported")
       }
 
     } else {

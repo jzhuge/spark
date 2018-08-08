@@ -23,7 +23,7 @@ import scala.collection.JavaConverters._
 
 import org.apache.spark.sql.{AnalysisException, SaveMode}
 import org.apache.spark.sql.catalyst.TableIdentifier
-import org.apache.spark.sql.catalyst.analysis.MultiInstanceRelation
+import org.apache.spark.sql.catalyst.analysis.{MultiInstanceRelation, NamedRelation}
 import org.apache.spark.sql.catalyst.catalog.{CatalogRelation, CatalogStorageFormat, CatalogTable, CatalogTableType}
 import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Expression, NamedExpression}
 import org.apache.spark.sql.catalyst.plans.logical.{LeafNode, Statistics, SupportsPhysicalStats}
@@ -45,8 +45,10 @@ case class DataSourceV2Relation(
     source: DataSourceV2,
     output: Seq[AttributeReference],
     options: Map[String, String],
-    userSpecifiedSchema: Option[StructType])
-  extends LeafNode with MultiInstanceRelation with CatalogRelation with SupportsPhysicalStats {
+    tableIdent: Option[TableIdentifier] = None,
+    userSpecifiedSchema: Option[StructType] = None)
+  extends LeafNode with MultiInstanceRelation with NamedRelation with CatalogRelation
+      with SupportsPhysicalStats {
 
   import DataSourceV2Relation._
 
@@ -54,13 +56,13 @@ case class DataSourceV2Relation(
     s"DataSourceV2Relation(source=$source.name, schema=$schema, options=$options)"
   }
 
+  override def name: String = {
+    tableIdent.map(_.unquotedString).getOrElse(s"${source.name}:unknown")
+  }
+
   def newReader(): DataSourceReader = source.createReader(options, userSpecifiedSchema)
 
-  def newWriter(dfSchema: StructType, mode: SaveMode): Option[DataSourceWriter] = {
-    val writer = source.asWriteSupport.createWriter(
-      UUID.randomUUID.toString, dfSchema, mode, new DataSourceOptions(options.asJava))
-    if (writer.isPresent) Some(writer.get()) else None
-  }
+  def newWriter(): DataSourceWriter = source.createWriter(options, schema)
 
   override def newInstance(): DataSourceV2Relation = {
     copy(output = output.map(_.newInstance()))
@@ -116,7 +118,7 @@ case class DataSourceV2Relation(
 }
 
 object DataSourceV2Relation {
-  private implicit class SourceHelpers(source: DataSourceV2) {
+  implicit class SourceHelpers(source: DataSourceV2) {
     def asReadSupport: ReadSupport = {
       source match {
         case support: ReadSupport =>
@@ -155,13 +157,29 @@ object DataSourceV2Relation {
           asReadSupport.createReader(v2Options)
       }
     }
+
+    def createWriter(
+        options: Map[String, String],
+        schema: StructType): DataSourceWriter = {
+      val v2Options = new DataSourceOptions(options.asJava)
+      asWriteSupport.createWriter(UUID.randomUUID.toString, schema, SaveMode.Append, v2Options).get
+    }
   }
 
   def create(
       source: DataSourceV2,
       options: Map[String, String],
+      tableIdent: Option[TableIdentifier] = None,
       userSpecifiedSchema: Option[StructType] = None): DataSourceV2Relation = {
     val reader = source.createReader(options, userSpecifiedSchema)
-    DataSourceV2Relation(source, reader.readSchema().toAttributes, options, userSpecifiedSchema)
+    val ident = tableIdent.orElse(tableFromOptions(options))
+    DataSourceV2Relation(
+      source, reader.readSchema().toAttributes, options, ident, userSpecifiedSchema)
+  }
+
+  private def tableFromOptions(options: Map[String, String]): Option[TableIdentifier] = {
+    options
+        .get(DataSourceOptions.TABLE_KEY)
+        .map(TableIdentifier(_, options.get(DataSourceOptions.DATABASE_KEY)))
   }
 }

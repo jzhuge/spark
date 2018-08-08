@@ -20,7 +20,7 @@ package org.apache.spark.sql.catalyst.plans.logical
 import scala.collection.mutable.ArrayBuffer
 
 import org.apache.spark.sql.catalyst.TableIdentifier
-import org.apache.spark.sql.catalyst.analysis.MultiInstanceRelation
+import org.apache.spark.sql.catalyst.analysis.{MultiInstanceRelation, NamedRelation}
 import org.apache.spark.sql.catalyst.catalog.CatalogTypes
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.expressions.aggregate.AggregateExpression
@@ -394,6 +394,37 @@ case class OverwriteOptions(
     staticPartitionKeys: CatalogTypes.TablePartitionSpec = Map.empty) {
   if (staticPartitionKeys.nonEmpty) {
     assert(enabled, "Overwrite must be enabled when specifying specific partitions.")
+  }
+}
+
+/**
+ * Append data to an existing table.
+ */
+case class AppendData(
+    table: NamedRelation,
+    query: LogicalPlan,
+    isByName: Boolean) extends LogicalPlan {
+  override def children: Seq[LogicalPlan] = Seq(query)
+  override def output: Seq[Attribute] = Seq.empty
+
+  override lazy val resolved: Boolean = {
+    query.output.size == table.output.size && query.output.zip(table.output).forall {
+      case (inAttr, outAttr) =>
+          // names and types must match, nullability must be compatible
+          inAttr.name == outAttr.name &&
+          DataType.equalsIgnoreCompatibleNullability(outAttr.dataType, inAttr.dataType) &&
+          (outAttr.nullable || !inAttr.nullable)
+    }
+  }
+}
+
+object AppendData {
+  def byName(table: NamedRelation, df: LogicalPlan): AppendData = {
+    new AppendData(table, df, true)
+  }
+
+  def byPosition(table: NamedRelation, query: LogicalPlan): AppendData = {
+    new AppendData(table, query, false)
   }
 }
 
