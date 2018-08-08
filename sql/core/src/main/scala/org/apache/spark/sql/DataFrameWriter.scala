@@ -23,11 +23,12 @@ import scala.collection.JavaConverters._
 
 import org.apache.hadoop.fs.Path
 
+import org.apache.spark.SparkException
 import org.apache.spark.annotation.InterfaceStability
 import org.apache.spark.sql.catalyst.TableIdentifier
 import org.apache.spark.sql.catalyst.analysis.{EliminateSubqueryAliases, UnresolvedRelation}
 import org.apache.spark.sql.catalyst.catalog._
-import org.apache.spark.sql.catalyst.plans.logical.{AnalysisBarrier, InsertIntoTable, LogicalPlan, Project}
+import org.apache.spark.sql.catalyst.plans.logical.{AppendData, InsertIntoTable, LogicalPlan, Project}
 import org.apache.spark.sql.execution.SQLExecution
 import org.apache.spark.sql.execution.command.DDLUtils
 import org.apache.spark.sql.execution.datasources.{CreateTable, DataSource, LogicalRelation}
@@ -240,20 +241,9 @@ final class DataFrameWriter[T] private[sql](ds: Dataset[T]) {
 
     val cls = DataSource.lookupDataSource(source, df.sparkSession.sessionState.conf)
     if (classOf[DataSourceV2].isAssignableFrom(cls)) {
-      val ds = cls.newInstance()
-      ds match {
+      val dataSource = cls.newInstance().asInstanceOf[DataSourceV2]
+      dataSource match {
         case ws: WriteSupport =>
-          val dataSource = ds.asInstanceOf[DataSourceV2]
-          extraOptions.put("fromDataFrame", "true")
-
-          if (!extraOptions.contains("insertSafeCasts")) {
-            extraOptions.put("insertSafeCasts",
-              df.sparkSession.sessionState.conf.getConfString("spark.sql.insertSafeCasts", "false"))
-          }
-
-          // save variants always match columns by name
-          extraOptions.put("matchByName", "true")
-
           val (pathOption, tableOption) = extraOptions.get("path") match {
             case Some(path) if !path.contains("/") =>
               // without "/", this cannot be a full path. parse it as a table name
@@ -268,36 +258,28 @@ final class DataFrameWriter[T] private[sql](ds: Dataset[T]) {
           }
 
           val sessionOptions = DataSourceV2Utils.extractSessionConfigs(
-            ds = ds.asInstanceOf[DataSourceV2],
+            ds = dataSource,
             conf = df.sparkSession.sessionState.conf)
           val options = sessionOptions ++ extraOptions
 
-          val partitions = normalizedParCols.map(_.map(col => col -> (None: Option[String])).toMap)
-          val relation = DataSourceV2Relation.create(dataSource, options, pathOption,
-            tableOption)
-
-          val (overwrite, ifNotExists) = mode match {
-            case SaveMode.Ignore =>
-              if (relation.writer(df.planWithBarrier.schema, mode).isEmpty) {
-                return
-              }
-              (false, false)
+          mode match {
             case SaveMode.Append =>
-              (false, false)
-            case SaveMode.Overwrite =>
-              (true, false)
-            case SaveMode.ErrorIfExists =>
-              (true, true)
-          }
+              val relation = DataSourceV2Relation.create(dataSource, options)
+              runCommand(df.sparkSession, "save") {
+                AppendData.byName(relation, df.logicalPlan)
+              }
 
-          runCommand(df.sparkSession, "save") {
-            InsertIntoTable(
-              table = relation,
-              partition = partitions.getOrElse(Map.empty),
-              query = df.planWithBarrier,
-              overwrite = overwrite,
-              ifPartitionNotExists = ifNotExists,
-              options = options)
+            case SaveMode.ErrorIfExists =>
+              // ErrorIfexists => CTAS
+              throw new SparkException(s"Cannot write: error is not supported")
+
+            case SaveMode.Ignore =>
+              // Ignore => if the table exists, do nothing
+              throw new SparkException(s"Cannot write: ignore is not supported")
+
+            case SaveMode.Overwrite =>
+              // Overwrite => overwrite partitions -- in upstream this will be overwrite table
+              throw new SparkException(s"Cannot write: overwrite is not supported")
           }
 
         // Streaming also uses the data source V2 API. So it may be that the data source implements

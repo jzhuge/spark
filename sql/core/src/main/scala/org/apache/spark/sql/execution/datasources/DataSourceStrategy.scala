@@ -252,7 +252,7 @@ class FindDataSourceTable(sparkSession: SparkSession) extends Rule[LogicalPlan] 
 
   private def readHiveTable(table: CatalogTable): LogicalPlan = {
     if (table.properties.get("table_type").exists("iceberg".equalsIgnoreCase)) {
-      DataSourceV2Relation.create(icebergTables, Map.empty, table = Some(table.identifier))
+      DataSourceV2Relation.create(icebergTables, Map.empty, tableIdent = Some(table.identifier))
     } else {
       HiveTableRelation(
           table,
