@@ -189,7 +189,7 @@ class DataSourceV2Suite extends QueryTest with SharedSQLContext {
         assert(spark.read.format(cls.getName).option("path", path).load().collect().isEmpty)
 
         spark.range(10).select('id as 'i, -'id as 'j).write.format(cls.getName)
-          .option("path", path).save()
+          .option("path", path).mode("append").save()
         checkAnswer(
           spark.read.format(cls.getName).option("path", path).load(),
           spark.range(10).select('id, -'id))
@@ -201,23 +201,24 @@ class DataSourceV2Suite extends QueryTest with SharedSQLContext {
           spark.read.format(cls.getName).option("path", path).load(),
           spark.range(10).union(spark.range(10)).select('id, -'id))
 
-        spark.range(5).select('id as 'i, -'id as 'j).write.format(cls.getName)
-          .option("path", path).mode("overwrite").save()
-        checkAnswer(
-          spark.read.format(cls.getName).option("path", path).load(),
-          spark.range(5).select('id, -'id))
-
-        spark.range(5).select('id as 'i, -'id as 'j).write.format(cls.getName)
-          .option("path", path).mode("ignore").save()
-        checkAnswer(
-          spark.read.format(cls.getName).option("path", path).load(),
-          spark.range(5).select('id, -'id))
-
-        val e = intercept[Exception] {
-          spark.range(5).select('id as 'i, -'id as 'j).write.format(cls.getName)
-            .option("path", path).mode("error").save()
+        Seq("error", "overwrite", "ignore").foreach { mode =>
+          val e = intercept[Exception] {
+            spark.range(5).select('id as 'i, -'id as 'j).write.format(cls.getName)
+              .option("path", path).mode(mode).save()
+          }
+          assert(e.getMessage.contains(s"$mode is not supported"))
         }
-        assert(e.getMessage.contains("data already exists"))
+      }
+    }
+  }
+
+  test("simple writable data source partial writes") {
+    // TODO: java implementation.
+    Seq(classOf[SimpleWritableDataSource]).foreach { cls =>
+      withTempPath { file =>
+        val path = file.getCanonicalPath
+        assert(spark.read.format(cls.getName).option("path", path).load().collect().isEmpty)
+
 
         // test transaction
         val failingUdf = org.apache.spark.sql.functions.udf {
@@ -231,9 +232,9 @@ class DataSourceV2Suite extends QueryTest with SharedSQLContext {
           }
         }
         // this input data will fail to read middle way.
-        val input = spark.range(10).select(failingUdf('id).as('i)).select('i as 'i, -'i as 'j)
+        val input = spark.range(10).select(failingUdf('id).as('i)).select('i, -'i as 'j)
         val e2 = intercept[SparkException] {
-          input.write.format(cls.getName).option("path", path).mode("overwrite").save()
+          input.write.format(cls.getName).option("path", path).mode("append").save()
         }
         assert(e2.getMessage.contains("Writing job aborted"))
         // make sure we don't have partial data.
@@ -288,8 +289,8 @@ class DataSourceV2Suite extends QueryTest with SharedSQLContext {
         assert(spark.read.format(cls.getName).option("path", path).load().collect().isEmpty)
 
         val numPartition = 6
-        spark.range(0, 10, 1, numPartition).select('id as 'i, -'id as 'j).write.format(cls.getName)
-          .option("path", path).save()
+        spark.range(0, 10, 1, numPartition).select('id as 'i, -'id as 'j).write
+          .format(cls.getName).mode("append").option("path", path).save()
         checkAnswer(
           spark.read.format(cls.getName).option("path", path).load(),
           spark.range(10).select('id, -'id))

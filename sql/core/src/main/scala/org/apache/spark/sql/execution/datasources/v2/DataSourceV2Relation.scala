@@ -24,13 +24,14 @@ import scala.collection.mutable
 
 import org.apache.spark.sql.{AnalysisException, SaveMode}
 import org.apache.spark.sql.catalyst.TableIdentifier
-import org.apache.spark.sql.catalyst.analysis.MultiInstanceRelation
+import org.apache.spark.sql.catalyst.analysis.{MultiInstanceRelation, NamedRelation}
 import org.apache.spark.sql.catalyst.catalog._
 import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Expression}
 import org.apache.spark.sql.catalyst.plans.logical.{LeafNode, LogicalPlan, Statistics}
 import org.apache.spark.sql.sources.DataSourceRegister
 import org.apache.spark.sql.sources.v2.{DataSourceOptions, DataSourceV2, ReadSupport, WriteSupport}
 import org.apache.spark.sql.sources.v2.reader.{DataSourceReader, SupportsReportStatistics}
+import org.apache.spark.sql.sources.v2.writer.DataSourceWriter
 import org.apache.spark.sql.types.StructType
 
 /**
@@ -46,17 +47,25 @@ case class DataSourceV2Relation(
     output: Seq[AttributeReference],
     options: Map[String, String],
     path: Option[String] = None,
-    table: Option[TableIdentifier] = None,
+    tableIdent: Option[TableIdentifier] = None,
     userSpecifiedSchema: Option[StructType] = None)
-  extends LeafNode with MultiInstanceRelation with CatalogRelation with DataSourceV2StringFormat {
+  extends LeafNode
+    with MultiInstanceRelation
+    with NamedRelation
+    with CatalogRelation
+    with DataSourceV2StringFormat {
 
   import DataSourceV2Relation._
+
+  override def name: String = {
+    tableIdent.map(_.unquotedString).getOrElse(s"${source.name}:unknown")
+  }
 
   override def pushedFilters: Seq[Expression] = Seq.empty
 
   override def simpleString: String = "RelationV2 " + metadataString
 
-  lazy val v2Options: DataSourceOptions = makeV2Options(options, path, table)
+  lazy val v2Options: DataSourceOptions = makeV2Options(options, path, tableIdent)
 
   def newReader(): DataSourceReader = source.createReader(options, v2Options, userSpecifiedSchema)
 
@@ -66,6 +75,8 @@ case class DataSourceV2Relation(
     if (writer.isPresent) Some(writer.get()) else None
   }
 
+  def newWriter(): DataSourceWriter = source.createWriter(options, schema)
+
   override def computeStats(): Statistics = newReader match {
     case r: SupportsReportStatistics =>
       Statistics(sizeInBytes = r.getStatistics.sizeInBytes().orElse(conf.defaultSizeInBytes))
@@ -74,7 +85,7 @@ case class DataSourceV2Relation(
   }
 
   override def catalogTable: CatalogTable = CatalogTable(
-    table.getOrElse(path
+    tableIdent.getOrElse(path
         .map(p => TableIdentifier(p.substring(p.lastIndexOf("/") + 1)))
         .getOrElse(TableIdentifier("unknown"))),
     CatalogTableType.EXTERNAL,
@@ -131,7 +142,7 @@ case class StreamingDataSourceV2Relation(
 }
 
 object DataSourceV2Relation {
-  private implicit class SourceHelpers(source: DataSourceV2) {
+  implicit class SourceHelpers(source: DataSourceV2) {
     def asReadSupport: ReadSupport = {
       source match {
         case support: ReadSupport =>
@@ -170,6 +181,13 @@ object DataSourceV2Relation {
           asReadSupport.createReader(v2Options)
       }
     }
+
+    def createWriter(
+        options: Map[String, String],
+        schema: StructType): DataSourceWriter = {
+      val v2Options = new DataSourceOptions(options.asJava)
+      asWriteSupport.createWriter(UUID.randomUUID.toString, schema, SaveMode.Append, v2Options).get
+    }
   }
 
   private def makeV2Options(options: Map[String, String], path: Option[String],
@@ -192,11 +210,18 @@ object DataSourceV2Relation {
       source: DataSourceV2,
       options: Map[String, String],
       path: Option[String] = None,
-      table: Option[TableIdentifier] = None,
+      tableIdent: Option[TableIdentifier] = None,
       userSpecifiedSchema: Option[StructType] = None): DataSourceV2Relation = {
-    val v2Options = makeV2Options(options, path, table)
+    val v2Options = makeV2Options(options, path, tableIdent)
     val reader = source.createReader(options, v2Options, userSpecifiedSchema)
+    val ident = tableIdent.orElse(tableFromOptions(options))
     DataSourceV2Relation(
-      source, reader.readSchema().toAttributes, options, path, table, userSpecifiedSchema)
+      source, reader.readSchema().toAttributes, options, path, ident, userSpecifiedSchema)
+  }
+
+  private def tableFromOptions(options: Map[String, String]): Option[TableIdentifier] = {
+    options
+        .get(DataSourceOptions.TABLE_KEY)
+        .map(TableIdentifier(_, options.get(DataSourceOptions.DATABASE_KEY)))
   }
 }

@@ -22,7 +22,7 @@ import scala.collection.mutable
 import org.apache.spark.sql.{sources, SaveMode, Strategy}
 import org.apache.spark.sql.catalyst.expressions.{And, AttributeReference, AttributeSet, Expression}
 import org.apache.spark.sql.catalyst.planning.PhysicalOperation
-import org.apache.spark.sql.catalyst.plans.logical.{InsertIntoTable, LogicalPlan}
+import org.apache.spark.sql.catalyst.plans.logical.{AppendData, InsertIntoTable, LogicalPlan}
 import org.apache.spark.sql.execution.{FilterExec, ProjectExec, SparkPlan}
 import org.apache.spark.sql.execution.datasources.DataSourceStrategy
 import org.apache.spark.sql.sources.v2.reader.{DataSourceReader, SupportsPushDownCatalystFilters, SupportsPushDownFilters, SupportsPushDownRequiredColumns}
@@ -134,7 +134,11 @@ object DataSourceV2Strategy extends Strategy {
     case WriteToDataSourceV2(writer, query) =>
       WriteToDataSourceV2Exec(writer, planLater(query)) :: Nil
 
+    case AppendData(r: DataSourceV2Relation, query, _) =>
+      WriteToDataSourceV2Exec(r.newWriter(), planLater(query)) :: Nil
+
     case InsertIntoTable(relation: DataSourceV2Relation, _, child, overwrite, ifNotExists, _) =>
+      // TODO!
       val mode = (overwrite, ifNotExists) match {
         case (false, true) =>
           SaveMode.Ignore
