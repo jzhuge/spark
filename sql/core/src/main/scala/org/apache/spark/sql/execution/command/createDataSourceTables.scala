@@ -75,12 +75,12 @@ case class CreateDataSourceTableCommand(table: CatalogTable, ignoreIfExists: Boo
         hadoopConf, sparkSession.sparkContext.applicationId, catalog)
 
       val nonIdentityPartitions = table.partitionColumnNames.filter {
-        case Year(_) => true
-        case Month(_) => true
-        case Day(_) => true
-        case Hour(_) => true
-        case Bucket(_, _) => true
-        case Truncate(_, _) => true
+        case Year(name) if table.schema.fieldNames.contains(name) => true
+        case Month(name) if table.schema.fieldNames.contains(name) => true
+        case Day(name) if table.schema.fieldNames.contains(name) => true
+        case Hour(name) if table.schema.fieldNames.contains(name) => true
+        case Bucket(name, _) if table.schema.fieldNames.contains(name) => true
+        case Truncate(name, _) if table.schema.fieldNames.contains(name) => true
         case _ => false
       }.toSet
 
@@ -92,18 +92,20 @@ case class CreateDataSourceTableCommand(table: CatalogTable, ignoreIfExists: Boo
       val schema = SparkSchemaUtil.convert(baseSchema)
       val specBuilder = PartitionSpec.builderFor(schema)
       table.partitionColumnNames.foreach {
-        case Year(name) =>
+        case Year(name) if schema.findField(name) != null =>
           specBuilder.year(name)
-        case Month(name) =>
+        case Month(name) if schema.findField(name) != null =>
           specBuilder.month(name)
-        case Day(name) =>
+        case Day(name) if schema.findField(name) != null =>
           specBuilder.day(name)
-        case Hour(name) =>
+        case Hour(name) if schema.findField(name) != null =>
           specBuilder.hour(name)
-        case Bucket(name, numBuckets) =>
+        case Bucket(name, numBuckets) if schema.findField(name) != null =>
           specBuilder.bucket(name, numBuckets.toInt)
-        case Truncate(name, width) =>
+        case Truncate(name, width) if schema.findField(name) != null =>
           specBuilder.truncate(name, width.toInt)
+        case Identity(name) if schema.findField(name) != null =>
+          specBuilder.identity(name)
         case name: String =>
           specBuilder.identity(name)
         case other =>
@@ -179,6 +181,7 @@ case class CreateDataSourceTableCommand(table: CatalogTable, ignoreIfExists: Boo
 }
 
 object CreateDataSourceTableCommand {
+  lazy val Identity = "^(\\w+)_identity$".r
   lazy val Year = "^(\\w+)_year$".r
   lazy val Month = "^(\\w+)_month$".r
   lazy val Day = "^(\\w+)_day$".r
