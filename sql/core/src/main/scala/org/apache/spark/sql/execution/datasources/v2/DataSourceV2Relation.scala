@@ -27,8 +27,8 @@ import org.apache.spark.sql.catalog.v2.V2Relation
 import org.apache.spark.sql.catalyst.TableIdentifier
 import org.apache.spark.sql.catalyst.analysis.{MultiInstanceRelation, NamedRelation}
 import org.apache.spark.sql.catalyst.catalog._
-import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Expression}
-import org.apache.spark.sql.catalyst.plans.logical.{LeafNode, LogicalPlan, Statistics}
+import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Expression, NamedExpression}
+import org.apache.spark.sql.catalyst.plans.logical.{LeafNode, LogicalPlan, Statistics, SupportsPhysicalStats}
 import org.apache.spark.sql.sources.DataSourceRegister
 import org.apache.spark.sql.sources.v2.{DataSourceOptions, DataSourceV2, ReadSupport, WriteSupport}
 import org.apache.spark.sql.sources.v2.reader.{DataSourceReader, SupportsReportStatistics}
@@ -54,6 +54,7 @@ case class DataSourceV2Relation(
     with NamedRelation
     with CatalogRelation
     with V2Relation
+    with SupportsPhysicalStats
     with DataSourceV2StringFormat {
 
   import DataSourceV2Relation._
@@ -88,6 +89,33 @@ case class DataSourceV2Relation(
     schema,
     Some(source.name)
   )
+
+  /**
+   * Used to return statistics when filters and projection are available.
+   */
+  override def computeStats(
+      projection: Seq[NamedExpression],
+      filters: Seq[Expression]): Statistics = newReader() match {
+      case r: SupportsReportStatistics =>
+        DataSourceV2Strategy.pushFilters(r, filters)
+        val stats = r.getStatistics
+
+        if (stats.numRows.isPresent) {
+          val numRows = stats.numRows.getAsLong
+          val rowSizeEstimate = projection.map(_.dataType.defaultSize).sum + 8
+          val sizeEstimate = numRows * rowSizeEstimate
+          logInfo(s"Row-based size estimate for ${catalogTable.identifier}: " +
+            s"$numRows rows * $rowSizeEstimate bytes = $sizeEstimate bytes")
+          Statistics(sizeInBytes = sizeEstimate, rowCount = Some(numRows))
+        } else {
+          logInfo(s"Fallback size estimate for ${catalogTable.identifier}: ${stats.sizeInBytes}")
+          Statistics(sizeInBytes = r.getStatistics.sizeInBytes().orElse(conf.defaultSizeInBytes))
+        }
+
+      case _ =>
+        logInfo(s"Default size estimate for ${catalogTable.identifier}: ${conf.defaultSizeInBytes}")
+        Statistics(sizeInBytes = conf.defaultSizeInBytes)
+    }
 
   override def computeStats(): Statistics = newReader match {
     case r: SupportsReportStatistics =>

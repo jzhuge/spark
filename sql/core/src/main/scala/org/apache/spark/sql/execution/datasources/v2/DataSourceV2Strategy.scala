@@ -34,7 +34,7 @@ object DataSourceV2Strategy extends Strategy {
    *
    * @return pushed filter and post-scan filters.
    */
-  private def pushFilters(
+  def pushFilters(
       reader: DataSourceReader,
       filters: Seq[Expression]): (Seq[Expression], Seq[Expression]) = {
     reader match {
