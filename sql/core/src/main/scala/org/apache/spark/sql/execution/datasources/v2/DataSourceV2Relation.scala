@@ -25,8 +25,8 @@ import scala.collection.mutable
 import org.apache.spark.sql.{AnalysisException, SaveMode}
 import org.apache.spark.sql.catalyst.TableIdentifier
 import org.apache.spark.sql.catalyst.catalog.{CatalogRelation, CatalogStorageFormat, CatalogTable, CatalogTableType}
-import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Expression}
-import org.apache.spark.sql.catalyst.plans.logical.{LeafNode, Statistics}
+import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Expression, NamedExpression}
+import org.apache.spark.sql.catalyst.plans.logical.{LeafNode, Statistics, SupportsPhysicalStats}
 import org.apache.spark.sql.execution.datasources.DataSourceStrategy
 import org.apache.spark.sql.sources.{DataSourceRegister, Filter}
 import org.apache.spark.sql.sources.v2.{DataSourceOptions, DataSourceV2, ReadSupport, ReadSupportWithSchema, WriteSupport}
@@ -41,7 +41,8 @@ case class DataSourceV2Relation(
     table: Option[TableIdentifier] = None,
     projection: Option[Seq[AttributeReference]] = None,
     filters: Option[Seq[Expression]] = None,
-    userSchema: Option[StructType] = None) extends LeafNode with CatalogRelation {
+    userSchema: Option[StructType] = None) extends LeafNode with CatalogRelation
+    with SupportsPhysicalStats {
 
   override def simpleString: String = {
     s"DataSourceV2Relation(source=$sourceName, schema=$schema, options=$options)"
@@ -159,8 +160,36 @@ case class DataSourceV2Relation(
 
   override def canEqual(other: Any): Boolean = other.isInstanceOf[DataSourceV2Relation]
 
-  // this overrides computeStats added in b1d719e7c9faeb5661a7e712b3ecefca56bf356f (not backported)
-  def computeStats(): Statistics = reader match {
+  /**
+   * Used to return statistics when filters and projection are available.
+   */
+  override def computeStats(
+      projection: Seq[NamedExpression],
+      filters: Seq[Expression]): Statistics = {
+    asReadSupport.createReader(v2Options) match {
+      case r: SupportsReportStatistics =>
+        DataSourceV2Relation.pushFilters(r, filters)
+        val stats = r.getStatistics
+
+        if (stats.numRows.isPresent) {
+          val numRows = stats.numRows.getAsLong
+          val rowSizeEstimate = projection.map(_.dataType.defaultSize).sum + 8
+          val sizeEstimate = numRows * rowSizeEstimate
+          logInfo(s"Row-based size estimate for ${catalogTable.identifier}: " +
+              s"$numRows rows * $rowSizeEstimate bytes = $sizeEstimate bytes")
+          Statistics(sizeInBytes = sizeEstimate, rowCount = Some(numRows))
+        } else {
+          logInfo(s"Fallback size estimate for ${catalogTable.identifier}: ${stats.sizeInBytes}")
+          Statistics(sizeInBytes = r.getStatistics.sizeInBytes().orElse(conf.defaultSizeInBytes))
+        }
+
+      case _ =>
+        logInfo(s"Default size estimate for ${catalogTable.identifier}: ${conf.defaultSizeInBytes}")
+        Statistics(sizeInBytes = conf.defaultSizeInBytes)
+    }
+  }
+
+  override def statistics: Statistics = reader match {
     case r: SupportsReportStatistics =>
       Statistics(sizeInBytes = r.getStatistics.sizeInBytes().orElse(conf.defaultSizeInBytes))
     case _ =>
