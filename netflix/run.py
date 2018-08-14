@@ -311,6 +311,8 @@ def main(command_args):
         spark_args.append('spark.scheduler.defaultpool.mode=fair')
         spark_args.append('--conf')
         spark_args.append('spark.dynamicAllocation.interactive=true')
+        spark_args.append('--jars')
+        spark_args.append(os.environ['QUERY_SERVICE_LITE_JAR'])
         spark_args.append('--class')
         spark_args.append('com.netflix.queryservice.SparkQueryServer')
         spark_args.append(os.environ['QUERY_SERVICE_LITE_JAR'])
