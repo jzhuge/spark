@@ -22,15 +22,18 @@ import java.util.Locale.ENGLISH
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeUnit.{DAYS, MILLISECONDS}
 
-import org.joda.time.chrono.ISOChronology
 import org.joda.time.DateTimeField
 import org.joda.time.DateTimeZone.UTC
+import org.joda.time.chrono.ISOChronology
 import org.joda.time.format.DateTimeFormat
 
 import org.apache.spark.sql.catalyst.util.QuarterOfYearDateTimeField.QUARTER_OF_YEAR
+import org.apache.spark.sql.types._
+import org.apache.spark.unsafe.types.UTF8String
 
 object NetflixDateTimeUtils {
 
+  val DATE_INT_THRESHOLD = 100000000
   val DATE_INT_FORMAT = "yyyyMMdd"
   val DEFAULT_DUMMY_ARGUMENT = "-"
   val UTC_CHRONOLOGY = ISOChronology.getInstance(UTC)
@@ -38,7 +41,7 @@ object NetflixDateTimeUtils {
 
   // Convert a dateint in the format 'yyyyMMdd' to Java local date
   def toLocalDate(dateInt: Int): LocalDate = {
-    if (dateInt >= 10000000 && dateInt < 100000000) {
+    if (dateInt >= 10000000 && dateInt < DATE_INT_THRESHOLD) {
       LocalDate.of(dateInt / 10000, dateInt / 100 % 100, dateInt % 100)
     } else {
       throw new IllegalArgumentException("Input must have eight digits in the format 'yyyyMMdd'")
@@ -79,13 +82,13 @@ object NetflixDateTimeUtils {
       case "week" =>
          chronology.weekOfWeekyear
       case "quarter" =>
-        QUARTER_OF_YEAR.getField(UTC_CHRONOLOGY)
+        QUARTER_OF_YEAR.getField(chronology)
       case "month" =>
          chronology.monthOfYear
       case "year" =>
          chronology.year
-      case _ => throw new Exception("Invalid Argument: '" + unitString +
-        "' is not a valid DATE field")
+      case _ => throw new IllegalArgumentException("Invalid Argument: '" + unitString +
+        "' is not a valid Date field")
     }
   }
 
@@ -105,32 +108,110 @@ object NetflixDateTimeUtils {
       case "week" =>
          chronology.weekOfWeekyear
       case "quarter" =>
-        QUARTER_OF_YEAR.getField(UTC_CHRONOLOGY)
+        QUARTER_OF_YEAR.getField(chronology)
       case "month" =>
          chronology.monthOfYear
       case "year" =>
          chronology.year()
-      case _ => throw new Exception("Invalid Argument: '" + unitString +
+      case _ => throw new IllegalArgumentException("Invalid Argument: '" + unitString +
         "' is not a valid Timestamp field")
     }
   }
 
-  def addFieldValueTimestamp(unit: String, value: Long, timestamp: Long): Long = {
-    getTimestampField(ISOChronology.getInstance(), unit).add(timestamp, value.toInt)
+  abstract class EpochMillis(var epochMillis: Long) {
+    def add(value: Long, unit: String): Any = {
+      epochMillis = getField(unit).add(epochMillis, value)
+      toOutput
+    }
+
+    def diff(that: EpochMillis, unit: String): Long = {
+      getField(unit).getDifferenceAsLong(that.epochMillis, epochMillis)
+    }
+
+    protected def getField(unit: String): DateTimeField
+    protected def toOutput: Any
+
+    override def toString: String = s"Output: ${toOutput.toString}, Epoch (ms): ${epochMillis}"
   }
 
-  def addFieldValueDate(unit: String, value: Long, date: Long): Long = {
-    TimeUnit.MILLISECONDS.toDays(getDateField(ISOChronology.getInstance(), unit)
-      .add(TimeUnit.DAYS.toMillis(date), value.toInt))
+  abstract class EpochDate(epochDay: Long) extends EpochMillis(DAYS.toMillis(epochDay)) {
+    protected def epochDays: Long = MILLISECONDS.toDays(epochMillis)
+    override def getField(unit: String): DateTimeField = getDateField(UTC_CHRONOLOGY, unit)
   }
 
-  def diffDate(unit: String, date1: Long, date2: Long): Long = {
-    getDateField(UTC_CHRONOLOGY, unit).getDifferenceAsLong(DAYS.toMillis(date2),
-      DAYS.toMillis(date1))
+  class EpochDateInteger(dateint: Long)
+    extends EpochDate(toLocalDate(dateint.toInt).toEpochDay) {
+    def toOutput: Any = toDateInt(LocalDate.ofEpochDay(epochDays))
   }
 
-  def diffTimestamp(unit: String, timestamp1: Long, timestamp2: Long): Long = {
-    getTimestampField(UTC_CHRONOLOGY, unit).getDifferenceAsLong(timestamp2, timestamp1)
+  class EpochDateLong(dateint: Long)
+    extends EpochDate(toLocalDate(dateint.toInt).toEpochDay) {
+    def toOutput: Any = toDateInt(LocalDate.ofEpochDay(epochDays)).toLong
+  }
+
+  class EpochDateString8(dateint: String)
+    extends EpochDate(toLocalDate(dateint, DATE_INT_FORMAT).toEpochDay) {
+    def toOutput: Any = UTF8String.fromString(toDateInt(LocalDate.ofEpochDay(epochDays)).toString)
+  }
+
+  class EpochDateString10(dateint: String)
+    extends EpochDate(LocalDate.parse(dateint).toEpochDay) {
+    def toOutput: Any = UTF8String.fromString(LocalDate.ofEpochDay(epochDays).toString)
+  }
+
+  class EpochDateObject(epochDay2: Int)
+    extends EpochDate(epochDay2) {
+    def toOutput: Any = epochDays.toInt
+  }
+
+  abstract class EpochTimestamp(epochMs: Long) extends EpochMillis(epochMs) {
+    override def getField(unit: String): DateTimeField = getTimestampField(UTC_CHRONOLOGY, unit)
+  }
+
+  class EpochTimestampInteger(epochMs: Long) extends EpochTimestamp(epochMs) {
+    def toOutput: Any = epochMillis.toInt
+  }
+
+  class EpochTimestampLong(epochMs2: Long)
+    extends EpochTimestamp(epochMs2) {
+    def toOutput: Any = epochMillis
+  }
+
+  class EpochTimestampString(timestamp: UTF8String)
+    extends EpochTimestamp(DateTimeUtils.stringToTimestamp(timestamp).map(_ / 1000L).getOrElse(
+      throw new IllegalArgumentException("Could not convert string to timestamp"))) {
+    def toOutput: Any = UTF8String.fromString(DateTimeUtils.timestampToString(epochMillis * 1000L))
+  }
+
+  class EpochTimestampObject(epochUs: Long)
+    extends EpochTimestamp(epochUs / 1000L) {
+    def toOutput: Any = epochMillis * 1000L
+  }
+
+  def fromInput(input: Any, inputDataType: DataType): Any = (input, inputDataType) match {
+    case (ms: Int, IntegerType) if ms > DATE_INT_THRESHOLD =>
+      new EpochTimestampInteger(ms)
+    case (dateint: Int, IntegerType) if dateint <= DATE_INT_THRESHOLD =>
+      new EpochDateInteger(dateint)
+    case (ms: Long, LongType) if ms > DATE_INT_THRESHOLD =>
+      new EpochTimestampLong(ms)
+    case (dateint: Long, LongType) if dateint <= DATE_INT_THRESHOLD =>
+      new EpochDateLong(dateint)
+    case (u8s: UTF8String, StringType) =>
+      val s = u8s.toString
+      s.length match {
+        case 8 =>
+          new EpochDateString8(s)
+        case 10 =>
+          new EpochDateString10(s)
+        case _ =>
+          // Assume its timestamp represented as a string
+          new EpochTimestampString(u8s)
+      }
+    case (d: Int, DateType) =>
+      new EpochDateObject(d)
+    case (us: Long, TimestampType) =>
+      new EpochTimestampObject(us)
   }
 
   def truncateDate(unit: String, date: Long): Long = {

@@ -27,35 +27,7 @@ import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.codegen.CodegenFallback
 import org.apache.spark.sql.catalyst.util.DateTimeUtils
 import org.apache.spark.sql.catalyst.util.DateTimeUtils.SQLTimestamp
-import org.apache.spark.sql.catalyst.util.NetflixDateTimeUtils.addFieldValueDate
-import org.apache.spark.sql.catalyst.util.NetflixDateTimeUtils.addFieldValueTimestamp
-import org.apache.spark.sql.catalyst.util.NetflixDateTimeUtils.DATE_INT_FORMAT
-import org.apache.spark.sql.catalyst.util.NetflixDateTimeUtils.dayFromDate
-import org.apache.spark.sql.catalyst.util.NetflixDateTimeUtils.dayFromTimestamp
-import org.apache.spark.sql.catalyst.util.NetflixDateTimeUtils.DEFAULT_DUMMY_ARGUMENT
-import org.apache.spark.sql.catalyst.util.NetflixDateTimeUtils.diffDate
-import org.apache.spark.sql.catalyst.util.NetflixDateTimeUtils.diffTimestamp
-import org.apache.spark.sql.catalyst.util.NetflixDateTimeUtils.formatDatetime
-import org.apache.spark.sql.catalyst.util.NetflixDateTimeUtils.hourFromTimestamp
-import org.apache.spark.sql.catalyst.util.NetflixDateTimeUtils.millisecondFromTimestamp
-import org.apache.spark.sql.catalyst.util.NetflixDateTimeUtils.minuteFromTimestamp
-import org.apache.spark.sql.catalyst.util.NetflixDateTimeUtils.monthFromDate
-import org.apache.spark.sql.catalyst.util.NetflixDateTimeUtils.monthFromTimestamp
-import org.apache.spark.sql.catalyst.util.NetflixDateTimeUtils.quarterFromDate
-import org.apache.spark.sql.catalyst.util.NetflixDateTimeUtils.quarterFromTimestamp
-import org.apache.spark.sql.catalyst.util.NetflixDateTimeUtils.secondFromTimestamp
-import org.apache.spark.sql.catalyst.util.NetflixDateTimeUtils.toDateInt
-import org.apache.spark.sql.catalyst.util.NetflixDateTimeUtils.toLocalDate
-import org.apache.spark.sql.catalyst.util.NetflixDateTimeUtils.toLocalDateTime
-import org.apache.spark.sql.catalyst.util.NetflixDateTimeUtils.toUnixTime
-import org.apache.spark.sql.catalyst.util.NetflixDateTimeUtils.toUnixTimeMs
-import org.apache.spark.sql.catalyst.util.NetflixDateTimeUtils.truncateDate
-import org.apache.spark.sql.catalyst.util.NetflixDateTimeUtils.truncateTimestamp
-import org.apache.spark.sql.catalyst.util.NetflixDateTimeUtils.UTC_CHRONOLOGY
-import org.apache.spark.sql.catalyst.util.NetflixDateTimeUtils.weekFromDate
-import org.apache.spark.sql.catalyst.util.NetflixDateTimeUtils.weekFromTimestamp
-import org.apache.spark.sql.catalyst.util.NetflixDateTimeUtils.yearFromDate
-import org.apache.spark.sql.catalyst.util.NetflixDateTimeUtils.yearFromTimestamp
+import org.apache.spark.sql.catalyst.util.NetflixDateTimeUtils._
 import org.apache.spark.sql.types._
 import org.apache.spark.unsafe.types.UTF8String
 
@@ -416,13 +388,12 @@ case class NfToUnixTimeMs(left: Expression, right: Expression) extends BinaryExp
     "Also allows formatting the timestamp in a given format")
 case class NfFromUnixTime(left: Expression, right: Expression) extends BinaryExpression
   with CodegenFallback with ImplicitCastInputTypes {
-  override def dataType: DataType = {
-     if (right.eval().toString.equals(DEFAULT_DUMMY_ARGUMENT)) {
+  override def dataType: DataType = right match {
+    case Literal(u8s: UTF8String, _) if u8s.toString == DEFAULT_DUMMY_ARGUMENT =>
       TimestampType
-    } else {
+    case _ =>
       StringType
     }
-  }
   override def inputTypes: Seq[AbstractDataType] = Seq(LongType, StringType)
 
   def this(date: Expression) = {
@@ -446,12 +417,11 @@ case class NfFromUnixTime(left: Expression, right: Expression) extends BinaryExp
     "Also allows formatting the timestamp in a given format")
 case class NfFromUnixTimeMs(left: Expression, right: Expression) extends BinaryExpression
   with CodegenFallback with ImplicitCastInputTypes {
-  override def dataType: DataType = {
-    if (right.eval().toString.equals(DEFAULT_DUMMY_ARGUMENT)) {
+  override def dataType: DataType = right match {
+    case Literal(u8s: UTF8String, _) if u8s.toString == DEFAULT_DUMMY_ARGUMENT =>
       TimestampType
-    } else {
+    case _ =>
       StringType
-    }
   }
   override def inputTypes: Seq[AbstractDataType] = Seq(LongType, StringType)
 
@@ -685,104 +655,60 @@ case class NfDateAdd(param1: Expression, param2: Expression, param3: Expression)
 
   override def children: Seq[Expression] = Seq(param1, param2, param3)
 
-  override def dataType: DataType = {
-      if (param3.eval().toString.equals(DEFAULT_DUMMY_ARGUMENT)) {
-        param1.dataType
-      } else {
-        param3.dataType
-      }
-  }
+  override def dataType: DataType = param3.dataType
 
   def this(param1: Expression, param2: Expression) = {
-    this(param1, param2, Literal(DEFAULT_DUMMY_ARGUMENT))
+    this(Literal("day"), param2, param1)
   }
 
   protected override def nullSafeEval(first: Any, second: Any, third: Any): Any = {
-    var unit: String = "day"
-    var input = first
-    var inputDataType = param1.dataType
-    val value: Long = if (param2.dataType.equals(IntegerType)) {
-      second.asInstanceOf[Int].toLong
-    } else if (param2.dataType.equals(LongType)) {
-      second.asInstanceOf[Long]
-    } else {
-      // Second argument is an offset expression
-      def offsetExpression: String = second.asInstanceOf[UTF8String].toString
-      val offsetPattern = Pattern.compile("([+-]?\\d+)(['yMd'])")
-      val matcher = offsetPattern.matcher(offsetExpression)
-      if (!matcher.matches) {
-        throw new IllegalArgumentException("invalid offset expression " + offsetExpression)
-      }
-      val unitExpr = matcher.group(2)
-      unit = unitExpr match {
-        case "y" =>
-          "year"
-        case "M" =>
-          "month"
-        case "d" =>
-          "day"
-        case _ =>
+    val unitFirst = first match {
+      case u8s: UTF8String => u8s.toString
+      case _ => throw new IllegalArgumentException("The unit type should be string")
+    }
+
+    val (value, unit) = (second, param2.dataType) match {
+      case (i: Int, IntegerType) =>
+        (i.toLong, unitFirst)
+      case (l: Long, LongType) =>
+        (l, unitFirst)
+      case (u8s: UTF8String, StringType) =>
+        // Second argument is an offset expression
+        def offsetExpression = u8s.toString
+
+        val offsetPattern = Pattern.compile("([+-]?\\d+)(['yMd'])")
+        val matcher = offsetPattern.matcher(offsetExpression)
+        if (!matcher.matches) {
           throw new IllegalArgumentException("Invalid offset expression " + offsetExpression)
-      }
-      matcher.group(1).toLong
+        }
+        val v = matcher.group(1).toLong
+        matcher.group(2) match {
+          case "y" =>
+            (v, "year")
+          case "M" =>
+            (v, "month")
+          case "d" =>
+            (v, "day")
+          case _ =>
+            throw new IllegalArgumentException("Invalid offset expression " + offsetExpression)
+        }
+      case _ => throw new IllegalArgumentException("Invalid offset input type")
     }
 
-    if (!param3.eval().toString.equals(DEFAULT_DUMMY_ARGUMENT)) {
-      // Three arguments
-      unit = first.asInstanceOf[UTF8String].toString
-      input = third
-      inputDataType = param3.dataType
-    }
-
-    inputDataType match {
-      case LongType | IntegerType =>
-        var dateLong: Long = -1
-        if (inputDataType.equals(IntegerType)) {
-          dateLong = input.asInstanceOf[Int].toLong
-        } else {
-          dateLong = input.asInstanceOf[Long]
-        }
-        if (dateLong > 100000000) {
-          addFieldValueTimestamp(unit, value, dateLong)
-        } else {
-          toDateInt(LocalDate.ofEpochDay(addFieldValueDate(unit, value,
-            toLocalDate(dateLong.toInt).toEpochDay)))
-        }
-
-      case StringType =>
-        val dateString: String = input.asInstanceOf[UTF8String].toString
-        if (dateString.length() == 8) {
-          UTF8String.fromString(toDateInt(LocalDate.ofEpochDay(addFieldValueDate(unit, value,
-            toLocalDate(dateString, DATE_INT_FORMAT).toEpochDay))).toString)
-        } else if (dateString.length() == 10) {
-          UTF8String.fromString(LocalDate.ofEpochDay(addFieldValueDate(unit, value,
-            LocalDate.parse(dateString).toEpochDay)).toString)
-        } else {
-          // Assume its timestamp represented as a string
-          val timestampOption = DateTimeUtils.stringToTimestamp(input.asInstanceOf[UTF8String])
-          if (timestampOption.isEmpty) {
-            throw new IllegalArgumentException("Could not convert string to timestamp")
-          }
-          val timestamp: SQLTimestamp = timestampOption.get
-          val epochMicros = timestamp.asInstanceOf[Long]
-          UTF8String.fromString(DateTimeUtils.timestampToString(addFieldValueTimestamp(unit,
-            value, epochMicros / 1000L) * 1000L))
-        }
-
-      case DateType =>
-        val epochDays = input.asInstanceOf[Int]
-        addFieldValueDate(unit, value, epochDays).toInt
-
-      case TimestampType =>
-        val epochMicros: Long = input.asInstanceOf[Long]
-        addFieldValueTimestamp(unit, value, epochMicros / 1000L) * 1000L
-
+    fromInput(third, param3.dataType) match {
+      case em: EpochMillis =>
+        em.add(value, unit)
       case _ =>
-        throw new IllegalArgumentException("Invalid input type " + inputDataType)
-      }
+        throw new IllegalArgumentException("Invalid input type")
     }
+  }
 
   override def prettyName: String = "nf_dateadd"
+}
+
+object NfDateAdd {
+  def apply(param1: Expression, param2: Expression): NfDateAdd =
+    new NfDateAdd(param1, param2)
 }
 
 @ExpressionDescription(
@@ -797,96 +723,48 @@ case class NfDateDiff(param1: Expression, param2: Expression, param3: Expression
   override def dataType: DataType = LongType
 
   def this(param1: Expression, param2: Expression) = {
-    this(param1, param2, Literal(DEFAULT_DUMMY_ARGUMENT))
+    this(Literal("day"), param1, param2)
   }
 
   protected override def nullSafeEval(first: Any, second: Any, third: Any): Any = {
-    var input1 = first
-    var input2 = second
-    var unit: String = "day"
-    if (param3.eval().toString.equals(DEFAULT_DUMMY_ARGUMENT)) {
-      // Two arguments
-      if (param1.dataType != param2.dataType) {
-        throw new IllegalArgumentException("Both the inputs should be of the same type")
-      }
-    } else {
-      // Three arguments
-      if (param2.dataType != param3.dataType) {
-        throw new IllegalArgumentException("Both the inputs should be of the same type")
-      }
-        input1 = second
-        input2 = third
-        unit = first.asInstanceOf[UTF8String].toString
-      }
+    val unit = first match {
+      case u8s: UTF8String => u8s.toString
+      case _ => throw new IllegalArgumentException("The unit type should be string")
+    }
 
-      def inputDataType: DataType = param2.dataType
-      inputDataType match {
-        case LongType | IntegerType =>
-          var dateLong1: Long = -1
-          var dateLong2: Long = -1
-          if (inputDataType.equals(IntegerType)) {
-            dateLong1 = input1.asInstanceOf[Int].toLong
-            dateLong2 = input2.asInstanceOf[Int].toLong
-          } else {
-            dateLong1 = input1.asInstanceOf[Long]
-            dateLong2 = input2.asInstanceOf[Long]
-          }
-          if (dateLong1 > 100000000) {
-            diffTimestamp(unit, dateLong1, dateLong2)
-          } else {
-            diffDate(unit, toLocalDate(dateLong1.toInt).toEpochDay,
-              toLocalDate(dateLong2.toInt).toEpochDay)
-          }
+    def canDiff(em1: EpochMillis, em2: EpochMillis): Boolean = (em1, em2) match {
+      case (_: EpochDateInteger, _: EpochDateInteger) => true
+      case (_: EpochDateInteger, _: EpochDateLong) => true
+      case (_: EpochDateLong, _: EpochDateInteger) => true
+      case (_: EpochDateLong, _: EpochDateLong) => true
+      case (_: EpochDateString8, _: EpochDateString8) => true
+      case (_: EpochDateString10, _: EpochDateString10) => true
+      case (_: EpochDateObject, _: EpochDateObject) => true
+      case (_: EpochTimestampInteger, _: EpochTimestampInteger) => true
+      case (_: EpochTimestampLong, _: EpochTimestampInteger) => true
+      case (_: EpochTimestampInteger, _: EpochTimestampLong) => true
+      case (_: EpochTimestampLong, _: EpochTimestampLong) => true
+      case (_: EpochTimestampString, _: EpochTimestampString) => true
+      case (_: EpochTimestampObject, _: EpochTimestampObject) => true
+      case _ => false
+    }
 
-        case StringType =>
-          val dateString1: String = input1.asInstanceOf[UTF8String].toString
-          val dateString2: String = input2.asInstanceOf[UTF8String].toString
-          if (dateString1.length() == 8) {
-            if (dateString2.length != 8) {
-              throw new IllegalArgumentException("Both inputs must be in the same format")
-            }
-            diffDate(unit, toLocalDate(dateString1, DATE_INT_FORMAT).toEpochDay,
-              toLocalDate(dateString2, DATE_INT_FORMAT).toEpochDay)
-          } else if (dateString1.length() == 10) {
-            if (dateString2.length != 10) {
-              throw new IllegalArgumentException("Both inputs must be in the same format")
-            }
-            diffDate(unit, LocalDate.parse(dateString1).toEpochDay,
-              LocalDate.parse(dateString2).toEpochDay)
-          } else {
-            // Assume its timestamp represented as a string
-            val timestampOption1 = DateTimeUtils.stringToTimestamp(
-              input1.asInstanceOf[UTF8String])
-            if (timestampOption1.isEmpty) {
-              throw new IllegalArgumentException("Could not convert string to timestamp")
-            }
-            val timestamp1: SQLTimestamp = timestampOption1.get
-            val timestampOption2 = DateTimeUtils.stringToTimestamp(
-              input2.asInstanceOf[UTF8String])
-            if (timestampOption2.isEmpty) {
-              throw new IllegalArgumentException("Could not convert string to timestamp")
-            }
-            val timestamp2: SQLTimestamp = timestampOption2.get
-            val epochMicros1 = timestamp1.asInstanceOf[Long]
-            val epochMicros2 = timestamp2.asInstanceOf[Long]
-            diffTimestamp(unit, epochMicros1 / 1000L, epochMicros2 / 1000L)
-          }
+    (fromInput(second, param2.dataType), fromInput(third, param3.dataType)) match {
+      case (em1: EpochMillis, em2: EpochMillis) if canDiff(em1, em2) =>
+        em1.diff(em2, unit)
+      case (em1: EpochMillis, em2: EpochMillis) if !canDiff(em1, em2) =>
+        throw new IllegalArgumentException("Both inputs should have the same type")
+      case _ =>
+        throw new IllegalArgumentException("Invalid input type")
+    }
+  }
 
-        case DateType =>
-          val epochDays1 = input1.asInstanceOf[Int]
-          val epochDays2 = input2.asInstanceOf[Int]
-          diffDate(unit, epochDays1, epochDays2)
-
-        case TimestampType =>
-          val epochMicros1: Long = input1.asInstanceOf[Long]
-          val epochMicros2: Long = input2.asInstanceOf[Long]
-          diffTimestamp(unit, epochMicros1 / 1000L, epochMicros2 / 1000L)
-
-        case _ =>
-          throw new IllegalArgumentException("Invalid input type " + inputDataType)
-        }
-      }
   override def prettyName: String = "nf_datediff"
+}
+
+object NfDateDiff {
+  def apply(param1: Expression, param2: Expression): NfDateDiff =
+    new NfDateDiff(param1, param2)
 }
 
 @ExpressionDescription(
