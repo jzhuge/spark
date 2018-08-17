@@ -23,6 +23,7 @@ import scala.collection.JavaConverters._
 import scala.collection.mutable
 
 import org.apache.spark.sql.{AnalysisException, SaveMode}
+import org.apache.spark.sql.catalog.v2.V2Relation
 import org.apache.spark.sql.catalyst.TableIdentifier
 import org.apache.spark.sql.catalyst.analysis.{MultiInstanceRelation, NamedRelation}
 import org.apache.spark.sql.catalyst.catalog._
@@ -52,6 +53,7 @@ case class DataSourceV2Relation(
     with MultiInstanceRelation
     with NamedRelation
     with CatalogRelation
+    with V2Relation
     with DataSourceV2StringFormat {
 
   import DataSourceV2Relation._
