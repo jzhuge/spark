@@ -19,6 +19,7 @@ package org.apache.spark.sql.execution.datasources.v2
 
 import scala.collection.mutable
 
+import org.apache.spark.SparkException
 import org.apache.spark.sql.{SaveMode, Strategy}
 import org.apache.spark.sql.catalyst.expressions.{And, AttributeReference, AttributeSet, Expression}
 import org.apache.spark.sql.catalyst.planning.PhysicalOperation
@@ -130,21 +131,6 @@ object DataSourceV2Strategy extends Strategy {
 
     case AppendData(r: DataSourceV2Relation, query, _) =>
       WriteToDataSourceV2Exec(r.newWriter(), planLater(query)) :: Nil
-
-    case InsertIntoTable(relation: DataSourceV2Relation, _, child, overwrite, ifNotExists, _) =>
-      // TODO!
-      val mode = (overwrite.enabled, ifNotExists) match {
-        case (false, true) =>
-          SaveMode.Ignore
-        case (false, false) =>
-          SaveMode.Append
-        case (true, false) =>
-          SaveMode.Overwrite
-        case (true, true) =>
-          SaveMode.ErrorIfExists
-      }
-      WriteToDataSourceV2Exec(
-        relation.newWriter(), planLater(child)) :: Nil
 
     case _ => Nil
   }

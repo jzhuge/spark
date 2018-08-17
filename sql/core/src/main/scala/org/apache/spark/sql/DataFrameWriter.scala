@@ -25,6 +25,7 @@ import org.apache.hadoop.fs.Path
 
 import org.apache.spark.SparkException
 import org.apache.spark.annotation.InterfaceStability
+import org.apache.spark.sql.catalog.v2.V2Relation
 import org.apache.spark.sql.catalyst.TableIdentifier
 import org.apache.spark.sql.catalyst.analysis.UnresolvedRelation
 import org.apache.spark.sql.catalyst.catalog.{BucketSpec, CatalogTable, CatalogTableType}
@@ -236,16 +237,16 @@ final class DataFrameWriter[T] private[sql](ds: Dataset[T]) {
           }
 
         case SaveMode.ErrorIfExists =>
-          // ErrorIfexists => CTAS
-          throw new SparkException(s"Cannot write: error is not supported")
+          // ErrorIfExists => CTAS or Append with validation
+          throw new SparkException("Cannot write: error is not supported")
 
         case SaveMode.Ignore =>
           // Ignore => if the table exists, do nothing
-          throw new SparkException(s"Cannot write: ignore is not supported")
+          throw new SparkException("Cannot write: ignore is not supported")
 
         case SaveMode.Overwrite =>
           // Overwrite => overwrite partitions -- in upstream this will be overwrite table
-          throw new SparkException(s"Cannot write: overwrite is not supported")
+          throw new SparkException("Cannot write: overwrite is not supported")
       }
 
     } else {
@@ -286,7 +287,37 @@ final class DataFrameWriter[T] private[sql](ds: Dataset[T]) {
    * @since 1.4.0
    */
   def insertInto(tableName: String): Unit = {
-    insertInto(df.sparkSession.sessionState.sqlParser.parseTableIdentifier(tableName))
+    val tableIdent = df.sparkSession.sessionState.sqlParser.parseTableIdentifier(tableName)
+    df.sparkSession.sessionState.catalog.lookupRelation(tableIdent) match {
+      case v2: V2Relation =>
+        appendData(v2)
+      case _ =>
+        insertInto(tableIdent)
+    }
+  }
+
+  private def appendData(v2: V2Relation): Unit = {
+    assertNotBucketed("insertInto")
+    if (partitioningColumns.isDefined) {
+      throw new AnalysisException("Partitioning is determined by the table's configuration and " +
+          "cannot be changed when inserting data. Remove any partitionBy calls.")
+    }
+
+    mode match {
+      case SaveMode.Overwrite =>
+        // Overwrite dynamic partitions
+        throw new SparkException("Cannot insert: overwrite is not supported")
+
+      case SaveMode.Append | SaveMode.ErrorIfExists =>
+        // ErrorIfExists should be Append with validation, but validation is not supported
+        val isByName = extraOptions.get("matchByName").exists(_.toBoolean)
+        runCommand(df.sparkSession, "insertInto") {
+          AppendData(v2, df.logicalPlan, isByName)
+        }
+
+      case SaveMode.Ignore =>
+        // Because the table was loaded as a relation, it must exist. Do nothing.
+    }
   }
 
   private def insertInto(tableIdent: TableIdentifier): Unit = {

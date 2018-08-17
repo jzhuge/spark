@@ -22,6 +22,7 @@ import java.util.UUID
 import scala.collection.JavaConverters._
 
 import org.apache.spark.sql.{AnalysisException, SaveMode}
+import org.apache.spark.sql.catalog.v2.V2Relation
 import org.apache.spark.sql.catalyst.TableIdentifier
 import org.apache.spark.sql.catalyst.analysis.{MultiInstanceRelation, NamedRelation}
 import org.apache.spark.sql.catalyst.catalog.{CatalogRelation, CatalogStorageFormat, CatalogTable, CatalogTableType}
@@ -48,7 +49,7 @@ case class DataSourceV2Relation(
     tableIdent: Option[TableIdentifier] = None,
     userSpecifiedSchema: Option[StructType] = None)
   extends LeafNode with MultiInstanceRelation with NamedRelation with CatalogRelation
-      with SupportsPhysicalStats {
+      with SupportsPhysicalStats with V2Relation {
 
   import DataSourceV2Relation._
 
@@ -68,8 +69,8 @@ case class DataSourceV2Relation(
     copy(output = output.map(_.newInstance()))
   }
 
-  lazy val tableIdentifier: TableIdentifier = {
-    options.get("table").map(TableIdentifier(_, options.get("database")))
+  private lazy val tableIdentifier: TableIdentifier = {
+    tableIdent.orElse(options.get("table").map(TableIdentifier(_, options.get("database"))))
         .orElse(options.get("path").map(p => TableIdentifier(p.substring(p.lastIndexOf("/") + 1))))
         .getOrElse(TableIdentifier("unknown"))
   }
