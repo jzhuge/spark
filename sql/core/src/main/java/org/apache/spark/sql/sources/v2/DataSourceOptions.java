@@ -92,6 +92,10 @@ public class DataSourceOptions {
     }
   }
 
+  public Map<String, String> asMap() {
+    return keyLowerCasedMap;
+  }
+
   /**
    * Returns the option value to which the specified key is mapped, case-insensitively.
    */
