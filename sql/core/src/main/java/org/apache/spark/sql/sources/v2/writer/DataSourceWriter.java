@@ -20,6 +20,7 @@ package org.apache.spark.sql.sources.v2.writer;
 import org.apache.spark.annotation.InterfaceStability;
 import org.apache.spark.sql.SaveMode;
 import org.apache.spark.sql.catalyst.InternalRow;
+import org.apache.spark.sql.sources.Filter;
 import org.apache.spark.sql.sources.v2.DataSourceOptions;
 import org.apache.spark.sql.sources.v2.WriteSupport;
 import org.apache.spark.sql.types.StructType;
@@ -67,6 +68,41 @@ public interface DataSourceWriter {
    */
   default boolean useCommitCoordinator() {
     return true;
+  }
+
+  /**
+   * Returns whether this source supports dynamic partition replacement. If this returns false,
+   * dynamic INSERT OVERWRITE operations will fail.
+   *
+   * @return true if the source supports dynamic partition replacement.
+   */
+  default boolean supportsReplacePartitions() {
+    return false;
+  }
+
+  /**
+   * Called to instruct the data source to dynamically replace partitions with the data written.
+   */
+  default void replacePartitions() {
+    throw new UnsupportedOperationException("Dynamic partition replacement is not supported");
+  }
+
+  /**
+   * Returns whether this source supports overwrite. If this returns false, overwriting
+   * by expression will fail.
+   *
+   * @return true if the source supports overwrite
+   */
+  default boolean supportsOverwrite() {
+    return false;
+  }
+
+  /**
+   * Called to instruct the source to replace data matching the filters with the data written.
+   * @param filters filters used to match data to overwrite
+   */
+  default void overwrite(Filter[] filters) {
+    throw new UnsupportedOperationException("Overwrite is not supported");
   }
 
   /**
