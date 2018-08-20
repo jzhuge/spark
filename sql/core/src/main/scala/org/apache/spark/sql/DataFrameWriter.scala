@@ -29,12 +29,12 @@ import org.apache.spark.sql.catalog.v2.V2Relation
 import org.apache.spark.sql.catalyst.TableIdentifier
 import org.apache.spark.sql.catalyst.analysis.UnresolvedRelation
 import org.apache.spark.sql.catalyst.catalog.{BucketSpec, CatalogTable, CatalogTableType}
-import org.apache.spark.sql.catalyst.plans.logical.{AppendData, CreateTableAsSelect, InsertIntoTable, LogicalPlan, OverwriteOptions, Project, ReplaceTableAsSelect}
+import org.apache.spark.sql.catalyst.plans.logical.{AppendData, CreateTableAsSelect, InsertIntoTable, LogicalPlan, OverwriteOptions, Project}
 import org.apache.spark.sql.execution.SQLExecution
 import org.apache.spark.sql.execution.command.DDLUtils
 import org.apache.spark.sql.execution.datasources.{CreateTable, DataSource}
 import org.apache.spark.sql.execution.datasources.v2.DataSourceV2Relation
-import org.apache.spark.sql.sources.v2.{DataSourceOptions, DataSourceV2}
+import org.apache.spark.sql.sources.v2.DataSourceV2
 import org.apache.spark.sql.types.StructType
 
 /**
@@ -215,11 +215,23 @@ final class DataFrameWriter[T] private[sql](ds: Dataset[T]) {
 
     import org.apache.spark.sql.sources.v2.DataSourceV2Implicits._
 
-    extraOptions.get("catalog") match {
-      case Some(catalogName) if extraOptions.get(DataSourceOptions.TABLE_KEY).isDefined =>
-        val catalog = df.sparkSession.catalog(catalogName).asTableCatalog
-        val options = extraOptions.toMap
-        val identifier = options.table.get
+    lazy val pathAsTable = extraOptions.get("path") match {
+      case Some(path) if !path.contains("/") =>
+        // without "/", this cannot be a full path. parse it as a table name
+        Some(df.sparkSession.sessionState.sqlParser.parseTableIdentifier(path))
+      case _ =>
+        None
+    }
+
+    // use the v2 API if there is a table name.
+    extraOptions.toMap.table.orElse(pathAsTable) match {
+      case Some(identifier) =>
+        val catalog = df.sparkSession.catalog(extraOptions.get("catalog")).asTableCatalog
+        val options = (extraOptions +
+            ("provider" -> source) +
+            ("database" -> identifier.database.getOrElse(df.sparkSession.catalog.currentDatabase)) +
+            ("table" -> identifier.table)).toMap
+
         val exists = catalog.tableExists(identifier)
 
         (exists, mode) match {
@@ -227,13 +239,13 @@ final class DataFrameWriter[T] private[sql](ds: Dataset[T]) {
             throw new AnalysisException(s"Table already exists: ${identifier.quotedString}")
 
           case (true, SaveMode.Overwrite) =>
-            runCommand(df.sparkSession, "save") {
-              ReplaceTableAsSelect(catalog, identifier, Seq.empty, df.logicalPlan, options)
-            }
+            // NETFLIX: overwrite mode replaces partitions, not entire tables; use ReplacePartitions
+            throw new AnalysisException("Overwrite partitions is not yet supported.")
 
           case (true, SaveMode.Append) =>
             val relation = DataSourceV2Relation.create(
-              catalogName, identifier, catalog.loadTable(identifier), options)
+              extraOptions.getOrElse("catalog", "default"),
+              identifier, catalog.loadTable(identifier), options)
 
             runCommand(df.sparkSession, "save") {
               AppendData.byName(relation, df.logicalPlan)
@@ -252,28 +264,19 @@ final class DataFrameWriter[T] private[sql](ds: Dataset[T]) {
             }
 
           case _ =>
-            return // table exists and mode is ignore
+          // table exists and mode is ignore
         }
 
+        return
+
       case _ =>
+      // fall through to direct source loading or v1
     }
 
     val cls = DataSource.lookupDataSource(source)
     if (classOf[DataSourceV2].isAssignableFrom(cls)) {
       val dataSource = cls.newInstance().asInstanceOf[DataSourceV2]
-
-      val options: Map[String, String] = extraOptions.get("path") match {
-        case Some(path) if !path.contains("/") =>
-          // without "/", this cannot be a full path. parse it as a table name
-          val ident = df.sparkSession.sessionState.sqlParser.parseTableIdentifier(path)
-          // ensure the database is set correctly
-          (extraOptions ++ Map(
-            "database" -> ident.database.getOrElse(df.sparkSession.catalog.currentDatabase),
-            "table" -> ident.table)).toMap
-        case _ =>
-          extraOptions.toMap
-      }
-
+      val options: Map[String, String] = (extraOptions + ("provider" -> source.toString)).toMap
       mode match {
         case SaveMode.Append =>
           val relation = DataSourceV2Relation.create(dataSource, options)
@@ -281,18 +284,8 @@ final class DataFrameWriter[T] private[sql](ds: Dataset[T]) {
             AppendData.byName(relation, df.logicalPlan)
           }
 
-        case SaveMode.ErrorIfExists =>
-          // this may end up as CTAS in upstream Spark
-          // ErrorIfExists => CTAS or Append with validation
-          throw new SparkException("Cannot write: error is not supported")
-
-        case SaveMode.Ignore =>
-          // Ignore => if the table exists, do nothing
-          throw new SparkException("Cannot write: ignore is not supported")
-
-        case SaveMode.Overwrite =>
-          // Overwrite => overwrite partitions -- in upstream this will be overwrite table
-          throw new SparkException("Cannot write: overwrite is not supported")
+        case _ =>
+          throw new SparkException(s"Cannot write: $mode is not supported for path-based tables")
       }
 
     } else {
@@ -352,7 +345,7 @@ final class DataFrameWriter[T] private[sql](ds: Dataset[T]) {
     mode match {
       case SaveMode.Overwrite =>
         // Overwrite dynamic partitions
-        throw new SparkException("Cannot insert: overwrite is not supported")
+        throw new AnalysisException("Overwrite partitions is not yet supported.")
 
       case SaveMode.Append | SaveMode.ErrorIfExists =>
         // ErrorIfExists should be Append with validation, but validation is not supported
@@ -495,7 +488,75 @@ final class DataFrameWriter[T] private[sql](ds: Dataset[T]) {
    * @since 1.4.0
    */
   def saveAsTable(tableName: String): Unit = {
-    saveAsTable(df.sparkSession.sessionState.sqlParser.parseTableIdentifier(tableName))
+    val identifier = df.sparkSession.sessionState.sqlParser.parseTableIdentifier(tableName)
+    // use the new logical plans if the table exists and is a v2 relation, if a catalog is defined,
+    // or if the source is a v2 implementation
+    df.sparkSession.sessionState.catalog.lookupRelation(identifier) match {
+      case _: V2Relation =>
+        saveAsV2Table(identifier)
+
+      case _ if extraOptions.contains("catalog") =>
+        saveAsV2Table(identifier)
+
+      case _ if classOf[DataSourceV2].isAssignableFrom(DataSource.lookupDataSource(source)) =>
+        saveAsV2Table(identifier)
+
+      case _ =>
+        saveAsTable(identifier)
+    }
+  }
+
+  private def saveAsV2Table(identifier: TableIdentifier): Unit = {
+    import org.apache.spark.sql.sources.v2.DataSourceV2Implicits._
+    val catalog = df.sparkSession.catalog(extraOptions.get("catalog")).asTableCatalog
+    val exists = catalog.tableExists(identifier)
+    val options = (extraOptions +
+        ("provider" -> source) +
+        ("database" -> identifier.database.getOrElse(df.sparkSession.catalog.currentDatabase)) +
+        ("table" -> identifier.table)).toMap
+
+    (exists, mode) match {
+      case (true, SaveMode.ErrorIfExists) =>
+        throw new AnalysisException(s"Table already exists: ${identifier.quotedString}")
+
+      case (true, SaveMode.Overwrite) =>
+        // NETFLIX: overwrite mode replaces partitions, not entire tables; use ReplacePartitions
+        throw new AnalysisException("Overwrite partitions is not yet supported.")
+
+      case (true, SaveMode.Append) =>
+        if (partitioningColumns.isDefined) {
+          throw new AnalysisException("Partitioning is determined by the table's configuration " +
+              "and cannot be changed when inserting data. Remove any partitionBy calls.")
+        }
+
+        val relation = DataSourceV2Relation.create(
+          extraOptions.getOrElse("catalog", "default"),
+          identifier, catalog.loadTable(identifier), options)
+
+        runCommand(df.sparkSession, "save") {
+          AppendData.byName(relation, df.logicalPlan)
+        }
+
+      case (false, SaveMode.Append) =>
+        throw new AnalysisException(s"Table does not exist: ${identifier.quotedString}")
+
+      case (false, SaveMode.ErrorIfExists) |
+           (false, SaveMode.Ignore) |
+           (false, SaveMode.Overwrite) =>
+
+        if (partitioningColumns.isDefined) {
+          throw new AnalysisException("Partitioning is not yet supported when creating tables" +
+              "from a data frame. Remove any partitionBy calls.")
+        }
+
+        runCommand(df.sparkSession, "save") {
+          CreateTableAsSelect(catalog, identifier, Seq.empty, df.logicalPlan, options,
+            ignoreIfExists = mode == SaveMode.Ignore)
+        }
+
+      case _ =>
+      // table exists and mode is ignore
+    }
   }
 
   private def saveAsTable(tableIdent: TableIdentifier): Unit = {

@@ -32,7 +32,7 @@ import org.apache.spark.sql.execution.datasources.DataSource
 import org.apache.spark.sql.execution.datasources.jdbc._
 import org.apache.spark.sql.execution.datasources.json.InferSchema
 import org.apache.spark.sql.execution.datasources.v2.DataSourceV2Relation
-import org.apache.spark.sql.sources.v2.{DataSourceOptions, DataSourceV2, DataSourceV2Implicits}
+import org.apache.spark.sql.sources.v2.{DataSourceV2, DataSourceV2Implicits}
 import org.apache.spark.sql.types.StructType
 
 /**
@@ -148,33 +148,35 @@ class DataFrameReader private[sql](sparkSession: SparkSession) extends Logging {
   def load(paths: String*): DataFrame = {
     import DataSourceV2Implicits._
 
-    extraOptions.get("catalog") match {
-      case Some(catalogName) if extraOptions.get(DataSourceOptions.TABLE_KEY).isDefined =>
-        val catalog = sparkSession.catalog(catalogName).asTableCatalog
-        val options = extraOptions.toMap
-        val identifier = options.table.get
+    lazy val pathAsTable = extraOptions.get("path") match {
+      case Some(path) if !path.contains("/") =>
+        // without "/", this cannot be a full path. parse it as a table name
+        Some(sparkSession.sessionState.sqlParser.parseTableIdentifier(path))
+      case _ =>
+        None
+    }
+
+    extraOptions.toMap.table.orElse(pathAsTable) match {
+      case Some(ident) =>
+        val catalog = sparkSession.catalog(extraOptions.get("catalog")).asTableCatalog
+        val options = (extraOptions +
+            ("provider" -> source) +
+            ("database" -> ident.database.getOrElse(sparkSession.catalog.currentDatabase)) +
+            ("table" -> ident.table)).toMap
 
         return Dataset.ofRows(sparkSession,
           DataSourceV2Relation.create(
-            catalogName, identifier, catalog.loadTable(identifier), options))
+            extraOptions.getOrElse("catalog", "default"),
+            ident, catalog.loadTable(ident), options))
 
       case _ =>
+        // fall through to direct source loading
     }
 
     val cls = DataSource.lookupDataSource(source)
     if (classOf[DataSourceV2].isAssignableFrom(cls)) {
       val source = cls.newInstance().asInstanceOf[DataSourceV2]
-      val options: Map[String, String] = extraOptions.get("path") match {
-        case Some(path) if !path.contains("/") =>
-          // without "/", this cannot be a full path. parse it as a table name
-          val ident = sparkSession.sessionState.sqlParser.parseTableIdentifier(path)
-          // ensure the database is set correctly
-          (extraOptions ++ Map(
-            "database" -> ident.database.getOrElse(sparkSession.catalog.currentDatabase),
-            "table" -> ident.table)).toMap
-        case _ =>
-          extraOptions.toMap
-      }
+      val options: Map[String, String] = (extraOptions + ("provider" -> source.toString)).toMap
 
       Dataset.ofRows(sparkSession, DataSourceV2Relation.create(
         source, options, userSpecifiedSchema = userSpecifiedSchema))
