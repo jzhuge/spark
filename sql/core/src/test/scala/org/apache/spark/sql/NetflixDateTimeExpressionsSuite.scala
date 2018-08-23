@@ -15,14 +15,13 @@
  * limitations under the License.
  */
 
-package org.apache.spark.sql.expressions
+package org.apache.spark.sql
 
 import java.sql.{Date, Timestamp}
 import java.text.SimpleDateFormat
 import java.time.Instant
 import java.util.{Locale, TimeZone}
 
-import org.apache.spark.sql._
 import org.apache.spark.sql.catalyst.util.{DateTimeTestUtils, DateTimeUtils}
 import org.apache.spark.sql.test.SharedSQLContext
 
