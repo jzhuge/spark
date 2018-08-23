@@ -101,11 +101,11 @@ class NetflixDateTimeExpressionsSuite extends QueryTest with SharedSQLContext {
       checkAnswer(sql("select nf_from_unixtime(1527745543, 'yyyy/MM/dd')"), Row(res) :: Nil)
       checkAnswer(sql("select nf_from_unixtime_tz(1527745543, 'GMT+05:00')"),
         Row(Timestamp.from(Instant.ofEpochMilli(DateTimeUtils.convertTz(1527745543000000L,
-          DateTimeUtils.defaultTimeZone,
+          TimeZone.getTimeZone("UTC"),
           TimeZone.getTimeZone("GMT+05:00")) / 1000))) :: Nil)
       checkAnswer(sql("select nf_from_unixtime_ms_tz(1527745543000, 'Europe/Paris')"),
         Row(Timestamp.from(Instant.ofEpochMilli(DateTimeUtils.convertTz(1527745543000000L,
-          DateTimeUtils.defaultTimeZone,
+          TimeZone.getTimeZone("UTC"),
           TimeZone.getTimeZone("Europe/Paris")) / 1000))) :: Nil)
     }
   }
