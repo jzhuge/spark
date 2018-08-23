@@ -23,16 +23,19 @@ import java.time.Instant
 import java.util.{Locale, TimeZone}
 
 import org.joda.time.DateTimeZone
+import org.scalatest.BeforeAndAfter
 
 import org.apache.spark.sql._
 import org.apache.spark.sql.catalyst.util.DateTimeUtils
 import org.apache.spark.sql.test.SharedSQLContext
 
-class NetflixDateTimeExpressionsSuite extends QueryTest with SharedSQLContext {
+class NetflixDateTimeExpressionsSuite extends QueryTest with SharedSQLContext with BeforeAndAfter {
   import testImplicits._
 
-  TimeZone.setDefault(TimeZone.getTimeZone("UTC"))
-  DateTimeZone.setDefault(DateTimeZone.UTC)
+  before {
+    TimeZone.setDefault(TimeZone.getTimeZone("UTC"))
+    DateTimeZone.setDefault(DateTimeZone.forTimeZone(TimeZone.getDefault))
+  }
 
   test("nf_dateadd") {
     checkSqlAnswer("SELECT nf_dateadd(20180531, 2)", 20180602)
