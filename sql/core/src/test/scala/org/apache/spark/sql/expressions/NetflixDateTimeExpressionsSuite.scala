@@ -22,20 +22,12 @@ import java.text.SimpleDateFormat
 import java.time.Instant
 import java.util.{Locale, TimeZone}
 
-import org.joda.time.DateTimeZone
-import org.scalatest.BeforeAndAfter
-
 import org.apache.spark.sql._
-import org.apache.spark.sql.catalyst.util.DateTimeUtils
+import org.apache.spark.sql.catalyst.util.{DateTimeTestUtils, DateTimeUtils}
 import org.apache.spark.sql.test.SharedSQLContext
 
-class NetflixDateTimeExpressionsSuite extends QueryTest with SharedSQLContext with BeforeAndAfter {
+class NetflixDateTimeExpressionsSuite extends QueryTest with SharedSQLContext {
   import testImplicits._
-
-  before {
-    TimeZone.setDefault(TimeZone.getTimeZone("UTC"))
-    DateTimeZone.setDefault(DateTimeZone.forTimeZone(TimeZone.getDefault))
-  }
 
   test("nf_dateadd") {
     checkSqlAnswer("SELECT nf_dateadd(20180531, 2)", 20180602)
@@ -99,21 +91,23 @@ class NetflixDateTimeExpressionsSuite extends QueryTest with SharedSQLContext wi
   }
 
   test("nf_from_unixtime") {
-    val ts = Timestamp.from(Instant.ofEpochMilli(1527745543000L))
-    val date = new Date(1527745543000L)
-    val sdformat = new SimpleDateFormat("yyyy/MM/dd", Locale.US)
-    var res = sdformat.format(date)
-    checkAnswer(sql("select nf_from_unixtime(1527745543)"), Row(ts) :: Nil)
-    checkAnswer(sql("select nf_from_unixtime_ms(1527745543000)"), Row(ts) :: Nil)
-    checkAnswer(sql("select nf_from_unixtime(1527745543, 'yyyy/MM/dd')"), Row(res) :: Nil)
-    checkAnswer(sql("select nf_from_unixtime_tz(1527745543, 'GMT+05:00')"),
-      Row(Timestamp.from(Instant.ofEpochMilli(DateTimeUtils.convertTz(1527745543000000L,
-        DateTimeUtils.defaultTimeZone,
-        TimeZone.getTimeZone("GMT+05:00")) / 1000 ))) :: Nil)
-    checkAnswer(sql("select nf_from_unixtime_ms_tz(1527745543000, 'Europe/Paris')"),
-      Row(Timestamp.from(Instant.ofEpochMilli(DateTimeUtils.convertTz(1527745543000000L,
-        DateTimeUtils.defaultTimeZone,
-        TimeZone.getTimeZone("Europe/Paris")) / 1000 ))) :: Nil)
+    DateTimeTestUtils.withDefaultTimeZone(TimeZone.getTimeZone("UTC")) {
+      val ts = Timestamp.from(Instant.ofEpochMilli(1527745543000L))
+      val date = new Date(1527745543000L)
+      val sdformat = new SimpleDateFormat("yyyy/MM/dd", Locale.US)
+      var res = sdformat.format(date)
+      checkAnswer(sql("select nf_from_unixtime(1527745543)"), Row(ts) :: Nil)
+      checkAnswer(sql("select nf_from_unixtime_ms(1527745543000)"), Row(ts) :: Nil)
+      checkAnswer(sql("select nf_from_unixtime(1527745543, 'yyyy/MM/dd')"), Row(res) :: Nil)
+      checkAnswer(sql("select nf_from_unixtime_tz(1527745543, 'GMT+05:00')"),
+        Row(Timestamp.from(Instant.ofEpochMilli(DateTimeUtils.convertTz(1527745543000000L,
+          DateTimeUtils.defaultTimeZone,
+          TimeZone.getTimeZone("GMT+05:00")) / 1000))) :: Nil)
+      checkAnswer(sql("select nf_from_unixtime_ms_tz(1527745543000, 'Europe/Paris')"),
+        Row(Timestamp.from(Instant.ofEpochMilli(DateTimeUtils.convertTz(1527745543000000L,
+          DateTimeUtils.defaultTimeZone,
+          TimeZone.getTimeZone("Europe/Paris")) / 1000))) :: Nil)
+    }
   }
 
   private def checkSqlAnswer(sqlString: String, expectedResult: Any): Unit = {
