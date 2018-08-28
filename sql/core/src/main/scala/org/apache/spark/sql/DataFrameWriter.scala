@@ -520,9 +520,6 @@ final class DataFrameWriter[T] private[sql](ds: Dataset[T]) {
     // whether to make Parquet tables use the Hive provider
     val convertParquet = isHiveDefaultSource(df.sparkSession) && source.toLowerCase == "parquet"
     val isHive = source.toLowerCase == DDLUtils.HIVE_PROVIDER
-    if (isHive || convertParquet) {
-      assertNotBucketed("saveAsTable")
-    }
 
     val existingTable = if (tableExists) {
       Some(df.sparkSession.sessionState.catalog.getTableMetadata(tableIdent))
