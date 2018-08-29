@@ -18,7 +18,7 @@
 package org.apache.spark.sql.test
 
 import java.io.File
-import java.util.UUID
+import java.util.{TimeZone, UUID}
 
 import scala.concurrent.duration._
 import scala.language.implicitConversions
@@ -31,9 +31,9 @@ import org.scalatest.concurrent.Eventually
 
 import org.apache.spark.SparkFunSuite
 import org.apache.spark.sql._
+import org.apache.spark.sql.catalyst.FunctionIdentifier
 import org.apache.spark.sql.catalyst.analysis.NoSuchTableException
 import org.apache.spark.sql.catalyst.catalog.SessionCatalog.DEFAULT_DATABASE
-import org.apache.spark.sql.catalyst.FunctionIdentifier
 import org.apache.spark.sql.catalyst.plans.PlanTest
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
 import org.apache.spark.sql.catalyst.util._
@@ -207,6 +207,16 @@ private[sql] trait SQLTestUtils
         spark.sql(s"USE ${DEFAULT_DATABASE}")
       }
       spark.sql(s"DROP DATABASE $dbName CASCADE")
+    }
+  }
+
+  /**
+   * Sets time zone to `newDefaultTimeZone` before executing `f`,
+   * then switches back to the default time zone of JVM after `f` returns.
+   */
+  def withTimeZone(newDefaultTimeZone: String)(f: => Unit): Unit = {
+    DateTimeTestUtils.withDefaultTimeZone(TimeZone.getTimeZone(newDefaultTimeZone)) {
+      f
     }
   }
 
