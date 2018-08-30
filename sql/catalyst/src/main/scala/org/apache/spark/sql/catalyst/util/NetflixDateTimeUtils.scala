@@ -19,32 +19,42 @@ package org.apache.spark.sql.catalyst.util
 
 import java.time.{Instant, LocalDate, LocalDateTime, ZoneId}
 import java.util.Locale.ENGLISH
-import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeUnit.{DAYS, MILLISECONDS}
 
-import org.joda.time.DateTimeField
-import org.joda.time.DateTimeZone.UTC
+import org.joda.time.{DateTimeField, DateTimeZone}
 import org.joda.time.chrono.ISOChronology
 import org.joda.time.format.DateTimeFormat
 
 import org.apache.spark.sql.catalyst.util.QuarterOfYearDateTimeField.QUARTER_OF_YEAR
+import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types._
 import org.apache.spark.unsafe.types.UTF8String
 
 object NetflixDateTimeUtils {
 
-  val DATE_INT_THRESHOLD = 100000000
+  val DATE_INT_MAX_THRESHOLD = 100000000L
+  val DATE_INT_MIN_THRESHOLD = 10000000L
   val DATE_INT_FORMAT = "yyyyMMdd"
   val DEFAULT_DUMMY_ARGUMENT = "-"
-  val UTC_CHRONOLOGY = ISOChronology.getInstance(UTC)
-  private val UTC_ZONE_ID = "UTC"
 
   // Convert a dateint in the format 'yyyyMMdd' to Java local date
   def toLocalDate(dateInt: Int): LocalDate = {
-    if (dateInt >= 10000000 && dateInt < DATE_INT_THRESHOLD) {
+    if (dateInt >= DATE_INT_MIN_THRESHOLD && dateInt < DATE_INT_MAX_THRESHOLD) {
       LocalDate.of(dateInt / 10000, dateInt / 100 % 100, dateInt % 100)
     } else {
       throw new IllegalArgumentException("Input must have eight digits in the format 'yyyyMMdd'")
+    }
+  }
+
+  def getEpochMs(value: Long): Long = {
+    val length = (Math.log10(value) + 1).toInt
+    if (length == 10) {
+      value * 1000L;
+    } else if (length == 13) {
+      value
+    } else {
+      throw new IllegalArgumentException("Only 10 (epoch) or 13 (epochMs) " +
+        "digit numbers are accepted.")
     }
   }
 
@@ -53,7 +63,8 @@ object NetflixDateTimeUtils {
   }
 
   def toLocalDate(epochMs: Long): LocalDate = {
-   Instant.ofEpochMilli(epochMs).atZone(ZoneId.of(UTC_ZONE_ID)).toLocalDate
+   Instant.ofEpochMilli(epochMs).atZone(ZoneId.of(
+     DateTimeUtils.defaultTimeZone.getID)).toLocalDate
   }
 
   def toLocalDate(dateStr: String, format: String): LocalDate = {
@@ -67,11 +78,11 @@ object NetflixDateTimeUtils {
   }
 
   def toUnixTime(localDate: LocalDate): Long = {
-    localDate.atStartOfDay(ZoneId.of(UTC_ZONE_ID)).toEpochSecond
+    localDate.atStartOfDay(ZoneId.of(DateTimeUtils.defaultTimeZone.getID)).toEpochSecond
   }
 
   def toUnixTimeMs(localDateTime: LocalDateTime): Long = {
-    localDateTime.atZone(ZoneId.of(UTC_ZONE_ID)).toInstant.toEpochMilli
+    localDateTime.atZone(ZoneId.of(DateTimeUtils.defaultTimeZone.getID)).toInstant.toEpochMilli
   }
 
    def getDateField(chronology: ISOChronology, unit: String): DateTimeField = {
@@ -87,7 +98,7 @@ object NetflixDateTimeUtils {
          chronology.monthOfYear
       case "year" =>
          chronology.year
-      case _ => throw new IllegalArgumentException("Invalid Argument: '" + unitString +
+      case _ => throw new TypeException("Invalid Argument: '" + unitString +
         "' is not a valid Date field")
     }
   }
@@ -113,7 +124,7 @@ object NetflixDateTimeUtils {
          chronology.monthOfYear
       case "year" =>
          chronology.year()
-      case _ => throw new IllegalArgumentException("Invalid Argument: '" + unitString +
+      case _ => throw new TypeException("Invalid Argument: '" + unitString +
         "' is not a valid Timestamp field")
     }
   }
@@ -136,7 +147,8 @@ object NetflixDateTimeUtils {
 
   abstract class EpochDate(epochDay: Long) extends EpochMillis(DAYS.toMillis(epochDay)) {
     protected def epochDays: Long = MILLISECONDS.toDays(epochMillis)
-    override def getField(unit: String): DateTimeField = getDateField(UTC_CHRONOLOGY, unit)
+    override def getField(unit: String): DateTimeField =
+      getDateField(getDefaultChronology(), unit)
   }
 
   class EpochDateInteger(dateint: Long)
@@ -165,16 +177,17 @@ object NetflixDateTimeUtils {
   }
 
   abstract class EpochTimestamp(epochMs: Long) extends EpochMillis(epochMs) {
-    override def getField(unit: String): DateTimeField = getTimestampField(UTC_CHRONOLOGY, unit)
+    override def getField(unit: String): DateTimeField =
+      getTimestampField(getDefaultChronology(), unit)
   }
 
-  class EpochTimestampInteger(epochMs: Long) extends EpochTimestamp(epochMs) {
-    def toOutput: Any = epochMillis.toInt
+  class EpochTimestampInteger(epochMs: Long, isEpoch: Boolean) extends EpochTimestamp(epochMs) {
+    def toOutput: Any = if (isEpoch) (epochMillis/ 1000L).toInt else epochMillis.toInt
   }
 
-  class EpochTimestampLong(epochMs2: Long)
+  class EpochTimestampLong(epochMs2: Long, isEpoch: Boolean)
     extends EpochTimestamp(epochMs2) {
-    def toOutput: Any = epochMillis
+    def toOutput: Any = if (isEpoch) (epochMillis/ 1000L) else epochMillis
   }
 
   class EpochTimestampString(timestamp: UTF8String)
@@ -189,13 +202,15 @@ object NetflixDateTimeUtils {
   }
 
   def fromInput(input: Any, inputDataType: DataType): Any = (input, inputDataType) match {
-    case (ms: Int, IntegerType) if ms > DATE_INT_THRESHOLD =>
-      new EpochTimestampInteger(ms)
-    case (dateint: Int, IntegerType) if dateint <= DATE_INT_THRESHOLD =>
+    case (ts: Int, IntegerType) if ts > DATE_INT_MAX_THRESHOLD =>
+      val ms = getEpochMs(ts)
+      new EpochTimestampInteger(ms, !(ms == ts))
+    case (dateint: Int, IntegerType) if dateint <= DATE_INT_MAX_THRESHOLD =>
       new EpochDateInteger(dateint)
-    case (ms: Long, LongType) if ms > DATE_INT_THRESHOLD =>
-      new EpochTimestampLong(ms)
-    case (dateint: Long, LongType) if dateint <= DATE_INT_THRESHOLD =>
+    case (ts: Long, LongType) if ts > DATE_INT_MAX_THRESHOLD =>
+      val ms = getEpochMs(ts)
+      new EpochTimestampLong(ms, !(ms == ts))
+    case (dateint: Long, LongType) if dateint <= DATE_INT_MAX_THRESHOLD =>
       new EpochDateLong(dateint)
     case (u8s: UTF8String, StringType) =>
       val s = u8s.toString
@@ -215,17 +230,31 @@ object NetflixDateTimeUtils {
   }
 
   def truncateDate(unit: String, date: Long): Long = {
-    val millis = getDateField(UTC_CHRONOLOGY, unit).roundFloor(DAYS.toMillis(date))
+    val millis = getDateField(getDefaultChronology(), unit).roundFloor(DAYS.toMillis(date))
     MILLISECONDS.toDays(millis)
   }
 
   def truncateTimestamp(unit: String, timestamp: Long): Long = {
-   getTimestampField(UTC_CHRONOLOGY, unit).roundFloor(timestamp)
+   getTimestampField(ISOChronology.getInstance(DateTimeZone.forTimeZone(
+     DateTimeUtils.defaultTimeZone)),
+     unit).roundFloor(timestamp)
  }
+
+  def dateIntEpochTrunc(unit: String, timestamp: Long): Long = {
+    val epochMs = getEpochMs(timestamp)
+    var isEpoch = false
+    if (epochMs != timestamp) isEpoch = true
+    val res = truncateTimestamp(unit, timestamp)
+    if (isEpoch)  {
+      res / 1000L
+    } else {
+      res
+    }
+  }
 
   def formatDatetime(timestamp: Long, formatString: String): String = {
    try {
-     DateTimeFormat.forPattern(formatString).withChronology(UTC_CHRONOLOGY)
+     DateTimeFormat.forPattern(formatString).withChronology(getDefaultChronology())
        .withLocale(ENGLISH).print(timestamp)
    }
    catch {
@@ -236,46 +265,71 @@ object NetflixDateTimeUtils {
  }
 
   def yearFromDate(date: Long): Int = {
-   UTC_CHRONOLOGY.year().get(DAYS.toMillis(date))
+    getDefaultChronology().year().get(toUnixTime(LocalDate.ofEpochDay(date)) * 1000L)
   }
 
   def yearFromTimestamp(timestamp: Long): Int = {
-   UTC_CHRONOLOGY.year.get(timestamp)
+    getDefaultChronology().year.get(timestamp)
   }
   def monthFromTimestamp(timestamp: Long): Int = {
-   UTC_CHRONOLOGY.monthOfYear.get(timestamp)
+    getDefaultChronology().monthOfYear.get(timestamp)
   }
   def monthFromDate(date: Long): Int = {
-   UTC_CHRONOLOGY.monthOfYear().get(DAYS.toMillis(date))
+    getDefaultChronology().monthOfYear().get(toUnixTime(LocalDate.ofEpochDay(date)) * 1000L)
   }
   def dayFromDate(date: Long): Int = {
-   UTC_CHRONOLOGY.dayOfMonth().get(DAYS.toMillis(date))
+    getDefaultChronology().dayOfMonth().get(toUnixTime(LocalDate.ofEpochDay(date)) * 1000L)
   }
   def dayFromTimestamp(timestamp: Long): Int = {
-   UTC_CHRONOLOGY.dayOfMonth.get(timestamp)
+    getDefaultChronology().dayOfMonth.get(timestamp)
   }
   def hourFromTimestamp(timestamp: Long): Int = {
-   UTC_CHRONOLOGY.hourOfDay().get(timestamp)
+    getDefaultChronology().hourOfDay().get(timestamp)
   }
   def minuteFromTimestamp(timestamp: Long): Int = {
-   UTC_CHRONOLOGY.minuteOfHour.get(timestamp)
+    getDefaultChronology().minuteOfHour.get(timestamp)
   }
   def secondFromTimestamp(timestamp: Long): Int = {
-    UTC_CHRONOLOGY.secondOfMinute().get(timestamp)
+    getDefaultChronology().secondOfMinute().get(timestamp)
   }
   def millisecondFromTimestamp(timestamp: Long): Int = {
-    UTC_CHRONOLOGY.millisOfSecond.get(timestamp)
+    getDefaultChronology().millisOfSecond.get(timestamp)
   }
   def weekFromTimestamp(timestamp: Long): Int = {
-    UTC_CHRONOLOGY.weekOfWeekyear.get(timestamp)
+    getDefaultChronology().weekOfWeekyear.get(timestamp)
   }
   def weekFromDate(date: Long): Int = {
-    UTC_CHRONOLOGY.weekOfWeekyear().get(DAYS.toMillis(date))
+    getDefaultChronology().weekOfWeekyear()
+      .get(toUnixTime(LocalDate.ofEpochDay(date)) * 1000L)
   }
   def quarterFromTimestamp(timestamp: Long): Int = {
-    QUARTER_OF_YEAR.getField(UTC_CHRONOLOGY).get(timestamp)
+    QUARTER_OF_YEAR.getField(getDefaultChronology())
+      .get(timestamp)
   }
   def quarterFromDate(date: Long): Int = {
-    QUARTER_OF_YEAR.getField(UTC_CHRONOLOGY).get(DAYS.toMillis(date))
+    QUARTER_OF_YEAR.getField(getDefaultChronology())
+      .get(toUnixTime(LocalDate.ofEpochDay(date)) * 1000L)
   }
+
+  def getDefaultChronology(): ISOChronology = {
+    ISOChronology.getInstance(DateTimeZone.forTimeZone(DateTimeUtils.defaultTimeZone));
+  }
+
+  def handleExceptions[T](udf: () => T, defaultValue: T): T = {
+    try {
+      udf()
+    }
+    catch {
+      case e: Exception =>
+        if (SQLConf.get.enableNetflixUdfStrictEval) {
+          throw e
+        } else if (e.isInstanceOf[TypeException]) {
+          throw e
+        } else {
+          defaultValue
+        }
+    }
+  }
+
+  case class TypeException(s: String)  extends Exception(s)
 }
