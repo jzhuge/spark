@@ -17,7 +17,6 @@
 
 package org.apache.spark.sql.sources.v2;
 
-import org.apache.spark.sql.catalog.v2.Table;
 import org.apache.spark.sql.sources.Filter;
 
 /**
@@ -27,7 +26,7 @@ import org.apache.spark.sql.sources.Filter;
  * Data sources must implement this interface to support logical operations that combine writing
  * data with deleting data, like overwriting partitions.
  */
-public interface DeleteSupport extends Table {
+public interface DeleteSupport {
   /**
    * Delete data from a data source table that matches filter expressions.
    * <p>
@@ -43,5 +42,5 @@ public interface DeleteSupport extends Table {
    * @param filters filter expressions, used to select rows to delete when all expressions match
    * @throws IllegalArgumentException If the delete is rejected due to required effort
    */
-  void deleteWhere(Filter[] filters);
+  void deleteWhere(DataSourceOptions options, Filter[] filters);
 }
