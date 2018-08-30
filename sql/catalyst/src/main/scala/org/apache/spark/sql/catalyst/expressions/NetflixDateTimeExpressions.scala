@@ -19,6 +19,7 @@ package org.apache.spark.sql.catalyst.expressions
 
 import java.time.LocalDate
 import java.time.format.DateTimeParseException
+import java.util.TimeZone
 import java.util.regex.Pattern
 
 import org.joda.time.format.DateTimeFormat
@@ -42,8 +43,11 @@ case class NfDateInt(left: Expression, right: Expression) extends BinaryExpressi
   def this(date: Expression) = {
     this(date, Literal(DEFAULT_DUMMY_ARGUMENT))
   }
+
+  override def nullable: Boolean = true
+
   protected override def nullSafeEval(inputDate: Any, dateFormat: Any): Any = {
-    def inputDataType: DataType = left.dataType
+    handleExceptions(() => {def inputDataType: DataType = left.dataType
     inputDataType match {
       case LongType | IntegerType =>
         var dateLong: Long = -1
@@ -52,8 +56,8 @@ case class NfDateInt(left: Expression, right: Expression) extends BinaryExpressi
         } else {
           dateLong = inputDate.asInstanceOf[Long]
         }
-        if (dateLong > 100000000) {
-          toDateInt(toLocalDate(dateLong))
+        if (dateLong > DATE_INT_MAX_THRESHOLD) {
+          toDateInt(toLocalDate(getEpochMs(dateLong)))
         } else {
           toLocalDate(dateLong.toInt)
           dateLong.toInt
@@ -74,6 +78,7 @@ case class NfDateInt(left: Expression, right: Expression) extends BinaryExpressi
             if (timestampOption.isEmpty) {
               throw new IllegalArgumentException("Could not convert string to timestamp")
             }
+
             val timestamp: SQLTimestamp = timestampOption.get
             val epochMicros = timestamp.asInstanceOf[Long]
             toDateInt(toLocalDate(epochMicros / 1000L))
@@ -82,7 +87,7 @@ case class NfDateInt(left: Expression, right: Expression) extends BinaryExpressi
           right.dataType match {
             case StringType =>
               toDateInt(toLocalDate(dateString, inputDateFormat))
-            case _ => throw new IllegalArgumentException(
+            case _ => throw new TypeException(
               "Invalid input type of second parameter " + inputDataType)
           }
         }
@@ -96,8 +101,8 @@ case class NfDateInt(left: Expression, right: Expression) extends BinaryExpressi
         toDateInt(toLocalDate(epochMicros / 1000L))
 
       case _ =>
-        throw new IllegalArgumentException("Invalid input type " + inputDataType)
-    }
+        throw new TypeException("Invalid input type " + inputDataType)
+    }}, null)
   }
   override def prettyName: String = "nf_dateint"
 }
@@ -127,8 +132,11 @@ case class NfDateString(left: Expression, right: Expression) extends BinaryExpre
   def this(date: Expression) = {
     this(date, Literal(DEFAULT_DUMMY_ARGUMENT))
   }
+
+  override def nullable: Boolean = true
+
   protected override def nullSafeEval(inputDate: Any, dateFormat: Any): Any = {
-    def inputDataType: DataType = left.dataType
+    handleExceptions(() => {def inputDataType: DataType = left.dataType
     inputDataType match {
       case LongType | IntegerType =>
         var dateLong: Long = -1
@@ -137,8 +145,8 @@ case class NfDateString(left: Expression, right: Expression) extends BinaryExpre
         } else {
           dateLong = inputDate.asInstanceOf[Long]
         }
-        if (dateLong > 100000000) {
-          UTF8String.fromString(toLocalDate(dateLong).toString)
+        if (dateLong > DATE_INT_MAX_THRESHOLD) {
+          UTF8String.fromString(toLocalDate(getEpochMs(dateLong)).toString)
         } else {
           UTF8String.fromString(toLocalDate(dateLong.toInt).toString)
         }
@@ -167,7 +175,7 @@ case class NfDateString(left: Expression, right: Expression) extends BinaryExpre
           right.dataType match {
             case StringType =>
               UTF8String.fromString(toLocalDate(dateString, inputDateFormat).toString)
-            case _ => throw new IllegalArgumentException(
+            case _ => throw new TypeException(
               "Invalid input type of second parameter " + inputDataType)
           }
         }
@@ -181,8 +189,8 @@ case class NfDateString(left: Expression, right: Expression) extends BinaryExpre
         UTF8String.fromString(toLocalDate(epochMicros / 1000L).toString)
 
       case _ =>
-        throw new IllegalArgumentException("Invalid input type " + inputDataType)
-    }
+        throw new TypeException("Invalid input type " + inputDataType)
+    }}, null)
   }
   override def prettyName: String = "nf_datestring"
 }
@@ -241,8 +249,11 @@ case class NfToUnixTime(left: Expression, right: Expression) extends BinaryExpre
   def this(date: Expression) = {
     this(date, Literal(DEFAULT_DUMMY_ARGUMENT))
   }
+
+  override def nullable: Boolean = true
+
   protected override def nullSafeEval(inputDate: Any, dateFormat: Any): Any = {
-    def inputDataType: DataType = left.dataType
+    handleExceptions(() => {def inputDataType: DataType = left.dataType
     inputDataType match {
       case LongType | IntegerType =>
         var dateLong: Long = -1
@@ -251,8 +262,8 @@ case class NfToUnixTime(left: Expression, right: Expression) extends BinaryExpre
         } else {
           dateLong = inputDate.asInstanceOf[Long]
         }
-        if (dateLong > 100000000) {
-          dateLong / 1000L
+        if (dateLong > DATE_INT_MAX_THRESHOLD) {
+          getEpochMs(dateLong) / 1000L
         } else {
           toUnixTime(toLocalDate(dateLong.toInt))
         }
@@ -287,7 +298,7 @@ case class NfToUnixTime(left: Expression, right: Expression) extends BinaryExpre
                 case e: Exception => throw e
               }
 
-            case _ => throw new IllegalArgumentException(
+            case _ => throw new TypeException(
               "Invalid input type of second parameter " + inputDataType)
           }
         }
@@ -301,8 +312,8 @@ case class NfToUnixTime(left: Expression, right: Expression) extends BinaryExpre
         epochMicros / 1000000L
 
       case _ =>
-        throw new IllegalArgumentException("Invalid input type " + inputDataType)
-    }
+        throw new TypeException("Invalid input type " + inputDataType)
+    }}, null)
   }
   override def prettyName: String = "nf_to_unixtime"
 }
@@ -318,8 +329,10 @@ case class NfToUnixTimeMs(left: Expression, right: Expression) extends BinaryExp
     this(date, Literal(DEFAULT_DUMMY_ARGUMENT))
   }
 
+  override def nullable: Boolean = true
+
   protected override def nullSafeEval(inputDate: Any, dateFormat: Any): Any = {
-    def inputDataType: DataType = left.dataType
+    handleExceptions(() => {def inputDataType: DataType = left.dataType
     inputDataType match {
       case LongType | IntegerType =>
         var dateLong: Long = -1
@@ -363,7 +376,7 @@ case class NfToUnixTimeMs(left: Expression, right: Expression) extends BinaryExp
                   toUnixTime(toLocalDate(dateString, inputDateFormat)) * 1000L
                 case e: Exception => throw e
               }
-            case _ => throw new IllegalArgumentException(
+            case _ => throw new TypeException(
               "Invalid input type of second parameter " + inputDataType)
           }
         }
@@ -377,8 +390,8 @@ case class NfToUnixTimeMs(left: Expression, right: Expression) extends BinaryExp
         epochMicros / 1000L
 
       case _ =>
-        throw new IllegalArgumentException("Invalid input type " + inputDataType)
-    }
+        throw new TypeException("Invalid input type " + inputDataType)
+    }}, null)
   }
   override def prettyName: String = "nf_to_unixtime_ms"
 }
@@ -399,15 +412,19 @@ case class NfFromUnixTime(left: Expression, right: Expression) extends BinaryExp
   def this(date: Expression) = {
     this(date, Literal(DEFAULT_DUMMY_ARGUMENT))
   }
+
+  override def nullable: Boolean = true
+
   protected override def nullSafeEval(input: Any, dateFormat: Any): Any = {
-    val epochSeconds = input.asInstanceOf[Long]
+    handleExceptions(() => { val epochLong = input.asInstanceOf[Long]
+      val epochMs = getEpochMs(epochLong)
     val inputDateFormat: String = dateFormat.asInstanceOf[UTF8String].toString
     if (inputDateFormat.equals(DEFAULT_DUMMY_ARGUMENT)) {
-      epochSeconds * 1000000L
+      epochMs * 1000L
     } else {
-      val df = DateTimeFormat.forPattern(inputDateFormat).withChronology(UTC_CHRONOLOGY)
-      UTF8String.fromString(df.print(epochSeconds * 1000L))
-    }
+      val df = DateTimeFormat.forPattern(inputDateFormat).withChronology(getDefaultChronology())
+      UTF8String.fromString(df.print(epochMs))
+    }}, null)
   }
   override def prettyName: String = "nf_from_unixtime"
 }
@@ -428,15 +445,19 @@ case class NfFromUnixTimeMs(left: Expression, right: Expression) extends BinaryE
   def this(date: Expression) = {
     this(date, Literal(DEFAULT_DUMMY_ARGUMENT))
   }
+
+  override def nullable: Boolean = true
+
   protected override def nullSafeEval(input: Any, dateFormat: Any): Any = {
-    val epochMs = input.asInstanceOf[Long]
+    handleExceptions(() => { val epochMs = input.asInstanceOf[Long]
     val inputDateFormat: String = dateFormat.asInstanceOf[UTF8String].toString
     if (inputDateFormat.equals(DEFAULT_DUMMY_ARGUMENT)) {
       epochMs * 1000L
     } else {
-      val df = DateTimeFormat.forPattern(inputDateFormat).withChronology(UTC_CHRONOLOGY)
+      val df = DateTimeFormat.forPattern(inputDateFormat).withChronology(getDefaultChronology())
       UTF8String.fromString(df.print(epochMs))
     }
+    }, null)
   }
   override def prettyName: String = "nf_from_unixtime_ms"
 }
@@ -450,10 +471,16 @@ case class NfFromUnixTimeTz(left: Expression, right: Expression) extends BinaryE
 
   override def inputTypes: Seq[AbstractDataType] = Seq(LongType, StringType)
 
+  override def nullable: Boolean = true
+
   protected override def nullSafeEval(input: Any, timezone: Any): Any = {
-    val epochSeconds = input.asInstanceOf[Long]
+    handleExceptions(() => {
+      val epochLong = input.asInstanceOf[Long]
+      val epochMs = getEpochMs(epochLong)
     val tz: String = timezone.asInstanceOf[UTF8String].toString
-    DateTimeUtils.fromUTCTime(epochSeconds * 1000000L, tz)
+    DateTimeUtils.convertTz(epochMs * 1000L, DateTimeUtils.defaultTimeZone,
+      TimeZone.getTimeZone(tz))
+    }, null)
   }
   override def prettyName: String = "nf_from_unixtime_tz"
 }
@@ -466,10 +493,15 @@ case class NfFromUnixTimeMsTz(left: Expression, right: Expression) extends Binar
 
   override def inputTypes: Seq[AbstractDataType] = Seq(LongType, StringType)
 
+  override def nullable: Boolean = true
+
   protected override def nullSafeEval(input: Any, timezone: Any): Any = {
-    val epochMillis = input.asInstanceOf[Long]
+    handleExceptions(() => {
+      val epochMillis = input.asInstanceOf[Long]
     val tz: String = timezone.asInstanceOf[UTF8String].toString
-    DateTimeUtils.fromUTCTime(epochMillis * 1000L, tz)
+    DateTimeUtils.convertTz(epochMillis * 1000L, DateTimeUtils.defaultTimeZone,
+      TimeZone.getTimeZone(tz))
+  }, null)
   }
   override def prettyName: String = "nf_from_unixtime_ms_tz"
 }
@@ -484,8 +516,11 @@ case class NfDate(left: Expression, right: Expression) extends BinaryExpression
   def this(date: Expression) = {
     this(date, Literal(DEFAULT_DUMMY_ARGUMENT))
   }
+
+  override def nullable: Boolean = true
+
   protected override def nullSafeEval(inputDate: Any, dateFormat: Any): Any = {
-    def inputDataType: DataType = left.dataType
+    handleExceptions(() => { def inputDataType: DataType = left.dataType
     inputDataType match {
       case LongType | IntegerType =>
         var dateLong: Long = -1
@@ -494,8 +529,8 @@ case class NfDate(left: Expression, right: Expression) extends BinaryExpression
         } else {
           dateLong = inputDate.asInstanceOf[Long]
         }
-        if (dateLong > 100000000) {
-          toLocalDate(dateLong).toEpochDay.toInt
+        if (dateLong > DATE_INT_MAX_THRESHOLD) {
+          toLocalDate(getEpochMs(dateLong)).toEpochDay.toInt
         } else {
           toLocalDate(dateLong.toInt).toEpochDay.toInt
         }
@@ -523,7 +558,7 @@ case class NfDate(left: Expression, right: Expression) extends BinaryExpression
           right.dataType match {
             case StringType =>
               toLocalDate(dateString, inputDateFormat).toEpochDay.toInt
-            case _ => throw new IllegalArgumentException(
+            case _ => throw new TypeException(
               "Invalid input type of second parameter " + inputDataType)
           }
         }
@@ -536,8 +571,8 @@ case class NfDate(left: Expression, right: Expression) extends BinaryExpression
         toLocalDate(epochMicros / 1000L).toEpochDay.toInt
 
       case _ =>
-        throw new IllegalArgumentException("Invalid input type " + inputDataType)
-    }
+        throw new TypeException("Invalid input type " + inputDataType)
+    }}, null)
   }
   override def prettyName: String = "nf_date"
 }
@@ -567,8 +602,11 @@ case class NfTimestamp(left: Expression, right: Expression) extends BinaryExpres
   def this(date: Expression) = {
     this(date, Literal(DEFAULT_DUMMY_ARGUMENT))
   }
+
+  override def nullable: Boolean = true
+
   protected override def nullSafeEval(inputDate: Any, dateFormat: Any): Any = {
-    def inputDataType: DataType = left.dataType
+    handleExceptions(() => {def inputDataType: DataType = left.dataType
     inputDataType match {
       case LongType | IntegerType =>
         var dateLong: Long = -1
@@ -577,8 +615,8 @@ case class NfTimestamp(left: Expression, right: Expression) extends BinaryExpres
         } else {
           dateLong = inputDate.asInstanceOf[Long]
         }
-        if (dateLong > 100000000) {
-          dateLong * 1000L
+        if (dateLong > DATE_INT_MAX_THRESHOLD) {
+          getEpochMs(dateLong) * 1000L
         } else {
           toUnixTime(toLocalDate(dateLong.toInt)) * 1000000L
         }
@@ -612,7 +650,7 @@ case class NfTimestamp(left: Expression, right: Expression) extends BinaryExpres
                 case e: Exception => throw e
               }
 
-            case _ => throw new IllegalArgumentException(
+            case _ => throw new TypeException(
               "Invalid input type of second parameter " + inputDataType)
           }
         }
@@ -625,8 +663,8 @@ case class NfTimestamp(left: Expression, right: Expression) extends BinaryExpres
         inputDate.asInstanceOf[Long]
 
       case _ =>
-        throw new IllegalArgumentException("Invalid input type " + inputDataType)
-    }
+        throw new TypeException("Invalid input type " + inputDataType)
+    }}, null)
   }
   override def prettyName: String = "nf_timestamp"
 }
@@ -661,10 +699,12 @@ case class NfDateAdd(param1: Expression, param2: Expression, param3: Expression)
     this(Literal("day"), param2, param1)
   }
 
+  override def nullable: Boolean = true
+
   protected override def nullSafeEval(first: Any, second: Any, third: Any): Any = {
-    val unitFirst = first match {
+    handleExceptions(() => {val unitFirst = first match {
       case u8s: UTF8String => u8s.toString
-      case _ => throw new IllegalArgumentException("The unit type should be string")
+      case _ => throw new TypeException("The unit type should be string")
     }
 
     val (value, unit) = (second, param2.dataType) match {
@@ -679,7 +719,7 @@ case class NfDateAdd(param1: Expression, param2: Expression, param3: Expression)
         val offsetPattern = Pattern.compile("([+-]?\\d+)(['yMd'])")
         val matcher = offsetPattern.matcher(offsetExpression)
         if (!matcher.matches) {
-          throw new IllegalArgumentException("Invalid offset expression " + offsetExpression)
+          throw new TypeException("Invalid offset expression " + offsetExpression)
         }
         val v = matcher.group(1).toLong
         matcher.group(2) match {
@@ -690,17 +730,17 @@ case class NfDateAdd(param1: Expression, param2: Expression, param3: Expression)
           case "d" =>
             (v, "day")
           case _ =>
-            throw new IllegalArgumentException("Invalid offset expression " + offsetExpression)
+            throw new TypeException("Invalid offset expression " + offsetExpression)
         }
-      case _ => throw new IllegalArgumentException("Invalid offset input type")
+      case _ => throw new TypeException("Invalid offset input type")
     }
 
     fromInput(third, param3.dataType) match {
       case em: EpochMillis =>
         em.add(value, unit)
       case _ =>
-        throw new IllegalArgumentException("Invalid input type")
-    }
+        throw new TypeException("Invalid input type")
+    }}, null)
   }
 
   override def prettyName: String = "nf_dateadd"
@@ -726,10 +766,12 @@ case class NfDateDiff(param1: Expression, param2: Expression, param3: Expression
     this(Literal("day"), param1, param2)
   }
 
+  override def nullable: Boolean = true
+
   protected override def nullSafeEval(first: Any, second: Any, third: Any): Any = {
-    val unit = first match {
+    handleExceptions(() => {val unit = first match {
       case u8s: UTF8String => u8s.toString
-      case _ => throw new IllegalArgumentException("The unit type should be string")
+      case _ => throw new TypeException("The unit type should be string")
     }
 
     def canDiff(em1: EpochMillis, em2: EpochMillis): Boolean = (em1, em2) match {
@@ -753,10 +795,10 @@ case class NfDateDiff(param1: Expression, param2: Expression, param3: Expression
       case (em1: EpochMillis, em2: EpochMillis) if canDiff(em1, em2) =>
         em1.diff(em2, unit)
       case (em1: EpochMillis, em2: EpochMillis) if !canDiff(em1, em2) =>
-        throw new IllegalArgumentException("Both inputs should have the same type")
+        throw new TypeException("Both inputs should have the same type")
       case _ =>
-        throw new IllegalArgumentException("Invalid input type")
-    }
+        throw new TypeException("Invalid input type")
+    }}, null)
   }
 
   override def prettyName: String = "nf_datediff"
@@ -774,8 +816,10 @@ case class NfDateTrunc(left: Expression, right: Expression) extends BinaryExpres
 
   override def dataType: DataType = right.dataType
 
+  override def nullable: Boolean = true
+
   protected override def nullSafeEval(first: Any, second: Any): Any = {
-    val unit = first.asInstanceOf[UTF8String].toString
+    handleExceptions(() => {val unit = first.asInstanceOf[UTF8String].toString
     val inputDataType = right.dataType
     inputDataType match {
       case LongType | IntegerType =>
@@ -785,8 +829,8 @@ case class NfDateTrunc(left: Expression, right: Expression) extends BinaryExpres
         } else {
           dateLong = second.asInstanceOf[Long]
         }
-        if (dateLong > 100000000) {
-          truncateTimestamp(unit, dateLong)
+        if (dateLong > DATE_INT_MAX_THRESHOLD) {
+          dateIntEpochTrunc(unit, dateLong)
         } else {
           toDateInt(LocalDate.ofEpochDay(truncateDate(unit,
             toLocalDate(dateLong.toInt).toEpochDay)))
@@ -822,8 +866,8 @@ case class NfDateTrunc(left: Expression, right: Expression) extends BinaryExpres
         truncateTimestamp(unit, epochMicros / 1000L) * 1000L
 
       case _ =>
-        throw new IllegalArgumentException("Invalid input type " + inputDataType)
-    }
+        throw new TypeException("Invalid input type " + inputDataType)
+    }}, null)
   }
 
   override def prettyName: String = "nf_datetrunc"
@@ -836,8 +880,10 @@ case class NfDateFormat(left: Expression, right: Expression) extends BinaryExpre
 
   override def dataType: DataType = StringType
 
+  override def nullable: Boolean = true
+
   protected override def nullSafeEval(first: Any, second: Any): Any = {
-    val format = second.asInstanceOf[UTF8String].toString
+    handleExceptions(() => {val format = second.asInstanceOf[UTF8String].toString
     val inputDataType = left.dataType
     inputDataType match {
       case LongType | IntegerType =>
@@ -847,8 +893,8 @@ case class NfDateFormat(left: Expression, right: Expression) extends BinaryExpre
         } else {
           dateLong = first.asInstanceOf[Long]
         }
-        if (dateLong > 100000000) {
-          UTF8String.fromString(formatDatetime(dateLong, format))
+        if (dateLong > DATE_INT_MAX_THRESHOLD) {
+          UTF8String.fromString(formatDatetime(getEpochMs(dateLong), format))
         } else {
           UTF8String.fromString(formatDatetime(toUnixTime(
             toLocalDate(dateLong.toInt)) * 1000L, format))
@@ -883,8 +929,8 @@ case class NfDateFormat(left: Expression, right: Expression) extends BinaryExpre
         UTF8String.fromString(formatDatetime(epochMicros / 1000L, format))
 
       case _ =>
-        throw new IllegalArgumentException("Invalid input type " + inputDataType)
-    }
+        throw new TypeException("Invalid input type " + inputDataType)
+    }}, null)
   }
 
   override def prettyName: String = "nf_dateformat"
@@ -896,8 +942,10 @@ case class NfYear(child: Expression) extends UnaryExpression
   with CodegenFallback {
   override def dataType: DataType = IntegerType
 
+  override def nullable: Boolean = true
+
   protected override def nullSafeEval(inputDate: Any): Any = {
-    def inputDataType: DataType = child.dataType
+    handleExceptions(() => {def inputDataType: DataType = child.dataType
     inputDataType match {
       case LongType | IntegerType =>
         var dateLong: Long = -1
@@ -906,8 +954,8 @@ case class NfYear(child: Expression) extends UnaryExpression
         } else {
           dateLong = inputDate.asInstanceOf[Long]
         }
-        if (dateLong > 100000000) {
-          yearFromTimestamp(dateLong)
+        if (dateLong > DATE_INT_MAX_THRESHOLD) {
+          yearFromTimestamp(getEpochMs(dateLong))
         } else {
           yearFromDate(toLocalDate(dateLong.toInt).toEpochDay)
         }
@@ -939,8 +987,8 @@ case class NfYear(child: Expression) extends UnaryExpression
         yearFromTimestamp(epochMicros / 1000L)
 
       case _ =>
-        throw new IllegalArgumentException("Invalid input type " + inputDataType)
-    }
+        throw new TypeException("Invalid input type " + inputDataType)
+    }}, null)
   }
   override def prettyName: String = "nf_year"
 }
@@ -951,8 +999,10 @@ case class NfMonth(child: Expression) extends UnaryExpression
   with CodegenFallback {
   override def dataType: DataType = IntegerType
 
+  override def nullable: Boolean = true
+
   protected override def nullSafeEval(inputDate: Any): Any = {
-    def inputDataType: DataType = child.dataType
+    handleExceptions(() => {def inputDataType: DataType = child.dataType
     inputDataType match {
       case LongType | IntegerType =>
         var dateLong: Long = -1
@@ -961,8 +1011,8 @@ case class NfMonth(child: Expression) extends UnaryExpression
         } else {
           dateLong = inputDate.asInstanceOf[Long]
         }
-        if (dateLong > 100000000) {
-          monthFromTimestamp(dateLong)
+        if (dateLong > DATE_INT_MAX_THRESHOLD) {
+          monthFromTimestamp(getEpochMs(dateLong))
         } else {
           monthFromDate(toLocalDate(dateLong.toInt).toEpochDay)
         }
@@ -994,8 +1044,8 @@ case class NfMonth(child: Expression) extends UnaryExpression
         monthFromTimestamp(epochMicros / 1000L)
 
       case _ =>
-        throw new IllegalArgumentException("Invalid input type " + inputDataType)
-    }
+        throw new TypeException("Invalid input type " + inputDataType)
+    }}, null)
   }
   override def prettyName: String = "nf_month"
 }
@@ -1006,8 +1056,10 @@ case class NfDay(child: Expression) extends UnaryExpression
   with CodegenFallback {
   override def dataType: DataType = IntegerType
 
+  override def nullable: Boolean = true
+
   protected override def nullSafeEval(inputDate: Any): Any = {
-    def inputDataType: DataType = child.dataType
+    handleExceptions(() => {def inputDataType: DataType = child.dataType
     inputDataType match {
       case LongType | IntegerType =>
         var dateLong: Long = -1
@@ -1016,8 +1068,8 @@ case class NfDay(child: Expression) extends UnaryExpression
         } else {
           dateLong = inputDate.asInstanceOf[Long]
         }
-        if (dateLong > 100000000) {
-          dayFromTimestamp(dateLong)
+        if (dateLong > DATE_INT_MAX_THRESHOLD) {
+          dayFromTimestamp(getEpochMs(dateLong))
         } else {
           dayFromDate(toLocalDate(dateLong.toInt).toEpochDay)
         }
@@ -1049,8 +1101,8 @@ case class NfDay(child: Expression) extends UnaryExpression
         dayFromTimestamp(epochMicros / 1000L)
 
       case _ =>
-        throw new IllegalArgumentException("Invalid input type " + inputDataType)
-    }
+        throw new TypeException("Invalid input type " + inputDataType)
+    }}, null)
   }
   override def prettyName: String = "nf_day"
 }
@@ -1061,8 +1113,10 @@ case class NfHour(child: Expression) extends UnaryExpression
   with CodegenFallback {
   override def dataType: DataType = IntegerType
 
+  override def nullable: Boolean = true
+
   protected override def nullSafeEval(inputDate: Any): Any = {
-    def inputDataType: DataType = child.dataType
+    handleExceptions(() => {def inputDataType: DataType = child.dataType
     inputDataType match {
       case LongType | IntegerType =>
         var dateLong: Long = -1
@@ -1071,8 +1125,8 @@ case class NfHour(child: Expression) extends UnaryExpression
         } else {
           dateLong = inputDate.asInstanceOf[Long]
         }
-        if (dateLong > 100000000) {
-          hourFromTimestamp(dateLong)
+        if (dateLong > DATE_INT_MAX_THRESHOLD) {
+          hourFromTimestamp(getEpochMs(dateLong))
         } else {
           hourFromTimestamp(toUnixTime(toLocalDate(dateLong.toInt)) * 1000L)
         }
@@ -1104,8 +1158,8 @@ case class NfHour(child: Expression) extends UnaryExpression
         hourFromTimestamp(epochMicros / 1000L)
 
       case _ =>
-        throw new IllegalArgumentException("Invalid input type " + inputDataType)
-    }
+        throw new TypeException("Invalid input type " + inputDataType)
+    }}, null)
   }
   override def prettyName: String = "nf_hour"
 }
@@ -1116,8 +1170,10 @@ case class NfMinute(child: Expression) extends UnaryExpression
   with CodegenFallback {
   override def dataType: DataType = IntegerType
 
+  override def nullable: Boolean = true
+
   protected override def nullSafeEval(inputDate: Any): Any = {
-    def inputDataType: DataType = child.dataType
+    handleExceptions(() => {def inputDataType: DataType = child.dataType
     inputDataType match {
       case LongType | IntegerType =>
         var dateLong: Long = -1
@@ -1126,8 +1182,8 @@ case class NfMinute(child: Expression) extends UnaryExpression
         } else {
           dateLong = inputDate.asInstanceOf[Long]
         }
-        if (dateLong > 100000000) {
-          minuteFromTimestamp(dateLong)
+        if (dateLong > DATE_INT_MAX_THRESHOLD) {
+          minuteFromTimestamp(getEpochMs(dateLong))
         } else {
           minuteFromTimestamp(toUnixTime(toLocalDate(dateLong.toInt)) * 1000L)
         }
@@ -1159,8 +1215,8 @@ case class NfMinute(child: Expression) extends UnaryExpression
         minuteFromTimestamp(epochMicros / 1000L)
 
       case _ =>
-        throw new IllegalArgumentException("Invalid input type " + inputDataType)
-    }
+        throw new TypeException("Invalid input type " + inputDataType)
+    }}, null)
   }
   override def prettyName: String = "nf_minute"
 }
@@ -1171,8 +1227,10 @@ case class NfSecond(child: Expression) extends UnaryExpression
   with CodegenFallback {
   override def dataType: DataType = IntegerType
 
+  override def nullable: Boolean = true
+
   protected override def nullSafeEval(inputDate: Any): Any = {
-    def inputDataType: DataType = child.dataType
+    handleExceptions(() => {def inputDataType: DataType = child.dataType
     inputDataType match {
       case LongType | IntegerType =>
         var dateLong: Long = -1
@@ -1181,8 +1239,8 @@ case class NfSecond(child: Expression) extends UnaryExpression
         } else {
           dateLong = inputDate.asInstanceOf[Long]
         }
-        if (dateLong > 100000000) {
-          secondFromTimestamp(dateLong)
+        if (dateLong > DATE_INT_MAX_THRESHOLD) {
+          secondFromTimestamp(getEpochMs(dateLong))
         } else {
           secondFromTimestamp(toUnixTime(toLocalDate(dateLong.toInt)) * 1000L)
         }
@@ -1214,8 +1272,8 @@ case class NfSecond(child: Expression) extends UnaryExpression
         secondFromTimestamp(epochMicros / 1000L)
 
       case _ =>
-        throw new IllegalArgumentException("Invalid input type " + inputDataType)
-    }
+        throw new TypeException("Invalid input type " + inputDataType)
+    }}, null)
   }
   override def prettyName: String = "nf_second"
 }
@@ -1227,8 +1285,10 @@ case class NfMillisecond(child: Expression) extends UnaryExpression
   with CodegenFallback {
   override def dataType: DataType = IntegerType
 
+  override def nullable: Boolean = true
+
   protected override def nullSafeEval(inputDate: Any): Any = {
-    def inputDataType: DataType = child.dataType
+    handleExceptions(() => {def inputDataType: DataType = child.dataType
     inputDataType match {
       case LongType | IntegerType =>
         var dateLong: Long = -1
@@ -1237,8 +1297,8 @@ case class NfMillisecond(child: Expression) extends UnaryExpression
         } else {
           dateLong = inputDate.asInstanceOf[Long]
         }
-        if (dateLong > 100000000) {
-          millisecondFromTimestamp(dateLong)
+        if (dateLong > DATE_INT_MAX_THRESHOLD) {
+          millisecondFromTimestamp(getEpochMs(dateLong))
         } else {
           millisecondFromTimestamp(toUnixTime(toLocalDate(dateLong.toInt)) * 1000L)
         }
@@ -1270,8 +1330,8 @@ case class NfMillisecond(child: Expression) extends UnaryExpression
         millisecondFromTimestamp(epochMicros / 1000L)
 
       case _ =>
-        throw new IllegalArgumentException("Invalid input type " + inputDataType)
-    }
+        throw new TypeException("Invalid input type " + inputDataType)
+    }}, null)
   }
   override def prettyName: String = "nf_millisecond"
 }
@@ -1282,8 +1342,10 @@ case class NfWeek(child: Expression) extends UnaryExpression
   with CodegenFallback {
   override def dataType: DataType = IntegerType
 
+  override def nullable: Boolean = true
+
   protected override def nullSafeEval(inputDate: Any): Any = {
-    def inputDataType: DataType = child.dataType
+    handleExceptions(() => {def inputDataType: DataType = child.dataType
     inputDataType match {
       case LongType | IntegerType =>
         var dateLong: Long = -1
@@ -1292,8 +1354,8 @@ case class NfWeek(child: Expression) extends UnaryExpression
         } else {
           dateLong = inputDate.asInstanceOf[Long]
         }
-        if (dateLong > 100000000) {
-          weekFromTimestamp(dateLong)
+        if (dateLong > DATE_INT_MAX_THRESHOLD) {
+          weekFromTimestamp(getEpochMs(dateLong))
         } else {
           weekFromDate(toLocalDate(dateLong.toInt).toEpochDay)
         }
@@ -1325,8 +1387,8 @@ case class NfWeek(child: Expression) extends UnaryExpression
         weekFromTimestamp(epochMicros / 1000L)
 
       case _ =>
-        throw new IllegalArgumentException("Invalid input type " + inputDataType)
-    }
+        throw new TypeException("Invalid input type " + inputDataType)
+    }}, null)
   }
   override def prettyName: String = "nf_week"
 }
@@ -1337,8 +1399,10 @@ case class NfQuarter(child: Expression) extends UnaryExpression
   with CodegenFallback {
   override def dataType: DataType = IntegerType
 
+  override def nullable: Boolean = true
+
   protected override def nullSafeEval(inputDate: Any): Any = {
-    def inputDataType: DataType = child.dataType
+    handleExceptions(() => {def inputDataType: DataType = child.dataType
     inputDataType match {
       case LongType | IntegerType =>
         var dateLong: Long = -1
@@ -1347,8 +1411,8 @@ case class NfQuarter(child: Expression) extends UnaryExpression
         } else {
           dateLong = inputDate.asInstanceOf[Long]
         }
-        if (dateLong > 100000000) {
-          quarterFromTimestamp(dateLong)
+        if (dateLong > DATE_INT_MAX_THRESHOLD) {
+          quarterFromTimestamp(getEpochMs(dateLong))
         } else {
           quarterFromDate(toLocalDate(dateLong.toInt).toEpochDay)
         }
@@ -1380,8 +1444,8 @@ case class NfQuarter(child: Expression) extends UnaryExpression
         quarterFromTimestamp(epochMicros / 1000L)
 
       case _ =>
-        throw new IllegalArgumentException("Invalid input type " + inputDataType)
-    }
+        throw new TypeException("Invalid input type " + inputDataType)
+    }}, null)
   }
   override def prettyName: String = "nf_quarter"
 }

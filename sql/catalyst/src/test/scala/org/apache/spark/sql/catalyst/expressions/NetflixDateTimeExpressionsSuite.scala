@@ -21,6 +21,7 @@ import java.sql.{Date, Timestamp}
 
 import org.apache.spark.SparkFunSuite
 import org.apache.spark.sql.catalyst.InternalRow
+import org.apache.spark.sql.catalyst.util.NetflixDateTimeUtils.TypeException
 import org.apache.spark.sql.types.{IntegerType, LongType}
 
 class NetflixDateTimeExpressionsSuite extends SparkFunSuite with ExpressionEvalHelper {
@@ -28,7 +29,6 @@ class NetflixDateTimeExpressionsSuite extends SparkFunSuite with ExpressionEvalH
   test("NfDateAdd") {
     checkEvaluation(NfDateAdd(Literal(20180531), Literal(2)), 20180602)
     checkEvaluation(NfDateAdd(Literal(20180531L), Literal(2)), 20180602L)
-    checkEvaluation(NfDateAdd(Literal("second"), Literal(-1), Literal(1000001000)), 1000000000)
     checkEvaluation(NfDateAdd(Literal(1531373400000L), Literal(2)), 1531546200000L)
 
     checkEvaluation(NfDateAdd(Literal("20180531"), Literal(-2)), "20180529")
@@ -84,7 +84,6 @@ class NetflixDateTimeExpressionsSuite extends SparkFunSuite with ExpressionEvalH
     checkEvaluation(NfDateDiff(Literal("day"), Literal(20180101L), Literal(20171225L)), -7L)
     checkEvaluation(NfDateDiff(Literal(20180604), Literal(20180531L)), -4L)
     checkEvaluation(NfDateDiff(Literal(20160229L), Literal(20160301)), 1L)
-    checkEvaluation(NfDateDiff(Literal("second"), Literal(1000000000), Literal(1000001000)), 1L)
     checkEvaluation(NfDateDiff(Literal(1531373400000L), Literal(1531546200000L)), 2L)
 
     // String input
@@ -131,9 +130,6 @@ class NetflixDateTimeExpressionsSuite extends SparkFunSuite with ExpressionEvalH
     checkEvaluation(NfDateDiff(Literal(1527806973000L), Literal(null)), null)
 
     assertEvalError(
-      NfDateDiff(Literal(2018053), Literal(20180604)),
-      "Input must have eight digits" :: Nil)
-    assertEvalError(
       NfDateDiff(Literal("minute"), Literal(20180531), Literal(20180604)),
       "'minute' is not a valid Date field" :: Nil)
     assertEvalError(
@@ -162,7 +158,7 @@ class NetflixDateTimeExpressionsSuite extends SparkFunSuite with ExpressionEvalH
     expr: Expression,
     expectedErrors: Seq[String],
     caseSensitive: Boolean = true): Unit = {
-    val e = intercept[IllegalArgumentException] {
+    val e = intercept[TypeException] {
       evaluate(expr)
     }
 
