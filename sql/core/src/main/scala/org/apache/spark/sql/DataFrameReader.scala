@@ -148,38 +148,41 @@ class DataFrameReader private[sql](sparkSession: SparkSession) extends Logging {
   def load(paths: String*): DataFrame = {
     import DataSourceV2Implicits._
 
-    // if the source is not set, attempt to read as a table first
-    if (source == sparkSession.sessionState.conf.defaultDataSourceName) {
-      lazy val pathAsTable = extraOptions.get("path") match {
-        case Some(path) if !path.contains("/") =>
-          // without "/", this cannot be a full path. parse it as a table name
-          Some(sparkSession.sessionState.sqlParser.parseTableIdentifier(path))
-        case _ =>
-          None
-      }
+    lazy val pathAsTable = extraOptions.get("path") match {
+      case Some(path) if !path.contains("/") =>
+        // without "/", this cannot be a full path. parse it as a table name
+        Some(sparkSession.sessionState.sqlParser.parseTableIdentifier(path))
+      case _ =>
+        None
+    }
+    val table = extraOptions.toMap.table.orElse(pathAsTable)
 
-      extraOptions.toMap.table.orElse(pathAsTable) match {
-        case Some(ident) =>
-          val catalog = sparkSession.catalog(extraOptions.get("catalog")).asTableCatalog
-          val options = (extraOptions +
-              ("provider" -> source) +
-              ("database" -> ident.database.getOrElse(sparkSession.catalog.currentDatabase)) +
-              ("table" -> ident.table)).toMap
+    val options = table match {
+      case Some(ident) =>
+        (extraOptions +
+            ("provider" -> source) +
+            ("database" -> ident.database.getOrElse(sparkSession.catalog.currentDatabase)) +
+            ("table" -> ident.table)).toMap
 
-          return Dataset.ofRows(sparkSession,
-            DataSourceV2Relation.create(
-              extraOptions.getOrElse("catalog", "default"),
-              ident, catalog.loadTable(ident), options))
+      case _ =>
+        (extraOptions +
+            ("provider" -> source.toString)).toMap
+    }
 
-        case _ =>
-          // fall through to direct source loading
-      }
+    // if the catalog is set or the source is not set, attempt to read as a table
+    if (extraOptions.get("catalog").isDefined ||
+        source == sparkSession.sessionState.conf.defaultDataSourceName) {
+      val catalog = sparkSession.catalog(extraOptions.get("catalog")).asTableCatalog
+      val ident = options.table.get
+      return Dataset.ofRows(sparkSession,
+        DataSourceV2Relation.create(
+          extraOptions.getOrElse("catalog", "default"),
+          ident, catalog.loadTable(ident), options))
     }
 
     val cls = DataSource.lookupDataSource(source)
     if (classOf[DataSourceV2].isAssignableFrom(cls)) {
       val source = cls.newInstance().asInstanceOf[DataSourceV2]
-      val options: Map[String, String] = (extraOptions + ("provider" -> source.toString)).toMap
 
       Dataset.ofRows(sparkSession, DataSourceV2Relation.create(
         source, options, userSpecifiedSchema = userSpecifiedSchema))
