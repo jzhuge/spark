@@ -34,7 +34,7 @@ import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
 import org.apache.spark.scheduler.{SparkListener, SparkListenerApplicationEnd}
 import org.apache.spark.sql.catalog.Catalog
-import org.apache.spark.sql.catalog.v2.{CatalogProvider, Catalogs, V1TableCatalog}
+import org.apache.spark.sql.catalog.v2.{CaseInsensitiveStringMap, CatalogProvider, Catalogs, V1TableCatalog}
 import org.apache.spark.sql.catalyst._
 import org.apache.spark.sql.catalyst.encoders._
 import org.apache.spark.sql.catalyst.expressions.AttributeReference
@@ -42,7 +42,7 @@ import org.apache.spark.sql.catalyst.plans.logical.{LocalRelation, Range}
 import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.datasources.LogicalRelation
 import org.apache.spark.sql.execution.ui.SQLListener
-import org.apache.spark.sql.internal.{CatalogImpl, SessionState, SharedState, SQLConf}
+import org.apache.spark.sql.internal.{CatalogImpl, SQLConf, SessionState, SharedState}
 import org.apache.spark.sql.internal.StaticSQLConf.CATALOG_IMPLEMENTATION
 import org.apache.spark.sql.sources.BaseRelation
 import org.apache.spark.sql.streaming._
@@ -574,7 +574,11 @@ class SparkSession private(
 
   @transient private lazy val catalogs = new mutable.HashMap[String, CatalogProvider]()
 
-  @transient private lazy val v1CatalogAsV2 = new V1TableCatalog(sessionState)
+  @transient private lazy val v1CatalogAsV2 = {
+    val cat = new V1TableCatalog(sessionState)
+    cat.initialize("default", CaseInsensitiveStringMap.empty())
+    cat
+  }
 
   private[sql] def catalog(name: Option[String]): CatalogProvider = synchronized {
     name match {

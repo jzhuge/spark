@@ -62,7 +62,7 @@ public class Catalogs {
 
       CatalogProvider provider = CatalogProvider.class.cast(providerClass.newInstance());
 
-      provider.initialize(catalogOptions(name, conf));
+      provider.initialize(name, catalogOptions(name, conf));
 
       return provider;
 
@@ -100,9 +100,6 @@ public class Catalogs {
         options.put(matcher.group(1), entry.getValue());
       }
     }
-
-    // add name last to ensure it overwrites any conflicting options
-    options.put("name", name);
 
     return options;
   }
