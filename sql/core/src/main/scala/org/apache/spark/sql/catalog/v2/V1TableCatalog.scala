@@ -35,6 +35,10 @@ import org.apache.spark.sql.types.StructType
  */
 class V1TableCatalog(sessionState: SessionState) extends TableCatalog {
 
+  private var _name: String = _
+
+  override def name: String = _name
+
   private lazy val catalog: SessionCatalog = sessionState.catalog
 
   override def loadTable(
@@ -114,8 +118,8 @@ class V1TableCatalog(sessionState: SessionState) extends TableCatalog {
     }
   }
 
-  override def initialize(options: CaseInsensitiveStringMap): Unit = {
-    // do nothing.
+  override def initialize(name: String, options: CaseInsensitiveStringMap): Unit = {
+    this._name = name
   }
 
   private def convertTransforms(

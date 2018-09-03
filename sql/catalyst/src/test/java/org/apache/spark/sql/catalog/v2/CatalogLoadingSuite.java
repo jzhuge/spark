@@ -36,16 +36,15 @@ public class CatalogLoadingSuite {
         TestCatalogProvider.class, provider.getClass());
 
     TestCatalogProvider testProvider = (TestCatalogProvider) provider;
-    Assert.assertEquals("Options should contain only one key", 1, testProvider.options.size());
-    Assert.assertEquals("Options should contain correct catalog name",
-        "test-name", testProvider.options.get("name"));
+    Assert.assertEquals("Options should contain no keys", 0, testProvider.options.size());
+    Assert.assertEquals("Catalog should have correct name", "test-name", testProvider.name());
   }
 
   @Test
   public void testInitializationOptions() throws SparkException {
     SQLConf conf = new SQLConf();
     conf.setConfString("spark.sql.catalog.test-name", TestCatalogProvider.class.getCanonicalName());
-    conf.setConfString("spark.sql.catalog.test-name.name", "overwritten");
+    conf.setConfString("spark.sql.catalog.test-name.name", "not-catalog-name");
     conf.setConfString("spark.sql.catalog.test-name.kEy", "valUE");
 
     CatalogProvider provider = Catalogs.load("test-name", conf);
@@ -56,10 +55,11 @@ public class CatalogLoadingSuite {
     TestCatalogProvider testProvider = (TestCatalogProvider) provider;
 
     Assert.assertEquals("Options should contain only two keys", 2, testProvider.options.size());
-    Assert.assertEquals("Options should contain correct catalog name",
-        "test-name", testProvider.options.get("name"));
     Assert.assertEquals("Options should contain correct value for key",
         "valUE", testProvider.options.get("key"));
+    Assert.assertEquals("Options should contain correct value for name (not overwritten)",
+        "not-catalog-name", testProvider.options.get("name"));
+    Assert.assertEquals("Catalog should have correct name", "test-name", testProvider.name());
   }
 
   @Test
@@ -148,14 +148,21 @@ public class CatalogLoadingSuite {
 }
 
 class TestCatalogProvider implements CatalogProvider {
+  String name = null;
   CaseInsensitiveStringMap options = null;
 
   TestCatalogProvider() {
   }
 
   @Override
-  public void initialize(CaseInsensitiveStringMap options) {
+  public void initialize(String name, CaseInsensitiveStringMap options) {
+    this.name = name;
     this.options = options;
+  }
+
+  @Override
+  public String name() {
+    return name;
   }
 }
 
@@ -165,7 +172,12 @@ class ConstructorFailureCatalogProvider implements CatalogProvider { // fails in
   }
 
   @Override
-  public void initialize(CaseInsensitiveStringMap options) {
+  public void initialize(String name, CaseInsensitiveStringMap options) {
+  }
+
+  @Override
+  public String name() {
+    return null;
   }
 }
 
@@ -174,11 +186,20 @@ class AccessErrorCatalogProvider implements CatalogProvider { // no public const
   }
 
   @Override
-  public void initialize(CaseInsensitiveStringMap options) {
+  public void initialize(String name, CaseInsensitiveStringMap options) {
+  }
+
+  @Override
+  public String name() {
+    return null;
   }
 }
 
 class InvalidCatalogProvider { // doesn't implement CatalogProvider
-  public void initialize(CaseInsensitiveStringMap options) {
+  public void initialize(String name, CaseInsensitiveStringMap options) {
+  }
+
+  public String name() {
+    return null;
   }
 }
