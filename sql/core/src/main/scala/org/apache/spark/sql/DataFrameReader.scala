@@ -175,9 +175,7 @@ class DataFrameReader private[sql](sparkSession: SparkSession) extends Logging {
       val catalog = sparkSession.catalog(extraOptions.get("catalog")).asTableCatalog
       val ident = options.table.get
       return Dataset.ofRows(sparkSession,
-        DataSourceV2Relation.create(
-          extraOptions.getOrElse("catalog", "default"),
-          ident, catalog.loadTable(ident), options))
+        DataSourceV2Relation.create(catalog.name, ident, catalog.loadTable(ident), options))
     }
 
     val cls = DataSource.lookupDataSource(source)

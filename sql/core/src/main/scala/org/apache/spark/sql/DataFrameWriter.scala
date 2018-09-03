@@ -25,7 +25,7 @@ import org.apache.hadoop.fs.Path
 
 import org.apache.spark.SparkException
 import org.apache.spark.annotation.InterfaceStability
-import org.apache.spark.sql.catalog.v2.V2Relation
+import org.apache.spark.sql.catalog.v2.{Table, TableCatalog, V1MetadataTable}
 import org.apache.spark.sql.catalyst.TableIdentifier
 import org.apache.spark.sql.catalyst.analysis.UnresolvedRelation
 import org.apache.spark.sql.catalyst.catalog.{BucketSpec, CatalogTable, CatalogTableType}
@@ -34,7 +34,7 @@ import org.apache.spark.sql.execution.SQLExecution
 import org.apache.spark.sql.execution.command.DDLUtils
 import org.apache.spark.sql.execution.datasources.{CreateTable, DataSource}
 import org.apache.spark.sql.execution.datasources.v2.DataSourceV2Relation
-import org.apache.spark.sql.sources.v2.DataSourceV2
+import org.apache.spark.sql.sources.v2.{DataSourceV2, WriteSupport}
 import org.apache.spark.sql.types.StructType
 
 /**
@@ -244,8 +244,7 @@ final class DataFrameWriter[T] private[sql](ds: Dataset[T]) {
 
           case (true, SaveMode.Append) =>
             val relation = DataSourceV2Relation.create(
-              extraOptions.getOrElse("catalog", "default"),
-              identifier, catalog.loadTable(identifier), options)
+              catalog.name, identifier, catalog.loadTable(identifier), options)
 
             runCommand(df.sparkSession, "save") {
               AppendData.byName(relation, df.logicalPlan)
@@ -326,16 +325,32 @@ final class DataFrameWriter[T] private[sql](ds: Dataset[T]) {
    * @since 1.4.0
    */
   def insertInto(tableName: String): Unit = {
-    val tableIdent = df.sparkSession.sessionState.sqlParser.parseTableIdentifier(tableName)
-    df.sparkSession.sessionState.catalog.lookupRelation(tableIdent) match {
-      case v2: V2Relation =>
-        appendData(v2)
-      case _ =>
-        insertInto(tableIdent)
+    import org.apache.spark.sql.sources.v2.DataSourceV2Implicits._
+    val catalog = df.sparkSession.catalog(extraOptions.get("catalog")).asTableCatalog
+    val identifier = df.sparkSession.sessionState.sqlParser.parseTableIdentifier(tableName)
+    lazy val table = catalog.loadTable(identifier)
+
+    // use the new logical plans if:
+    // * the catalog is defined
+    // * the source is a v2 source
+    // * the table exists and is writable with v2
+    val useV2 = extraOptions.get("catalog").isDefined ||
+        classOf[DataSourceV2].isAssignableFrom(DataSource.lookupDataSource(source)) ||
+        (catalog.tableExists(identifier) && (table match {
+          case table: V1MetadataTable if !table.isInstanceOf[WriteSupport] =>
+            false
+          case _ =>
+            true
+        }))
+
+    if (useV2) {
+      appendData(catalog, identifier, table)
+    } else {
+      insertInto(identifier)
     }
   }
 
-  private def appendData(v2: V2Relation): Unit = {
+  private def appendData(catalog: TableCatalog, identifier: TableIdentifier, table: Table): Unit = {
     assertNotBucketed("insertInto")
     if (partitioningColumns.isDefined) {
       throw new AnalysisException("Partitioning is determined by the table's configuration and " +
@@ -350,8 +365,15 @@ final class DataFrameWriter[T] private[sql](ds: Dataset[T]) {
       case SaveMode.Append | SaveMode.ErrorIfExists =>
         // ErrorIfExists should be Append with validation, but validation is not supported
         val isByName = extraOptions.get("matchByName").exists(_.toBoolean)
+        val options = (extraOptions +
+            ("provider" -> source) +
+            ("database" -> identifier.database.getOrElse(df.sparkSession.catalog.currentDatabase)) +
+            ("table" -> identifier.table)).toMap
+
         runCommand(df.sparkSession, "insertInto") {
-          AppendData(v2, df.logicalPlan, isByName)
+          AppendData(
+            DataSourceV2Relation.create(catalog.name, identifier, table, options),
+            df.logicalPlan, isByName)
         }
 
       case SaveMode.Ignore =>
@@ -488,27 +510,32 @@ final class DataFrameWriter[T] private[sql](ds: Dataset[T]) {
    * @since 1.4.0
    */
   def saveAsTable(tableName: String): Unit = {
+    import org.apache.spark.sql.sources.v2.DataSourceV2Implicits._
+    val catalog = df.sparkSession.catalog(extraOptions.get("catalog")).asTableCatalog
     val identifier = df.sparkSession.sessionState.sqlParser.parseTableIdentifier(tableName)
-    // use the new logical plans if the table exists and is a v2 relation, if a catalog is defined,
-    // or if the source is a v2 implementation
-    df.sparkSession.sessionState.catalog.lookupRelation(identifier) match {
-      case _: V2Relation =>
-        saveAsV2Table(identifier)
+    lazy val table = catalog.loadTable(identifier)
 
-      case _ if extraOptions.contains("catalog") =>
-        saveAsV2Table(identifier)
+    // use the new logical plans if:
+    // * the catalog is defined
+    // * the source is a v2 source
+    // * the table exists and is writable with v2
+    val useV2 = extraOptions.get("catalog").isDefined ||
+        classOf[DataSourceV2].isAssignableFrom(DataSource.lookupDataSource(source)) ||
+        (catalog.tableExists(identifier) && (table match {
+          case table: V1MetadataTable if !table.isInstanceOf[WriteSupport] =>
+            false
+          case _ =>
+            true
+        }))
 
-      case _ if classOf[DataSourceV2].isAssignableFrom(DataSource.lookupDataSource(source)) =>
-        saveAsV2Table(identifier)
-
-      case _ =>
-        saveAsTable(identifier)
+    if (useV2) {
+      saveAsV2Table(catalog, identifier)
+    } else {
+      saveAsTable(identifier)
     }
   }
 
-  private def saveAsV2Table(identifier: TableIdentifier): Unit = {
-    import org.apache.spark.sql.sources.v2.DataSourceV2Implicits._
-    val catalog = df.sparkSession.catalog(extraOptions.get("catalog")).asTableCatalog
+  private def saveAsV2Table(catalog: TableCatalog, identifier: TableIdentifier): Unit = {
     val exists = catalog.tableExists(identifier)
     val options = (extraOptions +
         ("provider" -> source) +
@@ -530,8 +557,7 @@ final class DataFrameWriter[T] private[sql](ds: Dataset[T]) {
         }
 
         val relation = DataSourceV2Relation.create(
-          extraOptions.getOrElse("catalog", "default"),
-          identifier, catalog.loadTable(identifier), options)
+          catalog.name, identifier, catalog.loadTable(identifier), options)
 
         runCommand(df.sparkSession, "save") {
           AppendData.byName(relation, df.logicalPlan)
