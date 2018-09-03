@@ -24,7 +24,7 @@ import org.apache.spark.sql._
 import org.apache.spark.sql.catalyst.analysis.Analyzer
 import org.apache.spark.sql.execution.SparkPlanner
 import org.apache.spark.sql.execution.datasources._
-import org.apache.spark.sql.execution.datasources.v2.DataSourceV2Strategy
+import org.apache.spark.sql.execution.datasources.v2.{DataSourceV2Analysis, DataSourceV2Strategy}
 import org.apache.spark.sql.hive.client.HiveClient
 import org.apache.spark.sql.internal.{SessionState, SQLConf}
 
@@ -125,6 +125,8 @@ private[hive] class HiveSessionState(sparkSession: SparkSession)
       override val extendedResolutionRules =
         catalog.ParquetConversions ::
         catalog.OrcConversions ::
+        NetflixAnalysis(sparkSession) ::
+        DataSourceV2Analysis(sparkSession) ::
         AnalyzeCreateTable(sparkSession) ::
         DataSourceAnalysis(conf) ::
         (if (conf.runSQLonFile) new ResolveDataSource(sparkSession) :: Nil else Nil)

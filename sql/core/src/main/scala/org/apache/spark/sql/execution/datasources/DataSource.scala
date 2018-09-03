@@ -37,8 +37,10 @@ import org.apache.spark.sql.execution.datasources.csv.CSVFileFormat
 import org.apache.spark.sql.execution.datasources.jdbc.JdbcRelationProvider
 import org.apache.spark.sql.execution.datasources.json.JsonFileFormat
 import org.apache.spark.sql.execution.datasources.parquet.ParquetFileFormat
+import org.apache.spark.sql.execution.datasources.v2.{DataSourceV2Relation, V2AsBaseRelation}
 import org.apache.spark.sql.execution.streaming._
 import org.apache.spark.sql.sources._
+import org.apache.spark.sql.sources.v2.DataSourceV2
 import org.apache.spark.sql.streaming.OutputMode
 import org.apache.spark.sql.types.{CalendarIntervalType, StructType}
 import org.apache.spark.util.Utils
@@ -325,6 +327,9 @@ case class DataSource(
   def resolveRelation(checkFilesExist: Boolean = true): BaseRelation = {
     val relation = (providingClass.newInstance(), userSpecifiedSchema) match {
       // TODO: Throw when too much is given.
+      case (dataSource: DataSourceV2, _) =>
+        val v2relation = DataSourceV2Relation.create(dataSource, options, None, userSpecifiedSchema)
+        V2AsBaseRelation(sparkSession.sqlContext, v2relation, catalogTable.get)
       case (dataSource: SchemaRelationProvider, Some(schema)) =>
         dataSource.createRelation(sparkSession.sqlContext, caseInsensitiveOptions, schema)
       case (dataSource: RelationProvider, None) =>

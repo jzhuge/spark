@@ -20,7 +20,6 @@ package org.apache.spark.sql.hive
 import scala.util.{Failure, Success, Try}
 import scala.util.control.NonFatal
 
-import com.netflix.iceberg.spark.source.IcebergMetacatSource
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.hive.ql.exec.{UDAF, UDF}
 import org.apache.hadoop.hive.ql.exec.{FunctionRegistry => HiveFunctionRegistry}
@@ -34,10 +33,8 @@ import org.apache.spark.sql.catalyst.catalog.{FunctionResourceLoader, GlobalTemp
 import org.apache.spark.sql.catalyst.expressions.{Cast, Expression, ExpressionInfo}
 import org.apache.spark.sql.catalyst.plans.logical.{LogicalPlan, SubqueryAlias}
 import org.apache.spark.sql.catalyst.rules.Rule
-import org.apache.spark.sql.execution.datasources.v2.DataSourceV2Relation
 import org.apache.spark.sql.hive.HiveShim.HiveFunctionWrapper
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.sources.v2.DataSourceV2
 import org.apache.spark.sql.types.{DecimalType, DoubleType}
 import org.apache.spark.util.Utils
 
@@ -58,8 +55,6 @@ private[sql] class HiveSessionCatalog(
     conf,
     hadoopConf) {
 
-  private lazy val icebergTables: DataSourceV2 = new IcebergMetacatSource()
-
   override def lookupRelation(name: TableIdentifier, alias: Option[String]): LogicalPlan = {
     synchronized {
       val table = formatTableName(name.table)
@@ -72,16 +67,7 @@ private[sql] class HiveSessionCatalog(
       } else if (name.database.isDefined || !tempTables.contains(table)) {
         val database = name.database.map(formatDatabaseName)
         val newName = name.copy(database = database, table = table)
-
-        metastoreCatalog.lookupRelation(newName, alias) match {
-          case m: MetastoreRelation
-            if m.catalogTable.properties.get("table_type").exists("iceberg".equalsIgnoreCase) =>
-
-            DataSourceV2Relation.create(icebergTables, Map("database" -> db, "table" -> table))
-
-          case other => other
-        }
-
+        metastoreCatalog.lookupRelation(newName, alias)
       } else {
         val relation = tempTables(table)
         val tableWithQualifiers = SubqueryAlias(table, relation, None)
