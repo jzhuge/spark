@@ -17,7 +17,7 @@
 
 package org.apache.spark.sql
 
-import java.util.{Locale, Properties}
+import java.util.Properties
 
 import scala.collection.JavaConverters._
 
@@ -27,14 +27,12 @@ import org.apache.spark.api.java.JavaRDD
 import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.json.{CreateJacksonParser, JacksonParser, JSONOptions}
-import org.apache.spark.sql.execution.command.DDLUtils
 import org.apache.spark.sql.execution.datasources.{DataSource, FailureSafeParser}
 import org.apache.spark.sql.execution.datasources.csv._
 import org.apache.spark.sql.execution.datasources.jdbc._
 import org.apache.spark.sql.execution.datasources.json.TextInputJsonDataSource
-import org.apache.spark.sql.execution.datasources.v2.DataSourceV2Relation
-import org.apache.spark.sql.execution.datasources.v2.DataSourceV2Utils
-import org.apache.spark.sql.sources.v2.{DataSourceOptions, DataSourceV2, DataSourceV2Implicits, ReadSupport}
+import org.apache.spark.sql.execution.datasources.v2.{DataSourceV2Relation, DataSourceV2Utils}
+import org.apache.spark.sql.sources.v2.{DataSourceOptions, DataSourceV2, DataSourceV2Implicits}
 import org.apache.spark.sql.types.{StringType, StructType}
 import org.apache.spark.unsafe.types.UTF8String
 
@@ -207,40 +205,23 @@ class DataFrameReader private[sql](sparkSession: SparkSession) extends Logging {
     }
 
     // if the catalog is set or the source is not set, attempt to read as a table
-    if (extraOptions.get("catalog").isDefined ||
-        source == sparkSession.sessionState.conf.defaultDataSourceName) {
+    if (isCatalogDefined || isV2Source) {
       val catalog = sparkSession.catalog(extraOptions.get("catalog")).asTableCatalog
-      val ident = options.table.get
-      return Dataset.ofRows(sparkSession,
-        DataSourceV2Relation.create(
-          extraOptions.getOrElse("catalog", "default"),
-          ident, catalog.loadTable(ident), options))
-    }
+      options.table match {
+        case Some(ident) if catalog.tableExists(ident) =>
+          return Dataset.ofRows(sparkSession,
+            DataSourceV2Relation.create(catalog.name, ident, catalog.loadTable(ident), options))
 
-    if (source.toLowerCase(Locale.ROOT) == DDLUtils.HIVE_PROVIDER) {
-      throw new AnalysisException("Hive data source can only be used with tables, you can not " +
-        "read files of Hive data source directly.")
-    }
-
-    val cls = DataSource.lookupDataSource(source, sparkSession.sessionState.conf)
-    if (classOf[DataSourceV2].isAssignableFrom(cls)) {
-      val ds = cls.newInstance().asInstanceOf[DataSourceV2]
-      if (ds.isInstanceOf[ReadSupport]) {
-        val sessionOptions = DataSourceV2Utils.extractSessionConfigs(
-          ds = ds, conf = sparkSession.sessionState.conf)
-
-        Dataset.ofRows(sparkSession, DataSourceV2Relation.create(
-          ds, sessionOptions ++ options, userSpecifiedSchema = userSpecifiedSchema))
-
-      } else {
-        loadV1Source(paths: _*)
+        case _ =>
+          val v2src = DataSource.lookupDataSource(source, sparkSession.sessionState.conf)
+            .newInstance().asInstanceOf[DataSourceV2]
+          val sessionOptions = DataSourceV2Utils.extractSessionConfigs(
+            ds = v2src, conf = sparkSession.sessionState.conf)
+          return Dataset.ofRows(sparkSession, DataSourceV2Relation.create(
+            v2src, sessionOptions ++ options, userSpecifiedSchema = userSpecifiedSchema))
       }
-    } else {
-      loadV1Source(paths: _*)
     }
-  }
 
-  private def loadV1Source(paths: String*) = {
     // Code path for data source v1.
     sparkSession.baseRelationToDataFrame(
       DataSource.apply(
@@ -249,6 +230,16 @@ class DataFrameReader private[sql](sparkSession: SparkSession) extends Logging {
         userSpecifiedSchema = userSpecifiedSchema,
         className = source,
         options = extraOptions.toMap).resolveRelation())
+  }
+
+  private def isCatalogDefined: Boolean = {
+    extraOptions.get("catalog").isDefined
+  }
+
+  private def isV2Source: Boolean = {
+    !"hive".equalsIgnoreCase(source) &&
+        classOf[DataSourceV2].isAssignableFrom(
+          DataSource.lookupDataSource(source, sparkSession.sessionState.conf))
   }
 
   /**

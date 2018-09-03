@@ -23,7 +23,7 @@ import java.util.{ArrayList, List => JList}
 import test.org.apache.spark.sql.sources.v2._
 
 import org.apache.spark.SparkException
-import org.apache.spark.sql.{DataFrame, QueryTest, Row}
+import org.apache.spark.sql.{DataFrame, QueryTest, Row, SaveMode}
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.execution.datasources.v2.{DataSourceV2Relation, DataSourceV2ScanExec}
 import org.apache.spark.sql.execution.exchange.ShuffleExchangeExec
@@ -201,7 +201,7 @@ class DataSourceV2Suite extends QueryTest with SharedSQLContext {
           spark.read.format(cls.getName).option("path", path).load(),
           spark.range(10).union(spark.range(10)).select('id, -'id))
 
-        Seq("error", "overwrite", "ignore").foreach { mode =>
+        Seq(SaveMode.ErrorIfExists, SaveMode.Overwrite, SaveMode.Ignore).foreach { mode =>
           val e = intercept[Exception] {
             spark.range(5).select('id as 'i, -'id as 'j).write.format(cls.getName)
               .option("path", path).mode(mode).save()
