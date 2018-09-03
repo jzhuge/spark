@@ -27,13 +27,15 @@ import org.apache.spark.sql.catalyst.analysis.NoSuchTableException
 import org.apache.spark.sql.catalyst.catalog.{BucketSpec, CatalogTable, CatalogTableType, SessionCatalog}
 import org.apache.spark.sql.execution.datasources.DataSource
 import org.apache.spark.sql.internal.SessionState
-import org.apache.spark.sql.sources.v2.{ReadSupport, WriteSupport}
+import org.apache.spark.sql.sources.v2.{DataSourceV2TableProvider, ReadSupport, WriteSupport}
 import org.apache.spark.sql.types.StructType
 
 /**
  * A [[TableCatalog]] that translates calls to a v1 SessionCatalog.
  */
 class V1TableCatalog(sessionState: SessionState) extends TableCatalog {
+
+  import org.apache.spark.sql.sources.v2.DataSourceV2Implicits.OptionsHelper
 
   private var _name: String = _
 
@@ -48,6 +50,9 @@ class V1TableCatalog(sessionState: SessionState) extends TableCatalog {
     catalogTable.provider match {
       case Some(provider) =>
         DataSource.lookupDataSource(provider).newInstance() match {
+          case tableProvider: DataSourceV2TableProvider =>
+            tableProvider.createTable(catalogTable.storage.properties.asDataSourceOptions)
+
           case v2Source: ReadSupport if v2Source.isInstanceOf[WriteSupport] =>
             new V1MetadataTable(catalogTable, Some(v2Source))
                 with DelegateReadSupport with DelegateWriteSupport
