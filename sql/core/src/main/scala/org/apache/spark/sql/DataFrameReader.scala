@@ -148,29 +148,32 @@ class DataFrameReader private[sql](sparkSession: SparkSession) extends Logging {
   def load(paths: String*): DataFrame = {
     import DataSourceV2Implicits._
 
-    lazy val pathAsTable = extraOptions.get("path") match {
-      case Some(path) if !path.contains("/") =>
-        // without "/", this cannot be a full path. parse it as a table name
-        Some(sparkSession.sessionState.sqlParser.parseTableIdentifier(path))
-      case _ =>
-        None
-    }
+    // if the source is not set, attempt to read as a table first
+    if (source == sparkSession.sessionState.conf.defaultDataSourceName) {
+      lazy val pathAsTable = extraOptions.get("path") match {
+        case Some(path) if !path.contains("/") =>
+          // without "/", this cannot be a full path. parse it as a table name
+          Some(sparkSession.sessionState.sqlParser.parseTableIdentifier(path))
+        case _ =>
+          None
+      }
 
-    extraOptions.toMap.table.orElse(pathAsTable) match {
-      case Some(ident) =>
-        val catalog = sparkSession.catalog(extraOptions.get("catalog")).asTableCatalog
-        val options = (extraOptions +
-            ("provider" -> source) +
-            ("database" -> ident.database.getOrElse(sparkSession.catalog.currentDatabase)) +
-            ("table" -> ident.table)).toMap
+      extraOptions.toMap.table.orElse(pathAsTable) match {
+        case Some(ident) =>
+          val catalog = sparkSession.catalog(extraOptions.get("catalog")).asTableCatalog
+          val options = (extraOptions +
+              ("provider" -> source) +
+              ("database" -> ident.database.getOrElse(sparkSession.catalog.currentDatabase)) +
+              ("table" -> ident.table)).toMap
 
-        return Dataset.ofRows(sparkSession,
-          DataSourceV2Relation.create(
-            extraOptions.getOrElse("catalog", "default"),
-            ident, catalog.loadTable(ident), options))
+          return Dataset.ofRows(sparkSession,
+            DataSourceV2Relation.create(
+              extraOptions.getOrElse("catalog", "default"),
+              ident, catalog.loadTable(ident), options))
 
-      case _ =>
-        // fall through to direct source loading
+        case _ =>
+          // fall through to direct source loading
+      }
     }
 
     val cls = DataSource.lookupDataSource(source)
