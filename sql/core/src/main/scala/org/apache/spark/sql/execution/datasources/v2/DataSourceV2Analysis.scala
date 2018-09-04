@@ -99,7 +99,8 @@ object DataSourceV2Analysis {
   def apply(spark: SparkSession): DataSourceV2Analysis = new DataSourceV2Analysis(spark)
 
   private def isV2CatalogTable(catalogTable: CatalogTable): Boolean = {
-    catalogTable.provider.exists(
-      provider => classOf[DataSourceV2].isAssignableFrom(DataSource.lookupDataSource(provider)))
+    catalogTable.provider.exists(provider =>
+      !"hive".equalsIgnoreCase(provider) &&
+          classOf[DataSourceV2].isAssignableFrom(DataSource.lookupDataSource(provider)))
   }
 }
