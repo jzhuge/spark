@@ -328,7 +328,7 @@ final class DataFrameWriter[T] private[sql](ds: Dataset[T]) {
     import org.apache.spark.sql.sources.v2.DataSourceV2Implicits._
     val catalog = df.sparkSession.catalog(extraOptions.get("catalog")).asTableCatalog
     val identifier = df.sparkSession.sessionState.sqlParser.parseTableIdentifier(tableName)
-    val table = loadV2Table(catalog, identifier).get
+    lazy val table = loadV2Table(catalog, identifier).get
 
     // use the new logical plans if:
     // * the catalog is defined
