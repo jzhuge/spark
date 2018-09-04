@@ -25,9 +25,9 @@ import org.apache.hadoop.fs.Path
 
 import org.apache.spark.SparkException
 import org.apache.spark.annotation.InterfaceStability
-import org.apache.spark.sql.catalog.v2.{Table, TableCatalog, V1MetadataTable}
+import org.apache.spark.sql.catalog.v2.{Table, TableCatalog}
 import org.apache.spark.sql.catalyst.TableIdentifier
-import org.apache.spark.sql.catalyst.analysis.UnresolvedRelation
+import org.apache.spark.sql.catalyst.analysis.{NoSuchTableException, UnresolvedRelation}
 import org.apache.spark.sql.catalyst.catalog.{BucketSpec, CatalogTable, CatalogTableType}
 import org.apache.spark.sql.catalyst.plans.logical.{AppendData, CreateTableAsSelect, InsertIntoTable, LogicalPlan, OverwriteOptions, Project}
 import org.apache.spark.sql.execution.SQLExecution
@@ -328,22 +328,13 @@ final class DataFrameWriter[T] private[sql](ds: Dataset[T]) {
     import org.apache.spark.sql.sources.v2.DataSourceV2Implicits._
     val catalog = df.sparkSession.catalog(extraOptions.get("catalog")).asTableCatalog
     val identifier = df.sparkSession.sessionState.sqlParser.parseTableIdentifier(tableName)
-    lazy val table = catalog.loadTable(identifier)
+    val table = loadV2Table(catalog, identifier).get
 
     // use the new logical plans if:
     // * the catalog is defined
     // * the source is a v2 source
     // * the table exists and is writable with v2
-    val useV2 = extraOptions.get("catalog").isDefined ||
-        classOf[DataSourceV2].isAssignableFrom(DataSource.lookupDataSource(source)) ||
-        (catalog.tableExists(identifier) && (table match {
-          case table: V1MetadataTable if !table.isInstanceOf[WriteSupport] =>
-            false
-          case _ =>
-            true
-        }))
-
-    if (useV2) {
+    if (isCatalogDefined || isV2Source || table.isInstanceOf[WriteSupport]) {
       appendData(catalog, identifier, table)
     } else {
       insertInto(identifier)
@@ -513,25 +504,34 @@ final class DataFrameWriter[T] private[sql](ds: Dataset[T]) {
     import org.apache.spark.sql.sources.v2.DataSourceV2Implicits._
     val catalog = df.sparkSession.catalog(extraOptions.get("catalog")).asTableCatalog
     val identifier = df.sparkSession.sessionState.sqlParser.parseTableIdentifier(tableName)
-    lazy val table = catalog.loadTable(identifier)
+    lazy val table = loadV2Table(catalog, identifier)
 
     // use the new logical plans if:
     // * the catalog is defined
     // * the source is a v2 source
     // * the table exists and is writable with v2
-    val useV2 = extraOptions.get("catalog").isDefined ||
-        classOf[DataSourceV2].isAssignableFrom(DataSource.lookupDataSource(source)) ||
-        (catalog.tableExists(identifier) && (table match {
-          case table: V1MetadataTable if !table.isInstanceOf[WriteSupport] =>
-            false
-          case _ =>
-            true
-        }))
-
-    if (useV2) {
+    if (isCatalogDefined || isV2Source || table.exists(_.isInstanceOf[WriteSupport])) {
       saveAsV2Table(catalog, identifier)
     } else {
       saveAsTable(identifier)
+    }
+  }
+
+  private def isCatalogDefined: Boolean = {
+    extraOptions.get("catalog").isDefined
+  }
+
+  private def isV2Source: Boolean = {
+    !"hive".equalsIgnoreCase(source) &&
+        classOf[DataSourceV2].isAssignableFrom(DataSource.lookupDataSource(source))
+  }
+
+  private def loadV2Table(catalog: TableCatalog, ident: TableIdentifier): Option[Table] = {
+    try {
+      Option(catalog.loadTable(ident))
+    } catch {
+      case _: NoSuchTableException =>
+        None
     }
   }
 
