@@ -89,7 +89,7 @@ class DataSourceV2Analysis(spark: SparkSession) extends Rule[LogicalPlan] {
 
       AppendData.byPosition(v2.v2relation, insert.child)
 
-    case rel @ LogicalRelation(v2: V2AsBaseRelation, _, _) =>
+    case LogicalRelation(v2: V2AsBaseRelation, _, _) =>
       // unwrap v2 relation
       v2.v2relation
   }
