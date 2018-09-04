@@ -23,7 +23,7 @@ import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.catalog.CatalogTable
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
 import org.apache.spark.sql.catalyst.rules.Rule
-import org.apache.spark.sql.execution.datasources.LogicalRelation
+import org.apache.spark.sql.execution.datasources.{CreateTable, LogicalRelation}
 import org.apache.spark.sql.execution.datasources.v2.{DataSourceV2Relation, V2AsBaseRelation}
 import org.apache.spark.sql.sources.v2.DataSourceV2
 
@@ -36,6 +36,9 @@ class NetflixAnalysis(spark: SparkSession) extends Rule[LogicalPlan] {
   private lazy val icebergTables: DataSourceV2 = new IcebergMetacatSource()
 
   override def apply(plan: LogicalPlan): LogicalPlan = plan resolveOperators {
+    case create: CreateTable =>
+      create
+
     case rel: MetastoreRelation if isIcebergTable(rel.catalogTable) =>
       val ident = rel.catalogTable.identifier
       val relation = DataSourceV2Relation.create(icebergTables, Map(
