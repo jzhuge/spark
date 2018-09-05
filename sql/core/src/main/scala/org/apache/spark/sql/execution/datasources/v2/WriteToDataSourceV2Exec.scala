@@ -70,10 +70,10 @@ case class CreateTableAsSelectExec(
       throw new TableAlreadyExistsException(ident.database.getOrElse("null"), ident.table)
     }
 
-    Utils.tryWithSafeFinally({
+    Utils.tryWithSafeFinallyAndFailureCallbacks({
       val table = catalog.createTable(ident, plan.schema, partitioning.asJava, properties.asJava)
       appendToTable(table)
-    })(finallyBlock = {
+    })(catchBlock = {
       catalog.dropTable(ident)
     })
   }
@@ -94,10 +94,10 @@ case class ReplaceTableAsSelectExec(
 
     catalog.dropTable(ident)
 
-    Utils.tryWithSafeFinally({
+    Utils.tryWithSafeFinallyAndFailureCallbacks({
       val table = catalog.createTable(ident, plan.schema, partitioning.asJava, properties.asJava)
       appendToTable(table)
-    })(finallyBlock = {
+    })(catchBlock = {
       catalog.dropTable(ident)
     })
   }
