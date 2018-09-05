@@ -18,11 +18,14 @@
 package org.apache.spark.sql.execution.datasources.v2
 
 import org.apache.spark.sql.{AnalysisException, SaveMode, SparkSession, SQLContext}
+import org.apache.spark.sql.catalog.v2.{PartitionUtil, TableChange}
 import org.apache.spark.sql.catalyst.analysis.NamedRelation
 import org.apache.spark.sql.catalyst.catalog.CatalogTable
-import org.apache.spark.sql.catalyst.plans.logical.{AppendData, CreateTableAsSelect, InsertIntoTable, LogicalPlan, ReplaceTableAsSelect}
+import org.apache.spark.sql.catalyst.plans.logical.{AlterTable, AppendData, CreateTable, CreateTableAsSelect, InsertIntoTable, LogicalPlan, ReplaceTableAsSelect}
 import org.apache.spark.sql.catalyst.rules.Rule
-import org.apache.spark.sql.execution.datasources.{CreateTable, DataSource, LogicalRelation}
+import org.apache.spark.sql.execution.command.AlterTableAddColumnsCommand
+import org.apache.spark.sql.execution.datasources
+import org.apache.spark.sql.execution.datasources.{DataSource, LogicalRelation}
 import org.apache.spark.sql.sources.BaseRelation
 import org.apache.spark.sql.sources.v2.DataSourceV2
 import org.apache.spark.sql.types.StructType
@@ -41,14 +44,49 @@ class DataSourceV2Analysis(spark: SparkSession) extends Rule[LogicalPlan] {
   import org.apache.spark.sql.catalog.v2.CatalogV2Implicits._
   import DataSourceV2Analysis._
 
-  override def apply(plan: LogicalPlan): LogicalPlan = plan resolveOperators {
-    case create @ CreateTable(catalogTable, _, None) if isV2CatalogTable(catalogTable) =>
-      create
+  // TODO: after identifier is extended to include catalog, load the correct catalog for each ident
+  private val catalog = spark.catalog(None).asTableCatalog
 
-    case ctas @ CreateTable(catalogTable, mode, Some(query)) if isV2CatalogTable(catalogTable) =>
-      // TODO: after identifier is extended to include catalog, load the correct catalog
-      val catalog = spark.catalog(None).asTableCatalog
-      val options = catalogTable.storage.properties
+  override def apply(plan: LogicalPlan): LogicalPlan = plan resolveOperators {
+    case AlterTableAddColumnsCommand(identifier, columns) =>
+      // load the table to create a relation so that the alter table command can be validated
+      val table = catalog.loadTable(identifier)
+      val relation = DataSourceV2Relation.create(
+        catalog.name, identifier, table, Map.empty[String, String])
+      val changes = columns.map { field =>
+        val (parent, name) = field.name match {
+          case NestedFieldName(path, fieldName) =>
+            (path, fieldName)
+          case fieldName =>
+            (null, fieldName)
+        }
+        TableChange.addColumn(parent, name, field.dataType)
+      }
+
+      AlterTable(catalog, relation, changes)
+
+    case datasources.CreateTable(catalogTable, mode, None) if isV2CatalogTable(catalogTable) =>
+      val options = catalogTable.storage.properties + ("provider" -> catalogTable.provider.get)
+
+      val partitioning = PartitionUtil.convertToTransforms(
+        catalogTable.partitionColumnNames, catalogTable.bucketSpec)
+
+      mode match {
+        case SaveMode.ErrorIfExists =>
+          CreateTable(catalog, catalogTable.identifier, catalogTable.schema, partitioning, options,
+            ignoreIfExists = false)
+
+        case SaveMode.Ignore =>
+          CreateTable(catalog, catalogTable.identifier, catalogTable.schema, partitioning, options,
+            ignoreIfExists = true)
+
+        case _ =>
+          throw new AnalysisException(s"$mode cannot be used for table creation in v2 data sources")
+      }
+
+    case datasources.CreateTable(catalogTable, mode, Some(query))
+        if isV2CatalogTable(catalogTable) =>
+      val options = catalogTable.storage.properties + ("provider" -> catalogTable.provider.get)
 
       if (catalogTable.partitionColumnNames.nonEmpty) {
         throw new AnalysisException("CTAS with partitions is not yet supported.")
@@ -97,6 +135,8 @@ class DataSourceV2Analysis(spark: SparkSession) extends Rule[LogicalPlan] {
 
 object DataSourceV2Analysis {
   def apply(spark: SparkSession): DataSourceV2Analysis = new DataSourceV2Analysis(spark)
+
+  val NestedFieldName = """([\w\.]+)\.(\w+)""".r
 
   private def isV2CatalogTable(catalogTable: CatalogTable): Boolean = {
     catalogTable.provider.exists(provider =>
