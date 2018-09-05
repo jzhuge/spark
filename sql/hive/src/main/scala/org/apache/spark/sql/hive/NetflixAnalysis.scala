@@ -26,6 +26,7 @@ import org.apache.spark.sql.catalyst.plans.logical.{AlterTable, CreateTable, Cre
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution.datasources.LogicalRelation
 import org.apache.spark.sql.execution.datasources.v2.{DataSourceV2Relation, TableV2Relation, V2AsBaseRelation}
+import org.apache.spark.sql.hive.HiveExternalCatalog.DATASOURCE_PROVIDER
 import org.apache.spark.sql.sources.v2.DataSourceV2
 
 /**
@@ -41,7 +42,7 @@ class NetflixAnalysis(spark: SparkSession) extends Rule[LogicalPlan] {
   override def apply(plan: LogicalPlan): LogicalPlan = plan resolveOperators {
     // replace the default v2 catalog with one for Iceberg tables
     case alter @ AlterTable(cat, rel: TableV2Relation, _)
-        if shouldReplaceCatalog(cat, Option(rel.table.properties.get("provider"))) =>
+        if shouldReplaceCatalog(cat, Option(rel.table.properties.get(DATASOURCE_PROVIDER))) =>
       alter.copy(catalog = icebergCatalog)
 
     case create @ CreateTable(catalog, _, _, _, options, _)
