@@ -398,10 +398,9 @@ case class OverwriteOptions(
   }
 }
 
-case class DeleteFrom(table: LogicalPlan, expr: Expression) extends LogicalPlan {
-  override def output: Seq[Attribute] = Seq.empty
-
+case class DeleteFrom(table: LogicalPlan, expr: Expression) extends Command {
   override lazy val children: Seq[LogicalPlan] = Seq(table)
+  // TODO: resolve the expression and fail if not resolved
 }
 
 /**
@@ -412,7 +411,6 @@ case class AppendData(
     query: LogicalPlan,
     isByName: Boolean) extends Command {
   override def children: Seq[LogicalPlan] = Seq(query)
-  override def output: Seq[Attribute] = Seq.empty
 
   override lazy val resolved: Boolean = {
     table.resolved && query.resolved && query.output.size == table.output.size &&
@@ -448,7 +446,6 @@ case class CreateTableAsSelect(
     ignoreIfExists: Boolean) extends Command {
 
   override def children: Seq[LogicalPlan] = Seq(query)
-  override def output: Seq[Attribute] = Seq.empty
   override lazy val resolved = true
 }
 
@@ -463,7 +460,6 @@ case class ReplaceTableAsSelect(
     writeOptions: Map[String, String]) extends Command {
 
   override def children: Seq[LogicalPlan] = Seq(query)
-  override def output: Seq[Attribute] = Seq.empty
   override lazy val resolved = true
 }
 
