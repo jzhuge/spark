@@ -48,6 +48,11 @@ case class LogicalRelation(
     }
   }
 
+  override lazy val resolved: Boolean = relation match {
+    case _: V2AsBaseRelation => false // avoid rules that will change the plan before conversion
+    case _ => super.resolved
+  }
+
   override val output: Seq[AttributeReference] = {
     relation match {
       case v2: V2AsBaseRelation =>
