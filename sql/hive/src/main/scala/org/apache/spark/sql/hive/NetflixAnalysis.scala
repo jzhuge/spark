@@ -20,8 +20,9 @@ package org.apache.spark.sql.hive
 import com.netflix.iceberg.spark.source.IcebergMetacatSource
 
 import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.catalog.v2.{CatalogV2Implicits, TableCatalog}
 import org.apache.spark.sql.catalyst.catalog.CatalogTable
-import org.apache.spark.sql.catalyst.plans.logical.{InsertIntoTable, LogicalPlan}
+import org.apache.spark.sql.catalyst.plans.logical.{CreateTableAsSelect, LogicalPlan}
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution.datasources.LogicalRelation
 import org.apache.spark.sql.execution.datasources.v2.{DataSourceV2Relation, V2AsBaseRelation}
@@ -31,15 +32,19 @@ import org.apache.spark.sql.sources.v2.DataSourceV2
  * Analysis rules specific to Netflix.
  */
 class NetflixAnalysis(spark: SparkSession) extends Rule[LogicalPlan] {
+  import CatalogV2Implicits._
   import NetflixAnalysis._
 
+  private lazy val icebergCatalog: TableCatalog = spark.catalog(Some("iceberg")).asTableCatalog
   private lazy val icebergTables: DataSourceV2 = new IcebergMetacatSource()
 
   override def apply(plan: LogicalPlan): LogicalPlan = plan resolveOperators {
-    case insert @ InsertIntoTable(rel: MetastoreRelation, _, _, _, _, _)
-        if isIcebergTable(rel.catalogTable) =>
-      insert.copy(table = toLogicalRelation(rel))
+    // replace the default v2 catalog with one for Iceberg tables
+    case ctas @ CreateTableAsSelect(cat, _, _, _, options, _)
+        if cat != icebergCatalog && options.get("provider").exists("iceberg".equalsIgnoreCase) =>
+      ctas.copy(catalog = icebergCatalog)
 
+    // this case is only used for older iceberg tables that don't have the provider set
     case rel: MetastoreRelation if isIcebergTable(rel.catalogTable) =>
       toLogicalRelation(rel)
   }
