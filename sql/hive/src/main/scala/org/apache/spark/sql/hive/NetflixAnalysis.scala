@@ -22,10 +22,10 @@ import com.netflix.iceberg.spark.source.IcebergMetacatSource
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalog.v2.{CatalogV2Implicits, TableCatalog}
 import org.apache.spark.sql.catalyst.catalog.CatalogTable
-import org.apache.spark.sql.catalyst.plans.logical.{CreateTableAsSelect, LogicalPlan}
+import org.apache.spark.sql.catalyst.plans.logical.{AlterTable, CreateTable, CreateTableAsSelect, LogicalPlan}
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution.datasources.LogicalRelation
-import org.apache.spark.sql.execution.datasources.v2.{DataSourceV2Relation, V2AsBaseRelation}
+import org.apache.spark.sql.execution.datasources.v2.{DataSourceV2Relation, TableV2Relation, V2AsBaseRelation}
 import org.apache.spark.sql.sources.v2.DataSourceV2
 
 /**
@@ -40,6 +40,15 @@ class NetflixAnalysis(spark: SparkSession) extends Rule[LogicalPlan] {
 
   override def apply(plan: LogicalPlan): LogicalPlan = plan resolveOperators {
     // replace the default v2 catalog with one for Iceberg tables
+    case alter @ AlterTable(cat, rel: TableV2Relation, _)
+      if cat != icebergCatalog &&
+          Option(rel.table.properties.get("provider")).exists("iceberg".equalsIgnoreCase) =>
+      alter.copy(catalog = icebergCatalog)
+
+    case create @ CreateTable(cat, _, _, _, options, _)
+      if cat != icebergCatalog && options.get("provider").exists("iceberg".equalsIgnoreCase) =>
+      create.copy(catalog = icebergCatalog)
+
     case ctas @ CreateTableAsSelect(cat, _, _, _, options, _)
         if cat != icebergCatalog && options.get("provider").exists("iceberg".equalsIgnoreCase) =>
       ctas.copy(catalog = icebergCatalog)
