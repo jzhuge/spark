@@ -100,7 +100,6 @@ class MesosCoarseGrainedSchedulerBackendSuite extends SparkFunSuite
     // accounts for a killed task
     val status = createTaskStatus("0", "s1", TaskState.TASK_KILLED)
     backend.statusUpdate(driver, status)
-    verify(driver, times(1)).reviveOffers()
 
     // Launches a new task on a valid offer from the same slave
     offerResources(List(offer2))
