@@ -55,6 +55,8 @@ private[sql] class HiveSessionCatalog(
     conf,
     hadoopConf) {
 
+  private val nfRules = new NetflixAnalysis(sparkSession)
+
   override def lookupRelation(name: TableIdentifier, alias: Option[String]): LogicalPlan = {
     synchronized {
       val table = formatTableName(name.table)
@@ -67,7 +69,7 @@ private[sql] class HiveSessionCatalog(
       } else if (name.database.isDefined || !tempTables.contains(table)) {
         val database = name.database.map(formatDatabaseName)
         val newName = name.copy(database = database, table = table)
-        metastoreCatalog.lookupRelation(newName, alias)
+        nfRules.apply(metastoreCatalog.lookupRelation(newName, alias))
       } else {
         val relation = tempTables(table)
         val tableWithQualifiers = SubqueryAlias(table, relation, None)
