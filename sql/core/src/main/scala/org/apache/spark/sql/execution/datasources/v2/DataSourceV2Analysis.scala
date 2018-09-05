@@ -19,6 +19,7 @@ package org.apache.spark.sql.execution.datasources.v2
 
 import org.apache.spark.sql.{AnalysisException, SaveMode, SparkSession, SQLContext}
 import org.apache.spark.sql.catalog.v2.{PartitionUtil, TableChange}
+import org.apache.spark.sql.catalyst.TableIdentifier
 import org.apache.spark.sql.catalyst.analysis.NamedRelation
 import org.apache.spark.sql.catalyst.catalog.CatalogTable
 import org.apache.spark.sql.catalyst.plans.logical.{AlterTable, AppendData, CreateTable, CreateTableAsSelect, InsertIntoTable, LogicalPlan, ReplaceTableAsSelect}
@@ -48,7 +49,8 @@ class DataSourceV2Analysis(spark: SparkSession) extends Rule[LogicalPlan] {
   private val catalog = spark.catalog(None).asTableCatalog
 
   override def apply(plan: LogicalPlan): LogicalPlan = plan resolveOperators {
-    case AlterTableAddColumnsCommand(identifier, columns) =>
+    case AlterTableAddColumnsCommand(ident, columns) =>
+      val identifier = fixIdent(ident)
       // load the table to create a relation so that the alter table command can be validated
       val table = catalog.loadTable(identifier)
       val relation = DataSourceV2Relation.create(
@@ -73,11 +75,11 @@ class DataSourceV2Analysis(spark: SparkSession) extends Rule[LogicalPlan] {
 
       mode match {
         case SaveMode.ErrorIfExists =>
-          CreateTable(catalog, catalogTable.identifier, catalogTable.schema, partitioning, options,
+          CreateTable(catalog, identifier(catalogTable), catalogTable.schema, partitioning, options,
             ignoreIfExists = false)
 
         case SaveMode.Ignore =>
-          CreateTable(catalog, catalogTable.identifier, catalogTable.schema, partitioning, options,
+          CreateTable(catalog, identifier(catalogTable), catalogTable.schema, partitioning, options,
             ignoreIfExists = true)
 
         case _ =>
@@ -97,15 +99,15 @@ class DataSourceV2Analysis(spark: SparkSession) extends Rule[LogicalPlan] {
           throw new AnalysisException("Append mode cannot be used with CTAS for v2 data sources")
 
         case SaveMode.ErrorIfExists =>
-          CreateTableAsSelect(catalog, catalogTable.identifier, Seq.empty, query, options,
+          CreateTableAsSelect(catalog, identifier(catalogTable), Seq.empty, query, options,
             ignoreIfExists = false)
 
         case SaveMode.Ignore =>
-          CreateTableAsSelect(catalog, catalogTable.identifier, Seq.empty, query, options,
+          CreateTableAsSelect(catalog, identifier(catalogTable), Seq.empty, query, options,
             ignoreIfExists = true)
 
         case SaveMode.Overwrite =>
-          ReplaceTableAsSelect(catalog, catalogTable.identifier, Seq.empty, query, options)
+          ReplaceTableAsSelect(catalog, identifier(catalogTable), Seq.empty, query, options)
       }
 
     case insert @ InsertIntoTable(LogicalRelation(v2: V2AsBaseRelation, _, _), _, _, _, _, _) =>
@@ -130,6 +132,19 @@ class DataSourceV2Analysis(spark: SparkSession) extends Rule[LogicalPlan] {
     case LogicalRelation(v2: V2AsBaseRelation, _, _) =>
       // unwrap v2 relation
       v2.v2relation
+  }
+
+  private def fixIdent(identifier: TableIdentifier): TableIdentifier = {
+    identifier.database match {
+      case Some(_) =>
+        identifier
+      case _ =>
+        TableIdentifier(identifier.table, Some(spark.sessionState.catalog.getCurrentDatabase))
+    }
+  }
+
+  private def identifier(catalogTable: CatalogTable): TableIdentifier = {
+    fixIdent(catalogTable.identifier)
   }
 }
 
