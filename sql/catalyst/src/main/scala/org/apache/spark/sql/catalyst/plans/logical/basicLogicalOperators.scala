@@ -410,7 +410,7 @@ case class DeleteFrom(table: LogicalPlan, expr: Expression) extends LogicalPlan 
 case class AppendData(
     table: NamedRelation,
     query: LogicalPlan,
-    isByName: Boolean) extends LogicalPlan {
+    isByName: Boolean) extends Command {
   override def children: Seq[LogicalPlan] = Seq(query)
   override def output: Seq[Attribute] = Seq.empty
 
@@ -445,7 +445,7 @@ case class CreateTableAsSelect(
     partitioning: Seq[PartitionTransform],
     query: LogicalPlan,
     writeOptions: Map[String, String],
-    ignoreIfExists: Boolean) extends LogicalPlan {
+    ignoreIfExists: Boolean) extends Command {
 
   override def children: Seq[LogicalPlan] = Seq(query)
   override def output: Seq[Attribute] = Seq.empty
@@ -460,7 +460,7 @@ case class ReplaceTableAsSelect(
     table: TableIdentifier,
     partitioning: Seq[PartitionTransform],
     query: LogicalPlan,
-    writeOptions: Map[String, String]) extends LogicalPlan {
+    writeOptions: Map[String, String]) extends Command {
 
   override def children: Seq[LogicalPlan] = Seq(query)
   override def output: Seq[Attribute] = Seq.empty
