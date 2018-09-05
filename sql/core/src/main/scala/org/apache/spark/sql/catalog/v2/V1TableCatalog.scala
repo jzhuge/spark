@@ -48,7 +48,7 @@ class V1TableCatalog(sessionState: SessionState) extends TableCatalog {
     val catalogTable = catalog.getTableMetadata(ident)
 
     catalogTable.provider match {
-      case Some(provider) =>
+      case Some(provider) if provider != "hive" =>
         DataSource.lookupDataSource(provider).newInstance() match {
           case tableProvider: DataSourceV2TableProvider =>
             tableProvider.createTable(catalogTable.storage.properties.asDataSourceOptions)
