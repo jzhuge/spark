@@ -21,10 +21,9 @@ import java.util
 
 import scala.collection.JavaConverters._
 
-import org.apache.spark.sql.catalog.v2.PartitionTransforms.{Bucket, Identity}
 import org.apache.spark.sql.catalyst.TableIdentifier
 import org.apache.spark.sql.catalyst.analysis.NoSuchTableException
-import org.apache.spark.sql.catalyst.catalog.{BucketSpec, CatalogTable, CatalogTableType, SessionCatalog}
+import org.apache.spark.sql.catalyst.catalog.{CatalogTable, CatalogTableType, SessionCatalog}
 import org.apache.spark.sql.execution.datasources.DataSource
 import org.apache.spark.sql.internal.SessionState
 import org.apache.spark.sql.sources.v2.{DataSourceV2TableProvider, ReadSupport, WriteSupport}
@@ -43,8 +42,7 @@ class V1TableCatalog(sessionState: SessionState) extends TableCatalog {
 
   private lazy val catalog: SessionCatalog = sessionState.catalog
 
-  override def loadTable(
-      ident: TableIdentifier): Table = {
+  override def loadTable(ident: TableIdentifier): Table = {
     val catalogTable = catalog.getTableMetadata(ident)
 
     catalogTable.provider match {
@@ -82,7 +80,7 @@ class V1TableCatalog(sessionState: SessionState) extends TableCatalog {
       schema: StructType,
       partitions: util.List[PartitionTransform],
       properties: util.Map[String, String]): Table = {
-    val (partitionColumns, maybeBucketSpec) = convertTransforms(partitions.asScala)
+    val (partitionColumns, maybeBucketSpec) = PartitionUtil.convertTransforms(partitions.asScala)
     val source = properties.getOrDefault("provider", sessionState.conf.defaultDataSourceName)
     val tableProperties = properties.asScala
     val storage = DataSource.buildStorageFormatFromOptions(tableProperties.toMap)
@@ -131,31 +129,5 @@ class V1TableCatalog(sessionState: SessionState) extends TableCatalog {
 
   override def initialize(name: String, options: CaseInsensitiveStringMap): Unit = {
     this._name = name
-  }
-
-  private def convertTransforms(
-      partitions: Seq[PartitionTransform]): (Seq[String], Option[BucketSpec]) = {
-    val (identityTransforms, bucketTransforms) = partitions.partition(_.isInstanceOf[Identity])
-
-    val nonBucketTransforms = bucketTransforms.filterNot(_.isInstanceOf[Bucket])
-    if (nonBucketTransforms.nonEmpty) {
-      throw new UnsupportedOperationException("SessionCatalog does not support partition " +
-          s"transforms: ${nonBucketTransforms.mkString(", ")}")
-    }
-
-    val bucketSpec = bucketTransforms.size match {
-      case 0 =>
-        None
-      case 1 =>
-        val bucket = bucketTransforms.head.asInstanceOf[Bucket]
-        Some(BucketSpec(bucket.numBuckets, bucket.references, Nil))
-      case _ =>
-        throw new UnsupportedOperationException("SessionCatalog does not support multiple " +
-            s"clusterings: ${bucketTransforms.mkString(", ")}")
-    }
-
-    val identityCols = identityTransforms.map(_.references.head)
-
-    (identityCols, bucketSpec)
   }
 }
