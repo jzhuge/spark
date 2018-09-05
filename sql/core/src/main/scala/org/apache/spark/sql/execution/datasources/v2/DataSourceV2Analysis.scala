@@ -139,7 +139,7 @@ class DataSourceV2Analysis(spark: SparkSession) extends Rule[LogicalPlan] {
       case Some(_) =>
         identifier
       case _ =>
-        TableIdentifier(identifier.table, Some(spark.sessionState.catalog.getCurrentDatabase))
+        TableIdentifier(identifier.table, Some(spark.catalog.currentDatabase))
     }
   }
 
