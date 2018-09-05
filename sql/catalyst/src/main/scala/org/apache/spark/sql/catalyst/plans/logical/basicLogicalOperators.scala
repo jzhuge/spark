@@ -19,7 +19,7 @@ package org.apache.spark.sql.catalyst.plans.logical
 
 import scala.collection.mutable.ArrayBuffer
 
-import org.apache.spark.sql.catalog.v2.{PartitionTransform, TableCatalog}
+import org.apache.spark.sql.catalog.v2.{PartitionTransform, TableCatalog, TableChange}
 import org.apache.spark.sql.catalyst.TableIdentifier
 import org.apache.spark.sql.catalyst.analysis.{MultiInstanceRelation, NamedRelation}
 import org.apache.spark.sql.catalyst.catalog.CatalogTypes
@@ -433,6 +433,25 @@ object AppendData {
     new AppendData(table, query, false)
   }
 }
+
+/**
+ * Alter a table using a v2 catalog.
+ */
+case class AlterTable(
+    catalog: TableCatalog,
+    table: NamedRelation,
+    changes: Seq[TableChange]) extends Command
+
+/**
+ * Create a new table with a v2 catalog.
+ */
+case class CreateTable(
+    catalog: TableCatalog,
+    identifier: TableIdentifier,
+    tableSchema: StructType,
+    partitioning: Seq[PartitionTransform],
+    options: Map[String, String],
+    ignoreIfExists: Boolean) extends Command
 
 /**
  * Create a new table from a select query.
