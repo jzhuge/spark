@@ -41,16 +41,15 @@ class NetflixAnalysis(spark: SparkSession) extends Rule[LogicalPlan] {
   override def apply(plan: LogicalPlan): LogicalPlan = plan resolveOperators {
     // replace the default v2 catalog with one for Iceberg tables
     case alter @ AlterTable(cat, rel: TableV2Relation, _)
-      if cat != icebergCatalog &&
-          Option(rel.table.properties.get("provider")).exists("iceberg".equalsIgnoreCase) =>
+        if shouldReplaceCatalog(cat, Option(rel.table.properties.get("provider"))) =>
       alter.copy(catalog = icebergCatalog)
 
-    case create @ CreateTable(cat, _, _, _, options, _)
-      if cat != icebergCatalog && options.get("provider").exists("iceberg".equalsIgnoreCase) =>
+    case create @ CreateTable(catalog, _, _, _, options, _)
+        if shouldReplaceCatalog(catalog, options.get("provider")) =>
       create.copy(catalog = icebergCatalog)
 
-    case ctas @ CreateTableAsSelect(cat, _, _, _, options, _)
-        if cat != icebergCatalog && options.get("provider").exists("iceberg".equalsIgnoreCase) =>
+    case ctas @ CreateTableAsSelect(catalog, _, _, _, options, _)
+        if shouldReplaceCatalog(catalog, options.get("provider")) =>
       ctas.copy(catalog = icebergCatalog)
 
     // this case is only used for older iceberg tables that don't have the provider set
@@ -65,6 +64,10 @@ class NetflixAnalysis(spark: SparkSession) extends Rule[LogicalPlan] {
       "table" -> ident.table))
 
     LogicalRelation(V2AsBaseRelation(spark.sqlContext, relation, rel.catalogTable))
+  }
+
+  def shouldReplaceCatalog(catalog: TableCatalog, provider: Option[String]): Boolean = {
+    catalog != icebergCatalog && provider.exists("iceberg".equalsIgnoreCase)
   }
 }
 
