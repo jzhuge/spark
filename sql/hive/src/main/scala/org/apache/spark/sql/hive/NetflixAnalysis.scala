@@ -42,7 +42,7 @@ class NetflixAnalysis(spark: SparkSession) extends Rule[LogicalPlan] {
   override def apply(plan: LogicalPlan): LogicalPlan = plan resolveOperators {
     // replace the default v2 catalog with one for Iceberg tables
     case alter @ AlterTable(cat, rel: TableV2Relation, _)
-        if shouldReplaceCatalog(cat, Option(rel.table.properties.get(DATASOURCE_PROVIDER))) =>
+        if shouldReplaceCatalog(cat, Option(rel.table.properties.get("provider"))) =>
       alter.copy(catalog = icebergCatalog)
 
     case create @ CreateTable(catalog, _, _, _, options, _)

@@ -91,8 +91,19 @@ cp netflix/run-history.py ${WORKSPACE}/spark-${BUILD_VERSION}/bin/run-history.py
 # Overwrite dsespark-shell and dsespark-submit
 cp bin/dsespark-* spark-${BUILD_VERSION}/bin/
 
-# Update tarball
-tar -czf spark-${BUILD_VERSION}.tgz spark-${BUILD_VERSION}
-assume-role -a arn:aws:iam::219382154434:role/BDP_JENKINS_ROLE aws s3 cp spark-${BUILD_VERSION}.tgz s3://netflix-bigdataplatform/spark-builds/${BUILD_VERSION}/
-assume-role -a arn:aws:iam::219382154434:role/BDP_JENKINS_ROLE aws s3 cp spark-${BUILD_VERSION}.tgz s3://netflix-bigdataplatform/spark-builds/${BUILD_VERSION}/spark-${BUILD_VERSION}-${BUILD_NUMBER}.tgz
+# run integration tests
+if [ ! -f hadoop.tar.gz ]; then
+  assume-role -a arn:aws:iam::219382154434:role/BDP_JENKINS_ROLE aws s3 cp s3://netflix-bigdataplatform/apps/hadoop-spinnaker/2.7.3/hadoop.tar.gz hadoop.tar.gz
+  mkdir -p tmp
+  tar xzf hadoop.tar.gz -C tmp/
+fi
 
+export HADOOP_CONF_DIR=${WORKSPACE}/netflix/test-conf
+export HADOOP_HOME=${WORKSPACE}/tmp/hadoop
+
+if ${WORKSPACE}/spark-${BUILD_VERSION}/bin/spark-submit netflix/integration_tests.py; then
+  # Update tarball
+  tar -czf spark-${BUILD_VERSION}.tgz spark-${BUILD_VERSION}
+  assume-role -a arn:aws:iam::219382154434:role/BDP_JENKINS_ROLE aws s3 cp spark-${BUILD_VERSION}.tgz s3://netflix-bigdataplatform/spark-builds/${BUILD_VERSION}/
+  assume-role -a arn:aws:iam::219382154434:role/BDP_JENKINS_ROLE aws s3 cp spark-${BUILD_VERSION}.tgz s3://netflix-bigdataplatform/spark-builds/${BUILD_VERSION}/spark-${BUILD_VERSION}-${BUILD_NUMBER}.tgz
+fi

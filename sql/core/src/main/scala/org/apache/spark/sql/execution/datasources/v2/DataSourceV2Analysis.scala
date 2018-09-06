@@ -22,7 +22,7 @@ import org.apache.spark.sql.catalog.v2.{PartitionUtil, TableChange}
 import org.apache.spark.sql.catalyst.TableIdentifier
 import org.apache.spark.sql.catalyst.analysis.NamedRelation
 import org.apache.spark.sql.catalyst.catalog.CatalogTable
-import org.apache.spark.sql.catalyst.plans.logical.{AlterTable, AppendData, CreateTable, CreateTableAsSelect, InsertIntoTable, LogicalPlan, ReplaceTableAsSelect}
+import org.apache.spark.sql.catalyst.plans.logical.{AlterTable, AppendData, CreateTable, CreateTableAsSelect, InsertIntoTable, LogicalPlan, OverwriteOptions, ReplaceTableAsSelect}
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution.command.AlterTableAddColumnsCommand
 import org.apache.spark.sql.execution.datasources
@@ -117,6 +117,15 @@ class DataSourceV2Analysis(spark: SparkSession) extends Rule[LogicalPlan] {
       // ifNotExists is append with validation, but validation is not supported
       if (insert.ifNotExists) {
         throw new AnalysisException(s"Cannot write, IF NOT EXISTS is not supported for table: $v2")
+      }
+
+      val (overwrite, dynamic) = insert.overwrite match {
+        case OverwriteOptions(false, _) =>
+          (false, false) // append, not overwrite
+        case OverwriteOptions(true, spec) if spec.isEmpty =>
+          (true, true) // overwrite dynamic
+        case OverwriteOptions(true, spec) =>
+          (true, false) // create a delete filter from the spec
       }
 
       if (insert.overwrite.enabled) {
