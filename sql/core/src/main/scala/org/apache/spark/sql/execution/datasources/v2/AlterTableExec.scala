@@ -33,6 +33,8 @@ case class AlterTableExec(
   override protected def doExecute(): RDD[InternalRow] = {
     catalog.alterTable(identifier, changes.asJava)
 
+    sqlContext.sessionState.refreshTable(identifier.quotedString)
+
     sqlContext.sparkContext.parallelize(Seq.empty, 1)
   }
 
