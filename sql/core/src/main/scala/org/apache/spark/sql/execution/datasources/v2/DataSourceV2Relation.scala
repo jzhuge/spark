@@ -180,17 +180,28 @@ object DataSourceV2Relation {
       tableIdent: Option[TableIdentifier] = None,
       userSpecifiedSchema: Option[StructType] = None): NamedRelation = {
     val ident = tableIdent.orElse(options.table)
+    val storageOptions = ident match {
+      case Some(identifier) =>
+        identifier.database match {
+          case Some(db) =>
+            options + ("database" -> db) + ("table" -> identifier.table)
+          case None =>
+            options + ("table" -> identifier.table)
+        }
+      case None => options
+    }
+
     source match {
       case tableProvider: DataSourceV2TableProvider =>
         val identifier = ident.getOrElse(TableIdentifier("anonymous"))
-        val table = tableProvider.createTable(options.asDataSourceOptions)
+        val table = tableProvider.createTable(storageOptions.asDataSourceOptions)
         TableV2Relation(
-          source.name, identifier, table, table.schema.toAttributes, options)
+          source.name, identifier, table, table.schema.toAttributes, storageOptions)
 
       case _ =>
-        val reader = source.createReader(options, userSpecifiedSchema)
+        val reader = source.createReader(storageOptions, userSpecifiedSchema)
         DataSourceV2Relation(
-          source, reader.readSchema().toAttributes, options, ident, userSpecifiedSchema)
+          source, reader.readSchema().toAttributes, storageOptions, ident, userSpecifiedSchema)
     }
   }
 
