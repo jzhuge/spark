@@ -51,9 +51,14 @@ class V1TableCatalog(sessionState: SessionState) extends TableCatalog {
           case tableProvider: DataSourceV2TableProvider =>
             val storageOptions = ident.database match {
               case Some(db) =>
-                catalogTable.storage.properties + ("database" -> db) + ("table" -> ident.table)
+                catalogTable.storage.properties +
+                    ("provider" -> provider) +
+                    ("database" -> db) +
+                    ("table" -> ident.table)
               case None =>
-                catalogTable.storage.properties + ("table" -> ident.table)
+                catalogTable.storage.properties +
+                    ("provider" -> provider) +
+                    ("table" -> ident.table)
             }
             tableProvider.createTable(storageOptions.asDataSourceOptions)
 

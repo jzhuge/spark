@@ -54,7 +54,8 @@ class DataSourceV2Analysis(spark: SparkSession) extends Rule[LogicalPlan] {
       // load the table to create a relation so that the alter table command can be validated
       val table = catalog.loadTable(identifier)
       val relation = DataSourceV2Relation.create(
-        catalog.name, identifier, table, Map.empty[String, String])
+        catalog.name, identifier, table,
+        Map("database" -> identifier.database.get, "table" -> identifier.table))
       val changes = columns.map { field =>
         val (parent, name) = field.name match {
           case NestedFieldName(path, fieldName) =>
