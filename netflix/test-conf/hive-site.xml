@@ -1,0 +1,180 @@
+<?xml version="1.0"?>
+<?xml-stylesheet type="text/xsl" href="configuration.xsl"?>
+<configuration>
+
+    <!-- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+    These are overrides by EMR, i.e. differences between EMR's hive-default.xml and Apache's
+    defaults in HiveConf.java, minus some gateway-side configs, configs that we override below, and
+    other unnecessary config.
+    - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -->
+
+    <property>
+        <name>hive.optimize.s3.query</name>
+        <value>true</value>
+    </property>
+    <property>
+        <name>hive.exim.uri.scheme.whitelist</name>
+        <value>hdfs,pfile,s3</value>
+    </property>
+
+    <!-- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+    These are overrides by us (BDP).
+    - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -->
+
+    <!-- datanucleus.* -->
+    <property>
+        <name>datanucleus.autoCreateSchema</name>
+        <value>false</value>
+    </property>
+    <property>
+        <name>datanucleus.fixedDatastore</name>
+        <value>true</value>
+    </property>
+
+    <!-- hive.default.* -->
+    <property>
+        <name>hive.default.fileformat</name>
+        <value>SequenceFile</value>
+    </property>
+
+    <!-- hive.exec.* -->
+    <property>
+        <name>hive.exec.compress.intermediate</name>
+        <value>true</value>
+    </property>
+    <property>
+        <name>hive.exec.compress.output</name>
+        <value>true</value>
+    </property>
+    <property>
+        <name>hive.exec.max.dynamic.partitions.pernode</name>
+        <value>10000</value>
+    </property>
+    <property>
+        <name>hive.exec.max.dynamic.partitions</name>
+        <value>300000</value>
+    </property>
+    <property>
+        <name>hive.exec.parallel</name>
+        <value>true</value>
+    </property>
+    <property>
+        <name>hive.exec.reducers.max</name>
+        <value>200</value>
+    </property>
+    <property>
+        <name>hive.exec.scratchdir</name>
+        <value>/mnt/var/lib/hive/tmp/scratch</value>
+    </property>
+
+    <!-- hive.fetch.* -->
+    <property>
+        <name>hive.fetch.task.conversion</name>
+        <value>none</value>
+    </property>
+
+    <!-- hive.hadoop.* -->
+    <property>
+        <name>hive.hadoop.supports.splittable.combineinputformat</name>
+        <value>true</value>
+    </property>
+
+    <!-- hive.intermediate.* -->
+    <property>
+        <name>hive.intermediate.compression.codec</name>
+        <value>org.apache.hadoop.io.compress.SnappyCodec</value>
+    </property>
+    <property>
+        <name>hive.intermediate.compression.type</name>
+        <value>BLOCK</value>
+    </property>
+
+    <!-- hive.mapjoin.* -->
+    <property>
+        <name>hive.mapjoin.localtask.max.memory.usage</name>
+        <value>0.9</value>
+    </property>
+    <property>
+        <name>hive.mapjoin.smalltable.filesize</name>
+        <value>100000000</value>
+    </property>
+
+    <!-- hive.support.* -->
+    <property>
+        <name>hive.support.quoted.identifiers</name>
+        <value>none</value>
+    </property>
+
+    <!-- hive.mapred.* -->
+    <property>
+        <name>hive.mapred.mode</name>
+        <value>strict</value>
+    </property>
+
+    <!-- hive.metastore.* -->
+    <property>
+        <name>hive.metastore.warehouse.dir</name>
+        <value>s3n://netflix-dataoven-prod-users/hive/warehouse</value>
+    </property>
+    <property>
+        <name>hive.metastore.uris</name>
+        <value>thrift://metacat.dynprod.netflix.net:12001</value>
+    </property>
+    <property>
+        <name>hive.metastore.client.socket.timeout</name>
+        <value>600</value>
+    </property>
+
+    <!-- hive.ppd.* -->
+    <property>
+        <name>hive.ppd.remove.duplicatefilters</name>
+        <value>false</value>
+    </property>
+
+    <!-- hive.security.* -->
+    <property>
+        <name>hive.security.authorization.createtable.owner.grants</name>
+        <value>ALL</value>
+    </property>
+    <property>
+        <name>hive.security.authorization.enabled</name>
+        <value>true</value>
+    </property>
+
+    <!-- mapreduce.* -->
+    <property>
+        <name>mapreduce.input.fileinputformat.split.maxsize</name>
+        <value>256000000</value>
+    </property>
+    <property>
+        <name>mapreduce.input.fileinputformat.split.maxsize</name>
+        <value>512000000</value>
+    </property>
+    <property>
+        <name>mapreduce.input.fileinputformat.list-status.num-threads</name>
+        <value>10</value>
+    </property>
+
+    <!-- parquet.* -->
+    <property>
+        <name>parquet.column.index.access</name>
+        <value>true</value>
+    </property>
+
+    <!-- for metacat -->
+    <property>
+        <name>netflix.metacat.host</name>
+        <value>http://metacat.dynprod.netflix.net:7001</value>
+    </property>
+
+    <property>
+        <name>spark.sql.hive.env</name>
+        <value>prod</value>
+    </property>
+
+    <property>
+        <name>dse.store.default</name>
+        <value>true</value>
+    </property>
+
+</configuration>
