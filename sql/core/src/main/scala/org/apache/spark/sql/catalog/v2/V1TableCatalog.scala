@@ -49,7 +49,13 @@ class V1TableCatalog(sessionState: SessionState) extends TableCatalog {
       case Some(provider) if provider != "hive" =>
         DataSource.lookupDataSource(provider).newInstance() match {
           case tableProvider: DataSourceV2TableProvider =>
-            tableProvider.createTable(catalogTable.storage.properties.asDataSourceOptions)
+            val storageOptions = ident.database match {
+              case Some(db) =>
+                catalogTable.storage.properties + ("database" -> db) + ("table" -> ident.table)
+              case None =>
+                catalogTable.storage.properties + ("table" -> ident.table)
+            }
+            tableProvider.createTable(storageOptions.asDataSourceOptions)
 
           case v2Source: ReadSupport if v2Source.isInstanceOf[WriteSupport] =>
             new V1MetadataTable(catalogTable, Some(v2Source))

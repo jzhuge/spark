@@ -60,9 +60,8 @@ class NetflixAnalysis(spark: SparkSession) extends Rule[LogicalPlan] {
 
   def toLogicalRelation(rel: MetastoreRelation): LogicalRelation = {
     val ident = rel.catalogTable.identifier
-    val relation = DataSourceV2Relation.create(icebergTables, Map(
-      "database" -> ident.database.get,
-      "table" -> ident.table))
+    val relation = DataSourceV2Relation.create(icebergTables,
+      Map("database" -> ident.database.get, "table" -> ident.table), Some(ident))
 
     LogicalRelation(V2AsBaseRelation(spark.sqlContext, relation, rel.catalogTable))
   }
