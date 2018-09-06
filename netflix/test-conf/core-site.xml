@@ -1,6 +1,11 @@
 <configuration>
 
   <property>
+    <name>fs.defaultFS</name>
+    <value>hdfs://h2query.namenode.spin.dataeng.netflix.net:8020/</value>
+  </property>
+
+  <property>
     <name>hadoop.security.authentication</name>
     <value>simple</value>
   </property>
@@ -47,7 +52,7 @@
 
   <property>
     <name>aws.iam.role.arn.default</name>
-    <value>arn:aws:iam::219382154434:role/EMR_EC2_DefaultRole</value>
+    <value>arn:aws:iam::219382154434:role/BDP_JENKINS_ROLE</value>
   </property>
 
   <property>
