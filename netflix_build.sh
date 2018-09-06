@@ -84,11 +84,29 @@ echo ${BUILD_NUMBER} > ${WORKSPACE}/spark-${BUILD_VERSION}/BUILD
 cp netflix/run.py ${WORKSPACE}/spark-${BUILD_VERSION}/bin/run.py
 cp netflix/run-history.py ${WORKSPACE}/spark-${BUILD_VERSION}/bin/run-history.py
 
-# Update tarball
+# Update tarball and deploy the build, but not the application tarball
 tar -czf spark-${BUILD_VERSION}.tgz spark-${BUILD_VERSION}
 
-source netflix/assume_role.sh
+netflix/assume_role.sh aws s3 cp --no-progress spark-${BUILD_VERSION}.tgz s3://netflix-bigdataplatform/spark-builds/${BUILD_VERSION}/spark-${BUILD_VERSION}-${BUILD_NUMBER}.tgz
 
-aws s3 cp --no-progress spark-${BUILD_VERSION}.tgz s3://netflix-bigdataplatform/spark-builds/${BUILD_VERSION}/
-aws s3 cp --no-progress spark-${BUILD_VERSION}.tgz s3://netflix-bigdataplatform/spark-builds/${BUILD_VERSION}/spark-${BUILD_VERSION}-${BUILD_NUMBER}.tgz
+# run integration tests
+if [[ ! -f hadoop.tar.gz ]]; then
+  netflix/assume_role.sh aws s3 cp --no-progress s3://netflix-bigdataplatform/apps/hadoop-spinnaker/2.7.3/hadoop.tar.gz hadoop.tar.gz
+  mkdir -p tmp
+  tar xzf hadoop.tar.gz -C tmp/
+fi
 
+export HADOOP_CONF_DIR=${WORKSPACE}/netflix/test-conf
+export HADOOP_HOME=${WORKSPACE}/tmp/hadoop
+
+if ${WORKSPACE}/spark-${BUILD_VERSION}/bin/spark-submit netflix/integration_tests.py; then
+  echo
+  echo 'Integration tests PASSED. Deploying tarball to app location.'
+  echo
+  netflix/assume_role.sh aws s3 cp --no-progress spark-${BUILD_VERSION}.tgz s3://netflix-bigdataplatform/spark-builds/${BUILD_VERSION}/
+else
+  echo
+  echo 'Integration tests FAILED. Aborting tarball deploy to app location.'
+  echo
+  exit 1
+fi
