@@ -111,10 +111,8 @@ if ${WORKSPACE}/spark-${BUILD_VERSION}/bin/spark-submit netflix/integration_test
   echo
   assume-role -a arn:aws:iam::219382154434:role/BDP_JENKINS_ROLE aws s3 cp spark-${BUILD_VERSION}.tgz s3://netflix-bigdataplatform/spark-builds/${BUILD_VERSION}/
 else
-  # temporarily deploy anyway while working on integration test environment
-  assume-role -a arn:aws:iam::219382154434:role/BDP_JENKINS_ROLE aws s3 cp spark-${BUILD_VERSION}.tgz s3://netflix-bigdataplatform/spark-builds/${BUILD_VERSION}/
   echo
   echo 'Integration tests FAILED. Aborting tarball deploy to app location.'
   echo
-  #exit 1
+  exit 1
 fi
