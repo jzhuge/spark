@@ -405,6 +405,12 @@ trait MesosSchedulerUtils extends Logging {
       getRejectOfferDurationStr(conf))
   }
 
+  protected def getRejectOfferDurationForReachedExecutorLimit(conf: SparkConf): Long = {
+    conf.getTimeAsSeconds(
+      "spark.mesos.rejectOfferDurationForReachedExecutorLimit",
+      getRejectOfferDurationStr(conf))
+  }
+
   /**
    * Checks executor ports if they are within some range of the offered list of ports ranges,
    *
