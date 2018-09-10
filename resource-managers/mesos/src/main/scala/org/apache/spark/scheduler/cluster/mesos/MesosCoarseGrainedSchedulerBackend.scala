@@ -160,6 +160,15 @@ private[spark] class MesosCoarseGrainedSchedulerBackend(
   private val rejectOfferDurationForReachedMaxCores =
     getRejectOfferDurationForReachedMaxCores(sc.conf)
 
+  // Reject offers when we reached the current executor limit
+  private val rejectOfferDurationForReachedExecutorLimit =
+    getRejectOfferDurationForReachedExecutorLimit(sc.conf)
+
+  // Reject offers that we cannot use for other reasons
+  private val rejectOfferDuration =
+    getRejectOfferDuration(sc.conf)
+
+
   // A client for talking to the external shuffle service
   private val mesosExternalShuffleClient: Option[MesosExternalShuffleClient] = {
     if (shuffleServiceEnabled) {
@@ -326,7 +335,7 @@ private[spark] class MesosCoarseGrainedSchedulerBackend(
   }
 
   override def sufficientResourcesRegistered(): Boolean = {
-    totalCoreCount.get >= maxCoresOption.getOrElse(0) * minRegisteredRatio
+    maxCoresOption.isEmpty || totalCoreCount.get >= maxCores * minRegisteredRatio
   }
 
   override def disconnected(d: org.apache.mesos.SchedulerDriver) {
@@ -351,19 +360,6 @@ private[spark] class MesosCoarseGrainedSchedulerBackend(
         return
       }
 
-      if (numExecutors >= executorLimit) {
-        logDebug("Executor limit reached. numExecutors: " + numExecutors +
-          " executorLimit: " + executorLimit)
-        offers.asScala.map(_.getId).foreach(d.declineOffer)
-        launchingExecutors = false
-        return
-      } else {
-        if (!launchingExecutors) {
-          launchingExecutors = true
-          localityWaitStartTime = System.currentTimeMillis()
-        }
-      }
-
       logDebug(s"Received ${offers.size} resource offers.")
 
       val (matchedOffers, unmatchedOffers) = offers.asScala.partition { offer =>
@@ -373,6 +369,14 @@ private[spark] class MesosCoarseGrainedSchedulerBackend(
 
       declineUnmatchedOffers(d, unmatchedOffers)
       handleMatchedOffers(d, matchedOffers)
+      if (numExecutors >= executorLimit) {
+        logDebug("Executor limit reached. numExecutors: " + numExecutors +
+          " executorLimit: " + executorLimit)
+        launchingExecutors = false
+      } else if (!launchingExecutors) {
+        launchingExecutors = true
+        localityWaitStartTime = System.currentTimeMillis()
+      }
     }
   }
 
@@ -437,11 +441,16 @@ private[spark] class MesosCoarseGrainedSchedulerBackend(
           offer,
           Some("reached spark.cores.max"),
           Some(rejectOfferDurationForReachedMaxCores))
-      } else {
-        declineOffer(
-          driver,
+      } else if (numExecutors >= executorLimit) {
+        declineOffer(driver,
           offer,
-          Some("Offer was declined due to unmet task launch constraints."))
+          Some("reached current executor limit"),
+          Some(rejectOfferDurationForReachedExecutorLimit))
+      } else {
+        declineOffer(driver,
+          offer,
+          Some("Offer was declined due to unmet task launch constraints."),
+          Some(rejectOfferDuration))
       }
     }
   }
@@ -658,8 +667,6 @@ private[spark] class MesosCoarseGrainedSchedulerBackend(
           }
         }
         executorTerminated(d, slaveId, taskId, s"Executor finished with state $state")
-        // In case we'd rejected everything before but have now lost a node
-        d.reviveOffers()
       }
     }
   }

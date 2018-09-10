@@ -111,6 +111,10 @@ object Utils {
     TaskID.newBuilder().setValue(taskId).build()
   }
 
+  def createFilter(limitSec: Int): Filters = {
+    Filters.newBuilder().setRefuseSeconds(limitSec).build()
+  }
+
   def configEnvBasedRefSecrets(secretConfig: MesosSecretConfig): Map[String, String] = {
     val secretName = "/path/to/secret,/anothersecret"
     val envKey = "SECRET_ENV_KEY,PASSWORD"
