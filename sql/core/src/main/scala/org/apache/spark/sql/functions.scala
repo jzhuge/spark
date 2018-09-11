@@ -3325,7 +3325,7 @@ object functions {
   def nf_timestamp_now(): Column = withExpr { NfTimestampNow() }
 
   def nf_dateadd(input1: Column, input2: Column): Column = withExpr {
-    NfDateAdd(input1.expr, input2.expr, Literal(DEFAULT_DUMMY_ARGUMENT))
+    NfDateAdd(input1.expr, input2.expr)
   }
 
   def nf_dateadd(input1: Column, input2: Column, input3: Column): Column = withExpr {
@@ -3333,7 +3333,7 @@ object functions {
   }
 
   def nf_datediff(input1: Column, input2: Column): Column = withExpr {
-    NfDateDiff(input1.expr, input2.expr, Literal(DEFAULT_DUMMY_ARGUMENT))
+    NfDateDiff(input1.expr, input2.expr)
   }
 
   def nf_datediff(input1: Column, input2: Column, input3: Column): Column = withExpr {
