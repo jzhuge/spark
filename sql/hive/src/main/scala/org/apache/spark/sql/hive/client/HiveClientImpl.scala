@@ -814,8 +814,10 @@ private[hive] class HiveClientImpl(
       // `path` is a URL with a scheme
       uri.toURL
     }
-    clientLoader.addJar(jarURL)
     runSqlHive(s"ADD JAR $path")
+    // DPS-156: Add the jar URL to the classpath after running "ADD JAR"
+    // in order to avoid ExceptionInInitializerError when initializing PrestoS3FileSystem.
+    clientLoader.addJar(jarURL)
   }
 
   def newSession(): HiveClientImpl = {
