@@ -23,9 +23,12 @@ import java.time.{Instant, LocalDate}
 import java.util.{Locale, TimeZone}
 
 import org.apache.spark.sql.catalyst.util.{DateTimeUtils, NetflixDateTimeUtils}
+import org.apache.spark.sql.catalyst.util.NetflixDateTimeUtils.TypeException
+import org.apache.spark.sql.functions._
 import org.apache.spark.sql.test.SharedSQLContext
 
-class NetflixDateTimeExpressionsSuite extends QueryTest with SharedSQLContext {
+class NetflixDateTimeFunctionsSuite extends QueryTest with SharedSQLContext {
+
   import testImplicits._
 
   test("nf_dateadd") {
@@ -61,6 +64,22 @@ class NetflixDateTimeExpressionsSuite extends QueryTest with SharedSQLContext {
       Seq(20180707L).toDF("long_dateint").createTempView("t")
       checkSqlAnswer("select nf_dateadd('day', 2, long_dateint) from t", 20180709L)
     }
+
+    withTimeZone("UTC") {
+      checkSqlAnswer(
+        "SELECT nf_dateadd('2018-07-12 05:30:00', 2)",
+        "2018-07-14 05:30:00")
+      checkSqlAnswer(
+        "SELECT nf_dateadd('2018-07-11 22:30:00', 2)",
+        "2018-07-13 22:30:00")
+    }
+
+    val df = spark.range(1)
+    checkAnswer(df.select(nf_dateadd(lit(20180531), lit(2))), Seq(Row(20180602)))
+    checkAnswer(
+      df.select(nf_dateadd(lit("week"), lit(-10), lit("2018-05-31 12:20:21.010"))),
+      Seq(Row("2018-03-22 12:20:21.01")))
+    intercept[TypeException](df.select(nf_dateadd(lit(1.0f), lit(3))).collect())
   }
 
   test("nf_datediff") {
@@ -86,6 +105,32 @@ class NetflixDateTimeExpressionsSuite extends QueryTest with SharedSQLContext {
     }
 
     checkSqlAnswer("select nf_datediff(1527806973000, null)", null)
+
+    val df = spark.range(1)
+    checkAnswer(df.select(nf_datediff(lit(20180531), lit(20180604))), Seq(Row(4)))
+    checkAnswer(
+      df.select(
+        nf_datediff(
+          lit("hour"),
+          lit("2018-03-01 05:00:00"),
+          lit("2018-03-01 02:00:00"))),
+      Seq(Row(-3)))
+    intercept[TypeException](
+      df.select(nf_datediff(lit("minute"), lit(20180531), lit(20180604))).collect())
+    intercept[TypeException](
+      df.select(nf_datediff(lit("days"), lit(1000000000), lit(1000000000))).collect())
+    intercept[TypeException](
+      df.select(nf_datediff(lit(Date.valueOf("2016-03-14")), lit(20160307))).collect())
+    intercept[TypeException](
+      df.select(nf_datediff(lit(Date.valueOf("2016-03-14")), lit("20160307"))).collect())
+    intercept[TypeException](df.select(nf_datediff(lit("20180531"), lit(20180604))).collect())
+    intercept[TypeException](
+      df.select(
+        nf_datediff(
+          lit("second"),
+          lit(Date.valueOf("2016-03-14")),
+          lit(Timestamp.valueOf("2018-05-31 02:20:21"))))
+        .collect())
   }
 
   test("nf_from_unixtime") {

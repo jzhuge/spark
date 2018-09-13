@@ -227,6 +227,8 @@ object NetflixDateTimeUtils {
       new EpochDateObject(d)
     case (us: Long, TimestampType) =>
       new EpochTimestampObject(us)
+    case _ =>
+      throw TypeException("Invalid input type")
   }
 
   def truncateDate(unit: String, date: Long): Long = {
