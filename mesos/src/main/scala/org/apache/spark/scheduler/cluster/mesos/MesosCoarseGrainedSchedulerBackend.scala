@@ -276,7 +276,7 @@ private[spark] class MesosCoarseGrainedSchedulerBackend(
   }
 
   override def sufficientResourcesRegistered(): Boolean = {
-    totalCoreCount.get >= maxCoresOption.getOrElse(0) * minRegisteredRatio
+    maxCoresOption.isEmpty || totalCoreCount.get >= maxCores * minRegisteredRatio
   }
 
   override def disconnected(d: org.apache.mesos.SchedulerDriver) {}
