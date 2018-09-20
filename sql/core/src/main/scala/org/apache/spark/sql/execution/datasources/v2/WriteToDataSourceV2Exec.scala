@@ -56,6 +56,25 @@ case class AppendDataExec(
   }
 }
 
+case class OverwritePartitionsDynamicExec(
+    table: Table,
+    writeOptions: Map[String, String],
+    plan: SparkPlan) extends V2TableWriteExec(writeOptions, plan) {
+  import org.apache.spark.sql.sources.v2.DataSourceV2Implicits._
+
+  override protected def doExecute(): RDD[InternalRow] = {
+    val writer = table.createWriter(writeOptions, plan.schema)
+
+    if (!writer.supportsReplacePartitions()) {
+      throw new SparkException(s"Table does not support dynamic partition overwrite: $table")
+    }
+
+    writer.replacePartitions()
+
+    doAppend(writer)
+  }
+}
+
 case class CreateTableAsSelectExec(
     catalog: TableCatalog,
     ident: TableIdentifier,

@@ -20,6 +20,7 @@ package org.apache.spark.sql
 import java.util.{Locale, Properties}
 
 import scala.collection.JavaConverters._
+import scala.util.Try
 
 import org.apache.hadoop.fs.Path
 
@@ -28,7 +29,7 @@ import org.apache.spark.annotation.InterfaceStability
 import org.apache.spark.sql.catalog.v2.{Table, TableCatalog}
 import org.apache.spark.sql.catalyst.TableIdentifier
 import org.apache.spark.sql.catalyst.analysis.{EliminateSubqueryAliases, NoSuchTableException, UnresolvedRelation}
-import org.apache.spark.sql.catalyst.catalog._
+import org.apache.spark.sql.catalyst.catalog.{BucketSpec, CatalogTable, CatalogTableType, HiveTableRelation}
 import org.apache.spark.sql.catalyst.plans.logical._
 import org.apache.spark.sql.execution.SQLExecution
 import org.apache.spark.sql.execution.command.DDLUtils
@@ -259,19 +260,24 @@ final class DataFrameWriter[T] private[sql](ds: Dataset[T]) {
             ("database" -> identifier.database.getOrElse(df.sparkSession.catalog.currentDatabase)) +
             ("table" -> identifier.table)).toMap
 
-        val exists = catalog.tableExists(identifier)
+        val maybeTable = Try(catalog.loadTable(identifier)).toOption
+        val exists = maybeTable.isDefined
 
         (exists, mode) match {
           case (true, SaveMode.ErrorIfExists) =>
             throw new AnalysisException(s"Table already exists: ${identifier.quotedString}")
 
           case (true, SaveMode.Overwrite) =>
-            // NETFLIX: overwrite mode replaces partitions, not entire tables; use ReplacePartitions
-            throw new AnalysisException("Overwrite partitions is not yet supported.")
+            val relation = DataSourceV2Relation.create(
+              catalog.name, identifier, maybeTable.get, options)
+
+            runCommand(df.sparkSession, "insertInto") {
+              OverwritePartitionsDynamic.byName(relation, df.logicalPlan)
+            }
 
           case (true, SaveMode.Append) =>
             val relation = DataSourceV2Relation.create(
-              catalog.name, identifier, catalog.loadTable(identifier), options)
+              catalog.name, identifier, maybeTable.get, options)
 
             runCommand(df.sparkSession, "save") {
               AppendData.byName(relation, df.logicalPlan)
@@ -405,23 +411,36 @@ final class DataFrameWriter[T] private[sql](ds: Dataset[T]) {
           "cannot be changed when inserting data. Remove any partitionBy calls.")
     }
 
+    val isByName = extraOptions.get("matchByName").exists(_.toBoolean)
+    val options = (extraOptions +
+        ("provider" -> source) +
+        ("database" -> identifier.database.getOrElse(df.sparkSession.catalog.currentDatabase)) +
+        ("table" -> identifier.table)).toMap
+
     mode match {
       case SaveMode.Overwrite =>
-        // Overwrite dynamic partitions
-        throw new AnalysisException("Overwrite partitions is not yet supported.")
-
-      case SaveMode.Append | SaveMode.ErrorIfExists =>
-        // ErrorIfExists should be Append with validation, but validation is not supported
-        val isByName = extraOptions.get("matchByName").exists(_.toBoolean)
-        val options = (extraOptions +
-            ("provider" -> source) +
-            ("database" -> identifier.database.getOrElse(df.sparkSession.catalog.currentDatabase)) +
-            ("table" -> identifier.table)).toMap
-
+        // Overwrite partitions dynamically
         runCommand(df.sparkSession, "insertInto") {
-          AppendData(
+          OverwritePartitionsDynamic(
             DataSourceV2Relation.create(catalog.name, identifier, table, options),
             df.logicalPlan, isByName)
+        }
+
+      case SaveMode.Append | SaveMode.ErrorIfExists => // COMPATIBILITY: APPEND SHOULD OVERWRITE
+        // ErrorIfExists should be Append with validation, but validation is not supported
+        if (useCompatBehavior(table)) {
+          // NETFLIX: append should overwrite because the table previously used the batch pattern
+          runCommand(df.sparkSession, "insertInto") {
+            OverwritePartitionsDynamic(
+              DataSourceV2Relation.create(catalog.name, identifier, table, options),
+              df.logicalPlan, isByName)
+          }
+        } else {
+          runCommand(df.sparkSession, "insertInto") {
+            AppendData(
+              DataSourceV2Relation.create(catalog.name, identifier, table, options),
+              df.logicalPlan, isByName)
+          }
         }
 
       case SaveMode.Ignore =>
@@ -569,6 +588,10 @@ final class DataFrameWriter[T] private[sql](ds: Dataset[T]) {
         DataSource.lookupDataSource(source, df.sparkSession.sqlContext.conf))
   }
 
+  private def useCompatBehavior(table: Table): Boolean = {
+    table.properties().getOrDefault("spark.behavior.compatibility", "false").toBoolean
+  }
+
   private def loadV2Table(catalog: TableCatalog, ident: TableIdentifier): Option[Table] = {
     try {
       Option(catalog.loadTable(ident))
@@ -580,7 +603,8 @@ final class DataFrameWriter[T] private[sql](ds: Dataset[T]) {
 
 
   private def saveAsV2Table(catalog: TableCatalog, identifier: TableIdentifier): Unit = {
-    val exists = catalog.tableExists(identifier)
+    val maybeTable = Try(catalog.loadTable(identifier)).toOption
+    val exists = maybeTable.isDefined
     val options = (extraOptions +
         ("provider" -> source) +
         ("database" -> identifier.database.getOrElse(df.sparkSession.catalog.currentDatabase)) +
@@ -591,8 +615,19 @@ final class DataFrameWriter[T] private[sql](ds: Dataset[T]) {
         throw new AnalysisException(s"Table already exists: ${identifier.quotedString}")
 
       case (true, SaveMode.Overwrite) =>
-        // NETFLIX: overwrite mode replaces partitions, not entire tables; use ReplacePartitions
-        throw new AnalysisException("Overwrite partitions is not yet supported.")
+        val table = maybeTable.get
+        if (useCompatBehavior(table)) {
+          // NETFLIX: overwrite mode replaces partitions because of batch writes, not entire tables
+          runCommand(df.sparkSession, "save") {
+            OverwritePartitionsDynamic.byName(
+              DataSourceV2Relation.create(catalog.name, identifier, table, options),
+              df.logicalPlan)
+          }
+        } else {
+          runCommand(df.sparkSession, "save") {
+            ReplaceTableAsSelect(catalog, identifier, Seq.empty, df.logicalPlan, options)
+          }
+        }
 
       case (true, SaveMode.Append) =>
         if (partitioningColumns.isDefined) {
@@ -600,20 +635,20 @@ final class DataFrameWriter[T] private[sql](ds: Dataset[T]) {
               "and cannot be changed when inserting data. Remove any partitionBy calls.")
         }
 
-        val relation = DataSourceV2Relation.create(
-          catalog.name, identifier, catalog.loadTable(identifier), options)
-
-        runCommand(df.sparkSession, "save") {
-          AppendData.byName(relation, df.logicalPlan)
+        val table = maybeTable.get
+        if (useCompatBehavior(table)) {
+          // NETFLIX: append mode is valid and replaces partitions because of batch writes
+          val relation = DataSourceV2Relation.create(catalog.name, identifier, table, options)
+          runCommand(df.sparkSession, "save") {
+            AppendData.byName(relation, df.logicalPlan)
+          }
+        } else {
+          throw new AnalysisException(
+            s"Cannot create table, already exists: ${identifier.quotedString}")
         }
 
-      case (false, SaveMode.Append) =>
-        throw new AnalysisException(s"Table does not exist: ${identifier.quotedString}")
-
-      case (false, SaveMode.ErrorIfExists) |
-           (false, SaveMode.Ignore) |
-           (false, SaveMode.Overwrite) =>
-
+      case (false, _) =>
+        // for any mode, if the table doesn't exist use CTAS to create it
         if (partitioningColumns.isDefined) {
           throw new AnalysisException("Partitioning is not yet supported when creating tables" +
               "from a data frame. Remove any partitionBy calls.")
