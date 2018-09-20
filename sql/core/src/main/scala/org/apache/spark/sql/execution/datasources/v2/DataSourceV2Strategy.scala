@@ -23,7 +23,7 @@ import org.apache.spark.sql.{sources, Strategy}
 import org.apache.spark.sql.catalyst.analysis.NamedRelation
 import org.apache.spark.sql.catalyst.expressions.{And, AttributeReference, AttributeSet, Expression}
 import org.apache.spark.sql.catalyst.planning.PhysicalOperation
-import org.apache.spark.sql.catalyst.plans.logical.{AlterTable, AppendData, CreateTable, CreateTableAsSelect, DeleteFrom, LogicalPlan, ReplaceTableAsSelect}
+import org.apache.spark.sql.catalyst.plans.logical.{AlterTable, AppendData, CreateTable, CreateTableAsSelect, DeleteFrom, LogicalPlan, OverwritePartitionsDynamic, ReplaceTableAsSelect}
 import org.apache.spark.sql.execution.{FilterExec, ProjectExec, SparkPlan}
 import org.apache.spark.sql.execution.datasources.DataSourceStrategy
 import org.apache.spark.sql.sources.v2.reader.{DataSourceReader, SupportsPushDownCatalystFilters, SupportsPushDownFilters, SupportsPushDownRequiredColumns}
@@ -148,6 +148,9 @@ object DataSourceV2Strategy extends Strategy {
 
     case AppendData(r: TableV2Relation, query, _) =>
       AppendDataExec(r.table, r.options, planLater(query)) :: Nil
+
+    case OverwritePartitionsDynamic(r: TableV2Relation, query, _) =>
+      OverwritePartitionsDynamicExec(r.table, r.options, planLater(query)) :: Nil
 
     case AlterTable(catalog, rel: TableV2Relation, changes) =>
       AlterTableExec(catalog, rel.ident, changes) :: Nil
