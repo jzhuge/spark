@@ -170,31 +170,37 @@ class DataFrameReader private[sql](sparkSession: SparkSession) extends Logging {
     }
 
     // if the catalog is set or the source is not set, attempt to read as a table
-    if (extraOptions.get("catalog").isDefined ||
-        source == sparkSession.sessionState.conf.defaultDataSourceName) {
+    if (isCatalogDefined || isV2Source) {
       val catalog = sparkSession.catalog(extraOptions.get("catalog")).asTableCatalog
-      val ident = options.table.get
-      return Dataset.ofRows(sparkSession,
-        DataSourceV2Relation.create(catalog.name, ident, catalog.loadTable(ident), options))
+      options.table match {
+        case Some(ident) =>
+          return Dataset.ofRows(sparkSession,
+            DataSourceV2Relation.create(catalog.name, ident, catalog.loadTable(ident), options))
+
+        case _ =>
+          val v2src = DataSource.lookupDataSource(source).newInstance().asInstanceOf[DataSourceV2]
+          return Dataset.ofRows(sparkSession, DataSourceV2Relation.create(
+            v2src, options, userSpecifiedSchema = userSpecifiedSchema))
+      }
     }
 
-    val cls = DataSource.lookupDataSource(source)
-    if (classOf[DataSourceV2].isAssignableFrom(cls)) {
-      val source = cls.newInstance().asInstanceOf[DataSourceV2]
+    // Code path for data source v1.
+    sparkSession.baseRelationToDataFrame(
+      DataSource.apply(
+        sparkSession,
+        paths = paths,
+        userSpecifiedSchema = userSpecifiedSchema,
+        className = source,
+        options = extraOptions.toMap).resolveRelation())
+  }
 
-      Dataset.ofRows(sparkSession, DataSourceV2Relation.create(
-        source, options, userSpecifiedSchema = userSpecifiedSchema))
+  private def isCatalogDefined: Boolean = {
+    extraOptions.get("catalog").isDefined
+  }
 
-    } else {
-      // Code path for data source v1.
-      sparkSession.baseRelationToDataFrame(
-        DataSource.apply(
-          sparkSession,
-          paths = paths,
-          userSpecifiedSchema = userSpecifiedSchema,
-          className = source,
-          options = extraOptions.toMap).resolveRelation())
-    }
+  private def isV2Source: Boolean = {
+    !"hive".equalsIgnoreCase(source) &&
+        classOf[DataSourceV2].isAssignableFrom(DataSource.lookupDataSource(source))
   }
 
   /**
