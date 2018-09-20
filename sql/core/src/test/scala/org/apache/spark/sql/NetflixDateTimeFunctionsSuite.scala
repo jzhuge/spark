@@ -22,14 +22,19 @@ import java.text.SimpleDateFormat
 import java.time.{Instant, LocalDate}
 import java.util.{Locale, TimeZone}
 
+import org.scalatest._
+
 import org.apache.spark.sql.catalyst.util.{DateTimeUtils, NetflixDateTimeUtils}
 import org.apache.spark.sql.catalyst.util.NetflixDateTimeUtils.TypeException
 import org.apache.spark.sql.functions._
 import org.apache.spark.sql.test.SharedSQLContext
 
-class NetflixDateTimeFunctionsSuite extends QueryTest with SharedSQLContext {
+class NetflixDateTimeFunctionsSuite extends QueryTest with SharedSQLContext with Matchers {
 
   import testImplicits._
+
+  /** [[QueryTest]] sets the default time zone to America/Los_Angeles. */
+  TimeZone.getDefault.getID shouldBe "America/Los_Angeles"
 
   test("nf_dateadd") {
     checkSqlAnswer("SELECT nf_dateadd(20180531, 2)", 20180602)
@@ -48,12 +53,18 @@ class NetflixDateTimeFunctionsSuite extends QueryTest with SharedSQLContext {
     checkSqlAnswer("SELECT nf_dateadd('20180531', '2M')", "20180731")
     checkSqlAnswer("SELECT nf_dateadd(timestamp '2018-05-31 12:20:21.010', null)", null)
     checkSqlAnswer("SELECT nf_dateadd('day', 5, '20180531')", "20180605")
+    checkSqlAnswer("SELECT nf_dateadd('quarter', 5, '20180531')", "20190831")
     checkSqlAnswer(
       "SELECT nf_dateadd('week', -10, '2018-05-31 12:20:21.010')",
       "2018-03-22 12:20:21.01")
     checkSqlAnswer(
-      "SELECT nf_dateadd('hour', 2, timestamp '2018-03-01 02:00:00')",
-      Timestamp.valueOf("2018-03-01 04:00:00"))
+      "SELECT nf_dateadd('hour', 2, timestamp '2018-03-11 02:00:00')",
+      Timestamp.valueOf("2018-03-11 05:00:00"))
+    withTimeZone("UTC") {
+      checkSqlAnswer(
+        "SELECT nf_dateadd('hour', 2, timestamp '2018-03-11 02:00:00')",
+        Timestamp.valueOf("2018-03-11 04:00:00"))
+    }
 
     withTempView("t") {
       Seq(20180707).toDF("dateint").createTempView("t")
@@ -91,8 +102,10 @@ class NetflixDateTimeFunctionsSuite extends QueryTest with SharedSQLContext {
     checkSqlAnswer("select nf_datediff(1531373400L, 1531546200L)", 2)
     checkSqlAnswer("select nf_datediff('week', '20180501', '20180531')", 4)
     checkSqlAnswer("select nf_datediff('2018-06-04', '2018-05-31')", -4)
-    checkSqlAnswer("select nf_datediff('hour', '2018-03-01 05:00:00', '2018-03-01 02:00:00')", -3)
-
+    checkSqlAnswer("select nf_datediff('hour', '2018-03-11 05:00:00', '2018-03-11 02:00:00')", -2)
+    withTimeZone("UTC") {
+      checkSqlAnswer("select nf_datediff('hour', '2018-03-11 05:00:00', '2018-03-11 02:00:00')", -3)
+    }
     checkSqlAnswer("select nf_datediff(date '2018-06-04', date '2018-05-31')", -4)
 
     val (ts1, ts2) = ("2018-05-31 12:20:21", "2018-05-31 02:20:21")
@@ -301,6 +314,9 @@ class NetflixDateTimeFunctionsSuite extends QueryTest with SharedSQLContext {
     checkSqlAnswer("SELECT nf_datetrunc('month', 20180531)", 20180501)
     checkSqlAnswer("SELECT nf_datetrunc('month','20180531')", "20180501")
     checkSqlAnswer("SELECT nf_datetrunc('year','2018-05-31')", "2018-01-01")
+    checkSqlAnswer("SELECT nf_datetrunc('quarter','2018-05-31')", "2018-04-01")
+    // Truncate week to Monday according to ISO 8601. Same as Presto.
+    checkSqlAnswer("SELECT nf_datetrunc('week','2018-05-31')", "2018-05-28")
     checkSqlAnswer("SELECT nf_datetrunc('day', timestamp '2018-05-31 12:20:21.010')",
       Timestamp.valueOf("2018-05-31 00:00:00.0"))
     checkSqlAnswer("SELECT nf_datetrunc('millisecond', '2018-05-31T12:20:21.010')",

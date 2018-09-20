@@ -27,14 +27,13 @@ import org.joda.time.format.DateTimeFormat
 
 import org.apache.spark.sql.catalyst.util.QuarterOfYearDateTimeField.QUARTER_OF_YEAR
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.types._
-import org.apache.spark.unsafe.types.UTF8String
 
 object NetflixDateTimeUtils {
 
   val DATE_INT_MAX_THRESHOLD = 100000000L
   val DATE_INT_MIN_THRESHOLD = 10000000L
   val DATE_INT_FORMAT = "yyyyMMdd"
+  val DATE_INT_10_FORMAT = "yyyy-MM-dd"
   val DEFAULT_DUMMY_ARGUMENT = "-"
 
   // Convert a dateint in the format 'yyyyMMdd' to Java local date
@@ -129,108 +128,6 @@ object NetflixDateTimeUtils {
     }
   }
 
-  abstract class EpochMillis(var epochMillis: Long) {
-    def add(value: Long, unit: String): Any = {
-      epochMillis = getField(unit).add(epochMillis, value)
-      toOutput
-    }
-
-    def diff(that: EpochMillis, unit: String): Long = {
-      getField(unit).getDifferenceAsLong(that.epochMillis, epochMillis)
-    }
-
-    protected def getField(unit: String): DateTimeField
-    protected def toOutput: Any
-
-    override def toString: String = s"Output: ${toOutput.toString}, Epoch (ms): ${epochMillis}"
-  }
-
-  abstract class EpochDate(epochDay: Long) extends EpochMillis(DAYS.toMillis(epochDay)) {
-    protected def epochDays: Long = MILLISECONDS.toDays(epochMillis)
-    override def getField(unit: String): DateTimeField =
-      getDateField(getDefaultChronology(), unit)
-  }
-
-  class EpochDateInteger(dateint: Long)
-    extends EpochDate(toLocalDate(dateint.toInt).toEpochDay) {
-    def toOutput: Any = toDateInt(LocalDate.ofEpochDay(epochDays))
-  }
-
-  class EpochDateLong(dateint: Long)
-    extends EpochDate(toLocalDate(dateint.toInt).toEpochDay) {
-    def toOutput: Any = toDateInt(LocalDate.ofEpochDay(epochDays)).toLong
-  }
-
-  class EpochDateString8(dateint: String)
-    extends EpochDate(toLocalDate(dateint, DATE_INT_FORMAT).toEpochDay) {
-    def toOutput: Any = UTF8String.fromString(toDateInt(LocalDate.ofEpochDay(epochDays)).toString)
-  }
-
-  class EpochDateString10(dateint: String)
-    extends EpochDate(LocalDate.parse(dateint).toEpochDay) {
-    def toOutput: Any = UTF8String.fromString(LocalDate.ofEpochDay(epochDays).toString)
-  }
-
-  class EpochDateObject(epochDay2: Int)
-    extends EpochDate(epochDay2) {
-    def toOutput: Any = epochDays.toInt
-  }
-
-  abstract class EpochTimestamp(epochMs: Long) extends EpochMillis(epochMs) {
-    override def getField(unit: String): DateTimeField =
-      getTimestampField(getDefaultChronology(), unit)
-  }
-
-  class EpochTimestampInteger(epochMs: Long, isEpoch: Boolean) extends EpochTimestamp(epochMs) {
-    def toOutput: Any = if (isEpoch) (epochMillis/ 1000L).toInt else epochMillis.toInt
-  }
-
-  class EpochTimestampLong(epochMs2: Long, isEpoch: Boolean)
-    extends EpochTimestamp(epochMs2) {
-    def toOutput: Any = if (isEpoch) (epochMillis/ 1000L) else epochMillis
-  }
-
-  class EpochTimestampString(timestamp: UTF8String)
-    extends EpochTimestamp(DateTimeUtils.stringToTimestamp(timestamp).map(_ / 1000L).getOrElse(
-      throw new IllegalArgumentException("Could not convert string to timestamp"))) {
-    def toOutput: Any = UTF8String.fromString(DateTimeUtils.timestampToString(epochMillis * 1000L))
-  }
-
-  class EpochTimestampObject(epochUs: Long)
-    extends EpochTimestamp(epochUs / 1000L) {
-    def toOutput: Any = epochMillis * 1000L
-  }
-
-  def fromInput(input: Any, inputDataType: DataType): Any = (input, inputDataType) match {
-    case (ts: Int, IntegerType) if ts > DATE_INT_MAX_THRESHOLD =>
-      val ms = getEpochMs(ts)
-      new EpochTimestampInteger(ms, !(ms == ts))
-    case (dateint: Int, IntegerType) if dateint <= DATE_INT_MAX_THRESHOLD =>
-      new EpochDateInteger(dateint)
-    case (ts: Long, LongType) if ts > DATE_INT_MAX_THRESHOLD =>
-      val ms = getEpochMs(ts)
-      new EpochTimestampLong(ms, !(ms == ts))
-    case (dateint: Long, LongType) if dateint <= DATE_INT_MAX_THRESHOLD =>
-      new EpochDateLong(dateint)
-    case (u8s: UTF8String, StringType) =>
-      val s = u8s.toString
-      s.length match {
-        case 8 =>
-          new EpochDateString8(s)
-        case 10 =>
-          new EpochDateString10(s)
-        case _ =>
-          // Assume its timestamp represented as a string
-          new EpochTimestampString(u8s)
-      }
-    case (d: Int, DateType) =>
-      new EpochDateObject(d)
-    case (us: Long, TimestampType) =>
-      new EpochTimestampObject(us)
-    case _ =>
-      throw TypeException("Invalid input type")
-  }
-
   def truncateDate(unit: String, date: Long): Long = {
     val millis = getDateField(getDefaultChronology(), unit).roundFloor(DAYS.toMillis(date))
     MILLISECONDS.toDays(millis)
@@ -316,6 +213,8 @@ object NetflixDateTimeUtils {
   def getDefaultChronology(): ISOChronology = {
     ISOChronology.getInstance(DateTimeZone.forTimeZone(DateTimeUtils.defaultTimeZone));
   }
+
+  def returnNullForEx[T](udf: => T): T = handleExceptions(() => udf, null.asInstanceOf[T])
 
   def handleExceptions[T](udf: () => T, defaultValue: T): T = {
     try {
