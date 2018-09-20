@@ -426,11 +426,42 @@ case class AppendData(
 
 object AppendData {
   def byName(table: NamedRelation, df: LogicalPlan): AppendData = {
-    new AppendData(table, df, true)
+    AppendData(table, df, true)
   }
 
   def byPosition(table: NamedRelation, query: LogicalPlan): AppendData = {
-    new AppendData(table, query, false)
+    AppendData(table, query, false)
+  }
+}
+
+/**
+ * Dynamically overwrite partitions in an existing table.
+ */
+case class OverwritePartitionsDynamic(
+    table: NamedRelation,
+    query: LogicalPlan,
+    isByName: Boolean) extends Command {
+  override def children: Seq[LogicalPlan] = Seq(query)
+
+  override lazy val resolved: Boolean = {
+    table.resolved && query.resolved && query.output.size == table.output.size &&
+        query.output.zip(table.output).forall {
+          case (inAttr, outAttr) =>
+            // names and types must match, nullability must be compatible
+            inAttr.name == outAttr.name &&
+                DataType.equalsIgnoreCompatibleNullability(outAttr.dataType, inAttr.dataType) &&
+                (outAttr.nullable || !inAttr.nullable)
+        }
+  }
+}
+
+object OverwritePartitionsDynamic {
+  def byName(table: NamedRelation, df: LogicalPlan): OverwritePartitionsDynamic = {
+    OverwritePartitionsDynamic(table, df, true)
+  }
+
+  def byPosition(table: NamedRelation, query: LogicalPlan): OverwritePartitionsDynamic = {
+    OverwritePartitionsDynamic(table, query, false)
   }
 }
 
