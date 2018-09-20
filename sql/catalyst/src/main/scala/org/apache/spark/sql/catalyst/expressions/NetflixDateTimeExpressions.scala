@@ -24,7 +24,7 @@ import java.util.regex.Pattern
 
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.codegen.CodegenFallback
-import org.apache.spark.sql.catalyst.util.DateTimeUtils
+import org.apache.spark.sql.catalyst.util.{DateTimeUtils, NetflixDateTime}
 import org.apache.spark.sql.catalyst.util.DateTimeUtils._
 import org.apache.spark.sql.catalyst.util.NetflixDateTimeUtils._
 import org.apache.spark.sql.types._
@@ -835,11 +835,8 @@ case class NfDateAdd(param1: Expression, param2: Expression, param3: Expression,
 
   override def nullable: Boolean = true
 
-  protected override def nullSafeEval(first: Any, second: Any, third: Any): Any = {
-    handleExceptions( () => {val unitFirst = first match {
-      case u8s: UTF8String => u8s.toString
-      case _ => throw new TypeException("The unit type should be string")
-    }
+  protected override def nullSafeEval(first: Any, second: Any, third: Any): Any = returnNullForEx {
+    val unitFirst = first.asInstanceOf[UTF8String].toString
 
     val (value, unit) = (second, param2.dataType) match {
       case (i: Int, IntegerType) =>
@@ -869,12 +866,10 @@ case class NfDateAdd(param1: Expression, param2: Expression, param3: Expression,
       case _ => throw new TypeException("Invalid offset input type")
     }
 
-    fromInput(third, param3.dataType, timeZone) match {
-      case em: EpochMillis =>
-        em.add(value, unit)
-      case _ =>
-        throw new TypeException("Invalid input type")
-    }}, null)
+    NetflixDateTime.fromLiteral(third, param3.dataType)
+      .withTimeZone(timeZone)
+      .add(value, unit)
+      .toLiteralValue
   }
 
   override def prettyName: String = "nf_dateadd"
@@ -910,38 +905,10 @@ case class NfDateDiff(param1: Expression, param2: Expression, param3: Expression
 
   override def nullable: Boolean = true
 
-  protected override def nullSafeEval(first: Any, second: Any, third: Any): Any = {
-    handleExceptions(() => {val unit = first match {
-      case u8s: UTF8String => u8s.toString
-      case _ => throw new TypeException("The unit type should be string")
-    }
-
-    def canDiff(em1: EpochMillis, em2: EpochMillis): Boolean = (em1, em2) match {
-      case (_: EpochDateInteger, _: EpochDateInteger) => true
-      case (_: EpochDateInteger, _: EpochDateLong) => true
-      case (_: EpochDateLong, _: EpochDateInteger) => true
-      case (_: EpochDateLong, _: EpochDateLong) => true
-      case (_: EpochDateString8, _: EpochDateString8) => true
-      case (_: EpochDateString10, _: EpochDateString10) => true
-      case (_: EpochDateObject, _: EpochDateObject) => true
-      case (_: EpochTimestampInteger, _: EpochTimestampInteger) => true
-      case (_: EpochTimestampLong, _: EpochTimestampInteger) => true
-      case (_: EpochTimestampInteger, _: EpochTimestampLong) => true
-      case (_: EpochTimestampLong, _: EpochTimestampLong) => true
-      case (_: EpochTimestampString, _: EpochTimestampString) => true
-      case (_: EpochTimestampObject, _: EpochTimestampObject) => true
-      case _ => false
-    }
-
-    (fromInput(second, param2.dataType, timeZone),
-      fromInput(third, param3.dataType, timeZone)) match {
-      case (em1: EpochMillis, em2: EpochMillis) if canDiff(em1, em2) =>
-        em1.diff(em2, unit)
-      case (em1: EpochMillis, em2: EpochMillis) if !canDiff(em1, em2) =>
-        throw new TypeException("Both inputs should have the same type")
-      case _ =>
-        throw new TypeException("Invalid input type")
-    }}, null)
+  protected override def nullSafeEval(first: Any, second: Any, third: Any): Any = returnNullForEx {
+    val unit = first.asInstanceOf[UTF8String].toString
+    NetflixDateTime.fromLiteral(second, param2.dataType).withTimeZone(timeZone)
+      .diff(NetflixDateTime.fromLiteral(third, param3.dataType).withTimeZone(timeZone), unit)
   }
 
   override def prettyName: String = "nf_datediff"
@@ -968,66 +935,12 @@ case class NfDateTrunc(left: Expression, right: Expression, timeZoneId: Option[S
 
   override def nullable: Boolean = true
 
-  protected override def nullSafeEval(first: Any, second: Any): Any = {
-    handleExceptions(() => {val unit = first.asInstanceOf[UTF8String].toString
-    val inputDataType = right.dataType
-    inputDataType match {
-      case LongType | IntegerType =>
-        var dateLong: Long = -1
-        if (inputDataType.equals(IntegerType)) {
-          dateLong = second.asInstanceOf[Int].toLong
-        } else {
-          dateLong = second.asInstanceOf[Long]
-        }
-        if (dateLong > DATE_INT_MAX_THRESHOLD) {
-          dateIntEpochTrunc(unit, dateLong, timeZone)
-        } else {
-          toDateInt(LocalDate.ofEpochDay(truncateDate(unit,
-            toLocalDate(dateLong.toInt), timeZone)))
-        }
-
-      case StringType =>
-        val dateString: String = second.asInstanceOf[UTF8String].toString
-        if (dateString.length() == 8) {
-          UTF8String.fromString(toDateInt(LocalDate.ofEpochDay(truncateDate(unit,
-            toLocalDate(dateString, DATE_INT_FORMAT), timeZone))).toString)
-        } else if (dateString.length() == 10) {
-          UTF8String.fromString(LocalDate.ofEpochDay(truncateDate(unit,
-            LocalDate.parse(dateString), timeZone)).toString)
-        } else {
-          // Assume its timestamp represented as a string
-          val timestampOption = stringToTimestamp(
-            second.asInstanceOf[UTF8String])
-          if (timestampOption.isEmpty) {
-            throw new IllegalArgumentException("Could not convert string to timestamp")
-          }
-          val timestamp: SQLTimestamp = timestampOption.get
-          val epochMicros = timestamp.asInstanceOf[Long]
-          val sessionEpochMicros: Long = convertTz(epochMicros,
-            timeZone, defaultTimeZone())
-          val truncatedMicros =
-            truncateTimestamp(unit, sessionEpochMicros / 1000L, timeZone) * 1000L
-          UTF8String.fromString(timestampToString(
-            convertTz(truncatedMicros, defaultTimeZone(),
-              timeZone)))
-        }
-
-      case DateType =>
-        val epochDays = second.asInstanceOf[Int]
-        truncateDate(unit, LocalDate.ofEpochDay(epochDays), timeZone).toInt
-
-      case TimestampType =>
-        val epochMicros: Long = second.asInstanceOf[Long]
-        val sessionEpochMicros: Long = convertTz(epochMicros,
-          timeZone, defaultTimeZone())
-        val truncatedMicros =
-          truncateTimestamp(unit, sessionEpochMicros / 1000L, timeZone) * 1000L
-        convertTz(truncatedMicros, defaultTimeZone(),
-          timeZone)
-
-      case _ =>
-        throw new TypeException("Invalid input type " + inputDataType)
-    }}, null)
+  protected override def nullSafeEval(first: Any, second: Any): Any = returnNullForEx {
+    val unit = first.asInstanceOf[UTF8String].toString
+    NetflixDateTime.fromLiteral(second, right.dataType)
+      .withTimeZone(timeZone)
+      .trunc(unit)
+      .toLiteralValue
   }
 
   override def prettyName: String = "nf_datetrunc"
@@ -1049,59 +962,9 @@ case class NfDateFormat(left: Expression, right: Expression, timeZoneId: Option[
 
   override def nullable: Boolean = true
 
-  protected override def nullSafeEval(first: Any, second: Any): Any = {
-    handleExceptions(() => {val format = second.asInstanceOf[UTF8String].toString
-    val inputDataType = left.dataType
-    inputDataType match {
-      case LongType | IntegerType =>
-        var dateLong: Long = -1
-        if (inputDataType.equals(IntegerType)) {
-          dateLong = first.asInstanceOf[Int].toLong
-        } else {
-          dateLong = first.asInstanceOf[Long]
-        }
-        if (dateLong > DATE_INT_MAX_THRESHOLD) {
-          UTF8String.fromString(formatDatetime(getEpochMs(dateLong), format, timeZone))
-        } else {
-          UTF8String.fromString(formatDatetime(toUnixTime(
-            toLocalDate(dateLong.toInt), timeZone.getID) * 1000L, format, timeZone))
-        }
-
-      case StringType =>
-        val dateString: String = first.asInstanceOf[UTF8String].toString
-        if (dateString.length() == 8) {
-          UTF8String.fromString(formatDatetime(toUnixTime(
-            toLocalDate(dateString, DATE_INT_FORMAT), timeZone.getID) * 1000L, format, timeZone))
-        } else if (dateString.length() == 10) {
-          UTF8String.fromString(formatDatetime(toUnixTime(
-            LocalDate.parse(dateString), timeZone.getID) * 1000L, format, timeZone))
-        } else {
-          // Assume its timestamp represented as a string
-          val timestampOption = stringToTimestamp(first.asInstanceOf[UTF8String])
-          if (timestampOption.isEmpty) {
-            throw new IllegalArgumentException("Could not convert string to timestamp")
-          }
-          val timestamp: SQLTimestamp = timestampOption.get
-          val epochMicros = timestamp.asInstanceOf[Long]
-          val sessionEpochMicros: Long = convertTz(epochMicros,
-            timeZone, defaultTimeZone())
-          UTF8String.fromString(formatDatetime(sessionEpochMicros / 1000L, format, timeZone))
-        }
-
-      case DateType =>
-        val epochDays = first.asInstanceOf[Int]
-        UTF8String.fromString(formatDatetime(toUnixTime(
-          LocalDate.ofEpochDay(epochDays), timeZone.getID) * 1000L, format, timeZone))
-
-      case TimestampType =>
-        val epochMicros: Long = first.asInstanceOf[Long]
-        val sessionEpochMicros: Long = convertTz(epochMicros,
-          timeZone, defaultTimeZone())
-        UTF8String.fromString(formatDatetime(sessionEpochMicros / 1000L, format, timeZone))
-
-      case _ =>
-        throw new TypeException("Invalid input type " + inputDataType)
-    }}, null)
+  protected override def nullSafeEval(first: Any, second: Any): Any = returnNullForEx {
+    val format = second.asInstanceOf[UTF8String].toString
+    NetflixDateTime.fromLiteral(first, left.dataType).withTimeZone(timeZone).format(format)
   }
 
   override def prettyName: String = "nf_dateformat"
