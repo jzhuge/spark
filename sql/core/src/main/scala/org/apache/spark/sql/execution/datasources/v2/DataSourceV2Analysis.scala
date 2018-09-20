@@ -24,7 +24,7 @@ import org.apache.spark.sql.catalyst.analysis.NamedRelation
 import org.apache.spark.sql.catalyst.catalog.CatalogTable
 import org.apache.spark.sql.catalyst.plans.logical.{AlterTable, AppendData, CreateTable, CreateTableAsSelect, InsertIntoTable, LogicalPlan, ReplaceTableAsSelect}
 import org.apache.spark.sql.catalyst.rules.Rule
-import org.apache.spark.sql.execution.command.AlterTableAddColumnsCommand
+import org.apache.spark.sql.execution.command.{AlterTableAddColumnsCommand, AlterTableSetPropertiesCommand}
 import org.apache.spark.sql.execution.datasources
 import org.apache.spark.sql.execution.datasources.{DataSource, LogicalRelation}
 import org.apache.spark.sql.sources.BaseRelation
@@ -49,7 +49,7 @@ class DataSourceV2Analysis(spark: SparkSession) extends Rule[LogicalPlan] {
   private val catalog = spark.catalog(None).asTableCatalog
 
   override def apply(plan: LogicalPlan): LogicalPlan = plan resolveOperators {
-    case AlterTableAddColumnsCommand(ident, columns) =>
+    case AlterTableAddColumnsCommand(ident, columns) => // TODO: match only v2 tables!
       val identifier = fixIdent(ident)
       // load the table to create a relation so that the alter table command can be validated
       val table = catalog.loadTable(identifier)
@@ -67,6 +67,9 @@ class DataSourceV2Analysis(spark: SparkSession) extends Rule[LogicalPlan] {
       }
 
       AlterTable(catalog, relation, changes)
+
+    case a @ AlterTableSetPropertiesCommand(ident, properties, false /* isView */ ) =>
+      a
 
     case datasources.CreateTable(catalogTable, mode, None) if isV2CatalogTable(catalogTable) =>
       val options = catalogTable.storage.properties + ("provider" -> catalogTable.provider.get)
