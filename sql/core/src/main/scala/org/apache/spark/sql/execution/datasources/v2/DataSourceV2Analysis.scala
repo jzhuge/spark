@@ -51,26 +51,32 @@ class DataSourceV2Analysis(spark: SparkSession) extends Rule[LogicalPlan] {
   override def apply(plan: LogicalPlan): LogicalPlan = plan resolveOperators {
     case alter @ AlterTableAddColumnsCommand(ident, columns) =>
       val identifier = fixIdent(ident)
-      catalog.loadTable(identifier) match {
-        case table: V1MetadataTable if isV2Source(table.catalogTable) =>
-          // create a relation so that the alter table command can be validated
-          val relation = DataSourceV2Relation.create(
-            catalog.name, identifier, table,
-            Map("database" -> identifier.database.get, "table" -> identifier.table))
-          val changes = columns.map { field =>
-            val (parent, name) = field.name match {
-              case NestedFieldName(path, fieldName) =>
-                (path, fieldName)
-              case fieldName =>
-                (null, fieldName)
-            }
-            TableChange.addColumn(parent, name, field.dataType)
-          }
+      val table = catalog.loadTable(identifier)
 
-          AlterTable(catalog, relation, changes)
+      // create a relation so that the alter table command can be validated
+      lazy val relation = DataSourceV2Relation.create(
+        catalog.name, identifier, table,
+        Map("database" -> identifier.database.get, "table" -> identifier.table))
+      lazy val changes = columns.map { field =>
+        val (parent, name) = field.name match {
+          case NestedFieldName(path, fieldName) =>
+            (path, fieldName)
+          case fieldName =>
+            (null, fieldName)
+        }
+        TableChange.addColumn(parent, name, field.dataType)
+      }
+      lazy val converted = AlterTable(catalog, relation, changes)
+
+      table match {
+        case table: V1MetadataTable if isV2Source(table.catalogTable) =>
+          converted
+
+        case _: V1MetadataTable =>
+          alter
 
         case _ =>
-          alter
+          converted
       }
 
     case a @ AlterTableSetPropertiesCommand(ident, properties, false /* isView */ ) =>
