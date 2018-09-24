@@ -754,6 +754,87 @@ class ParquetPartitionedBatchPatternTest(unittest.TestCase):
                 ])
 
     @spark_only
+    def test_batch_pattern_overwrite_static_partition(self):
+        with temp_table(
+                "partitioned_batch_overwrite_test",
+                "CREATE TABLE {0} (id bigint, data string) PARTITIONED BY (static_part string, part string) STORED AS parquet") as t:
+
+            # write some data as the first batch
+            sql("""
+                INSERT INTO {0} PARTITION (static_part='str', part)
+                SELECT id, data, case when (id % 2) == 0 then 'even' else 'odd' end
+                FROM {1}
+                """, t, self.data_table)
+            rows = collect(spark.table(t))
+            self.assertEqual(sort_by_id(rows), [
+                    {'id': 1, 'data': 'a', 'static_part': 'str', 'part': 'odd'},
+                    {'id': 2, 'data': 'b', 'static_part': 'str', 'part': 'even'},
+                    {'id': 3, 'data': 'c', 'static_part': 'str', 'part': 'odd'}
+                ])
+
+            # second insert should overwrite evens but not odds
+            sql("""
+                INSERT INTO {0} PARTITION (static_part='str', part='even')
+                SELECT id, data
+                FROM (SELECT id * 2 as id, data FROM {1})
+                """, t, self.data_table)
+            rows = collect(spark.table(t))
+            # original id:2 row was replaced by the new 'even' data
+            self.assertEqual(sort_by_id(rows), [
+                    {'id': 1, 'data': 'a', 'static_part': 'str', 'part': 'odd'},
+                    {'id': 2, 'data': 'a', 'static_part': 'str', 'part': 'even'}, # data is not 'b' because it was replaced
+                    {'id': 3, 'data': 'c', 'static_part': 'str', 'part': 'odd'},
+                    {'id': 4, 'data': 'b', 'static_part': 'str', 'part': 'even'},
+                    {'id': 6, 'data': 'c', 'static_part': 'str', 'part': 'even'}
+                ])
+
+    @spark_only
+    def test_batch_pattern_overwrite_static_and_dynamic_partitions(self):
+        """Tests SQL insert statement with both static and dynamic partitions.
+
+        The behavior of this test deviates from Spark's default behavior in
+        2.1.1, but matches Spark's behavior in 2.3.0+ when
+        spark.sql.sources.partitionOverwriteMode=dynamic. In older versions or
+        when the overwrite mode is static, all partitions under the static
+        location are deleted.
+
+        Batch pattern writes never implemented this behavior from Spark, which
+        differs from Hive's default behavior.
+        """
+        with temp_table(
+                "partitioned_batch_overwrite_test",
+                "CREATE TABLE {0} (id bigint, data string) PARTITIONED BY (static_part string, part string) STORED AS parquet") as t:
+
+            # write some data as the first batch
+            sql("""
+                INSERT INTO {0} PARTITION (static_part='str', part)
+                SELECT id, data, case when (id % 2) == 0 then 'even' else 'odd' end
+                FROM {1}
+                """, t, self.data_table)
+            rows = collect(spark.table(t))
+            self.assertEqual(sort_by_id(rows), [
+                    {'id': 1, 'data': 'a', 'static_part': 'str', 'part': 'odd'},
+                    {'id': 2, 'data': 'b', 'static_part': 'str', 'part': 'even'},
+                    {'id': 3, 'data': 'c', 'static_part': 'str', 'part': 'odd'}
+                ])
+
+            # second insert should overwrite evens but not odds
+            sql("""
+                INSERT INTO {0} PARTITION (static_part='str', part)
+                SELECT id, data, case when (id % 2) == 0 then 'even' else 'odd' end
+                FROM (SELECT id * 2 as id, data FROM {1})
+                """, t, self.data_table)
+            rows = collect(spark.table(t))
+            # original id:2 row was replaced by the new 'even' data
+            self.assertEqual(sort_by_id(rows), [
+                    {'id': 1, 'data': 'a', 'static_part': 'str', 'part': 'odd'},
+                    {'id': 2, 'data': 'a', 'static_part': 'str', 'part': 'even'}, # data is not 'b' because it was replaced
+                    {'id': 3, 'data': 'c', 'static_part': 'str', 'part': 'odd'},
+                    {'id': 4, 'data': 'b', 'static_part': 'str', 'part': 'even'},
+                    {'id': 6, 'data': 'c', 'static_part': 'str', 'part': 'even'}
+                ])
+
+    @spark_only
     def test_batch_pattern_dataframe_overwrite(self):
         with temp_table(
                 "partitioned_batch_overwrite_test",
