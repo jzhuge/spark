@@ -173,7 +173,7 @@ class DataFrameReader private[sql](sparkSession: SparkSession) extends Logging {
     if (isCatalogDefined || isV2Source) {
       val catalog = sparkSession.catalog(extraOptions.get("catalog")).asTableCatalog
       options.table match {
-        case Some(ident) =>
+        case Some(ident) if catalog.tableExists(ident) =>
           return Dataset.ofRows(sparkSession,
             DataSourceV2Relation.create(catalog.name, ident, catalog.loadTable(ident), options))
 
