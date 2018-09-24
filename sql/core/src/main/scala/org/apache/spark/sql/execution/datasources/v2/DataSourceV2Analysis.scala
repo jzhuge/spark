@@ -18,7 +18,7 @@
 package org.apache.spark.sql.execution.datasources.v2
 
 import org.apache.spark.sql.{AnalysisException, SaveMode, SparkSession, SQLContext}
-import org.apache.spark.sql.catalog.v2.{PartitionUtil, TableChange, V1MetadataTable}
+import org.apache.spark.sql.catalog.v2.{PartitionUtil, Table, TableChange, V1MetadataTable}
 import org.apache.spark.sql.catalyst.TableIdentifier
 import org.apache.spark.sql.catalyst.analysis.NamedRelation
 import org.apache.spark.sql.catalyst.catalog.CatalogTable
@@ -153,11 +153,17 @@ class DataSourceV2Analysis(spark: SparkSession) extends Rule[LogicalPlan] {
         Project(projectExprs, insert.child)
       }
 
-      if (insert.overwrite.enabled) {
-        // always use dynamic overwrite to match Hive's behavior
-        OverwritePartitionsDynamic.byPosition(v2.v2relation, query)
-      } else {
-        AppendData.byPosition(v2.v2relation, query)
+      v2.v2relation match {
+        case TableV2Relation(_, _, table, _, _) if useCompatBehavior(table) =>
+          // NETFLIX: use batch pattern behavior for compat tables
+          OverwritePartitionsDynamic.byPosition(v2.v2relation, query)
+
+        case _ if insert.overwrite.enabled =>
+          // always use dynamic overwrite to match Hive's behavior
+          OverwritePartitionsDynamic.byPosition(v2.v2relation, query)
+
+        case _ =>
+          AppendData.byPosition(v2.v2relation, query)
       }
 
     case LogicalRelation(v2: V2AsBaseRelation, _, _) =>
@@ -223,6 +229,10 @@ object DataSourceV2Analysis {
   def apply(spark: SparkSession): DataSourceV2Analysis = new DataSourceV2Analysis(spark)
 
   val NestedFieldName = """([\w\.]+)\.(\w+)""".r
+
+  private def useCompatBehavior(table: Table): Boolean = {
+    table.properties().getOrDefault("spark.behavior.compatibility", "false").toBoolean
+  }
 
   private def isV2Source(catalogTable: CatalogTable): Boolean = {
     catalogTable.provider.exists(provider =>
