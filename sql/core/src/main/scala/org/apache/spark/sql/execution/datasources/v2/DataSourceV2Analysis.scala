@@ -18,11 +18,12 @@
 package org.apache.spark.sql.execution.datasources.v2
 
 import org.apache.spark.sql.{AnalysisException, SaveMode, SparkSession, SQLContext}
-import org.apache.spark.sql.catalog.v2.{PartitionUtil, TableChange, V1MetadataTable}
+import org.apache.spark.sql.catalog.v2.{PartitionUtil, Table, TableChange, V1MetadataTable}
 import org.apache.spark.sql.catalyst.TableIdentifier
 import org.apache.spark.sql.catalyst.analysis.NamedRelation
 import org.apache.spark.sql.catalyst.catalog.CatalogTable
-import org.apache.spark.sql.catalyst.plans.logical.{AlterTable, AppendData, CreateTable, CreateTableAsSelect, InsertIntoTable, LogicalPlan, ReplaceTableAsSelect}
+import org.apache.spark.sql.catalyst.expressions.{Alias, Literal}
+import org.apache.spark.sql.catalyst.plans.logical.{AlterTable, AppendData, CreateTable, CreateTableAsSelect, InsertIntoTable, LogicalPlan, OverwritePartitionsDynamic, Project, ReplaceTableAsSelect}
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution.command.{AlterTableAddColumnsCommand, AlterTableSetPropertiesCommand}
 import org.apache.spark.sql.execution.datasources
@@ -135,15 +136,63 @@ class DataSourceV2Analysis(spark: SparkSession) extends Rule[LogicalPlan] {
         throw new AnalysisException(s"Cannot write, IF NOT EXISTS is not supported for table: $v2")
       }
 
-      if (insert.overwrite) {
-        // TODO: Support overwrite
-        throw new AnalysisException(s"Cannot overwrite with table: $v2")
+      val staticPartitionValues: Map[String, String] =
+        insert.partition.filter(_._2.isDefined).mapValues(_.get)
+
+      val query = if (staticPartitionValues.isEmpty) {
+        insert.query
+
+      } else {
+        // add any static value as a literal column
+        val output = v2.v2relation.output
+
+        // check that the data column counts match
+        val numColumns = output.size
+        if (numColumns > staticPartitionValues.size + insert.query.output.size) {
+          throw new AnalysisException(s"Cannot write: too many columns")
+        } else if (numColumns < staticPartitionValues.size + insert.query.output.size) {
+          throw new AnalysisException(s"Cannot write: not enough columns")
+        }
+
+        val resolver = spark.sessionState.analyzer.resolver
+        val staticNames = staticPartitionValues.keySet
+
+        // for each static name, find the column name it will replace and check for unknowns.
+        val outputNameToStaticName = staticNames.map(staticName =>
+          output.find(col => resolver(col.name, staticName)) match {
+            case Some(attr) =>
+              attr.name -> staticName
+            case _ =>
+              throw new AnalysisException(
+                s"Cannot add static value for unknown column: $staticName")
+          }).toMap
+
+        // for each output column, add the static value as a literal or use the next input column
+        val queryColumns = insert.query.output.iterator
+        val projectExprs = output.map { col =>
+          outputNameToStaticName.get(col.name).flatMap(staticPartitionValues.get) match {
+            case Some(staticValue) =>
+              Alias(Literal(staticValue), col.name)()
+            case _ =>
+              queryColumns.next
+          }
+        }
+
+        Project(projectExprs, insert.query)
       }
 
-      // TODO: Handle partition values
-      assert(insert.partition.isEmpty, s"Cannot write static partitions into table: $v2")
+      v2.v2relation match {
+        case TableV2Relation(_, _, table, _, _) if useCompatBehavior(table) =>
+          // NETFLIX: use batch pattern behavior for compat tables
+          OverwritePartitionsDynamic.byPosition(v2.v2relation, query)
 
-      AppendData.byPosition(v2.v2relation, insert.query)
+        case _ if insert.overwrite =>
+          // always use dynamic overwrite to match Hive's behavior
+          OverwritePartitionsDynamic.byPosition(v2.v2relation, query)
+
+        case _ =>
+          AppendData.byPosition(v2.v2relation, query)
+      }
 
     case LogicalRelation(v2: V2AsBaseRelation, _, _, _) =>
       // unwrap v2 relation
@@ -168,6 +217,10 @@ object DataSourceV2Analysis {
   def apply(spark: SparkSession): DataSourceV2Analysis = new DataSourceV2Analysis(spark)
 
   val NestedFieldName = """([\w\.]+)\.(\w+)""".r
+
+  private def useCompatBehavior(table: Table): Boolean = {
+    table.properties().getOrDefault("spark.behavior.compatibility", "false").toBoolean
+  }
 
   private def isV2Source(catalogTable: CatalogTable, spark: SparkSession): Boolean = {
     catalogTable.provider.exists(provider =>
