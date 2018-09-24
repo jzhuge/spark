@@ -370,6 +370,26 @@ class UnpartitionedIcebergTest(unittest.TestCase):
                     {'id': 3, 'data': 'c'}
                 ])
 
+    def test_insert_overwrite(self):
+        with temp_table(
+                "insert_overwrite_test",
+                "CREATE TABLE {0} (id bigint, data string) USING iceberg") as t:
+            sql("INSERT INTO {0} VALUES (1, 'a'), (2, 'b'), (3, 'c')", t)
+            rows = collect(spark.table(t))
+            self.assertEqual(sort_by_id(rows), [
+                    {'id': 1, 'data': 'a'},
+                    {'id': 2, 'data': 'b'},
+                    {'id': 3, 'data': 'c'}
+                ])
+
+            sql("INSERT OVERWRITE TABLE {0} VALUES (10, 'x'), (11, 'y'), (12, 'z')", t)
+            rows = collect(spark.table(t))
+            self.assertEqual(sort_by_id(rows), [
+                    {'id': 10, 'data': 'x'},
+                    {'id': 11, 'data': 'y'},
+                    {'id': 12, 'data': 'z'}
+                ])
+
     @spark_only
     def test_dataframe_read(self):
         rows = collect(spark.table(self.shared_table))
@@ -378,6 +398,19 @@ class UnpartitionedIcebergTest(unittest.TestCase):
                 {'id': 2, 'data': 'b'},
                 {'id': 3, 'data': 'c'}
             ])
+
+    @spark_only
+    def test_dataframe_insert(self):
+        with temp_table(
+                "df_insert_test",
+                "CREATE TABLE {0} (id bigint, data string) USING iceberg") as t:
+            spark.createDataFrame([(1, "a"), (2, "b"), (3, "c")], ("col1", "col2")).write.insertInto(t)
+            rows = collect(spark.table(t))
+            self.assertEqual(rows, [
+                    {'id': 1, 'data': 'a'},
+                    {'id': 2, 'data': 'b'},
+                    {'id': 3, 'data': 'c'}
+                ])
 
     @spark_only
     def test_dataframe_insert_by_name(self):
@@ -393,9 +426,9 @@ class UnpartitionedIcebergTest(unittest.TestCase):
                 ])
 
     @spark_only
-    def test_dataframe_insert(self):
+    def test_dataframe_insert_overwrite(self):
         with temp_table(
-                "df_insert_test",
+                "df_insert_overwrite_test",
                 "CREATE TABLE {0} (id bigint, data string) USING iceberg") as t:
             spark.createDataFrame([(1, "a"), (2, "b"), (3, "c")], ("col1", "col2")).write.insertInto(t)
             rows = collect(spark.table(t))
@@ -403,6 +436,17 @@ class UnpartitionedIcebergTest(unittest.TestCase):
                     {'id': 1, 'data': 'a'},
                     {'id': 2, 'data': 'b'},
                     {'id': 3, 'data': 'c'}
+                ])
+
+            # Python: mode is ignored in favor of the overwrite option for insertInto
+            spark.createDataFrame([(10, "x"), (11, "y"), (12, "z")], ("col1", "col2")).write.insertInto(t, overwrite=True)
+            sql("REFRESH TABLE {0}", t)
+
+            rows = collect(spark.table(t))
+            self.assertEqual(sort_by_id(rows), [
+                    {'id': 10, 'data': 'x'},
+                    {'id': 11, 'data': 'y'},
+                    {'id': 12, 'data': 'z'}
                 ])
 
 
@@ -595,8 +639,40 @@ class IdentityPartitionedIcebergTest(unittest.TestCase):
                     {'id': 3, 'data': 'c', 'part': 'odd'}
                 ])
 
+    @spark_only
+    def test_dataframe_insert_overwrite(self):
+        with temp_table(
+                "df_insert_test",
+                "CREATE TABLE {0} (id bigint, data string, part string) USING iceberg PARTITIONED BY (part)") as t:
+            spark.createDataFrame([(1, "a", "odd"), (2, "b", "even"), (3, "c", "odd")], ("col1", "col2", "col3")).write.insertInto(t)
+            rows = collect(spark.table(t))
+            self.assertEqual(sort_by_id(rows), [
+                    {'id': 1, 'data': 'a', 'part': 'odd'},
+                    {'id': 2, 'data': 'b', 'part': 'even'},
+                    {'id': 3, 'data': 'c', 'part': 'odd'}
+                ])
 
-class ParquetPartitionedBatchPatternIntegrationTest(unittest.TestCase):
+            spark.createDataFrame([(10, "x", "even"), (12, "z", "even")], ("col1", "col2", "col3")).write.insertInto(t, overwrite=True)
+            sql("REFRESH TABLE {0}", t)
+            rows = collect(spark.table(t))
+            self.assertEqual(sort_by_id(rows), [
+                    {'id': 1, 'data': 'a', 'part': 'odd'},
+                    {'id': 3, 'data': 'c', 'part': 'odd'},
+                    {'id': 10, 'data': 'x', 'part': 'even'},
+                    {'id': 12, 'data': 'z', 'part': 'even'}
+                ])
+
+            spark.createDataFrame([(11, "y", "odd"),], ("col1", "col2", "col3")).write.insertInto(t, overwrite=True)
+            sql("REFRESH TABLE {0}", t)
+            rows = collect(spark.table(t))
+            self.assertEqual(sort_by_id(rows), [
+                    {'id': 10, 'data': 'x', 'part': 'even'},
+                    {'id': 11, 'data': 'y', 'part': 'odd'},
+                    {'id': 12, 'data': 'z', 'part': 'even'}
+                ])
+
+
+class ParquetPartitionedBatchPatternTest(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
@@ -677,16 +753,33 @@ class ParquetPartitionedBatchPatternIntegrationTest(unittest.TestCase):
                     {'id': 6, 'data': 'c', 'part': 'even'}
                 ])
 
+    @spark_only
+    def test_batch_pattern_dataframe_overwrite(self):
+        with temp_table(
+                "partitioned_batch_overwrite_test",
+                "CREATE TABLE {0} (id bigint, data string) PARTITIONED BY (part string) STORED AS parquet") as t:
+
+            # write some data as the first batch
+            sql("""
+                INSERT INTO {0}
+                SELECT id, data, case when (id % 2) == 0 then 'even' else 'odd' end
+                FROM {1}
+                """, t, self.data_table)
+            rows = collect(spark.table(t))
+            self.assertEqual(sort_by_id(rows), [
+                    {'id': 1, 'data': 'a', 'part': 'odd'},
+                    {'id': 2, 'data': 'b', 'part': 'even'},
+                    {'id': 3, 'data': 'c', 'part': 'odd'}
+                ])
+
             # data frame insert should also overwrite
             spark.createDataFrame([(1, 'd', 'odd'), (3, 'e', 'odd'), (5, 'f', 'odd')]).write.insertInto(t)
             rows = collect(spark.table(t))
             self.assertEqual(sort_by_id(rows), [
                     {'id': 1, 'data': 'd', 'part': 'odd'}, # note new data
-                    {'id': 2, 'data': 'a', 'part': 'even'},
+                    {'id': 2, 'data': 'b', 'part': 'even'},
                     {'id': 3, 'data': 'e', 'part': 'odd'}, # note new data
-                    {'id': 4, 'data': 'b', 'part': 'even'},
-                    {'id': 5, 'data': 'f', 'part': 'odd'}, # note new data
-                    {'id': 6, 'data': 'c', 'part': 'even'}
+                    {'id': 5, 'data': 'f', 'part': 'odd'} # note new data
                 ])
 
             # data frame insert by name should reorder columns
@@ -694,15 +787,13 @@ class ParquetPartitionedBatchPatternIntegrationTest(unittest.TestCase):
             rows = collect(spark.table(t))
             self.assertEqual(sort_by_id(rows), [
                     {'id': 1, 'data': 'g', 'part': 'odd'}, # note new data
-                    {'id': 2, 'data': 'a', 'part': 'even'},
-                    {'id': 3, 'data': 'h', 'part': 'odd'}, # note new data
-                    {'id': 4, 'data': 'b', 'part': 'even'},
+                    {'id': 2, 'data': 'b', 'part': 'even'},
+                    {'id': 3, 'data': 'h', 'part': 'odd'} # note new data
                     # note no id:5
-                    {'id': 6, 'data': 'c', 'part': 'even'}
                 ])
 
 
-class ParquetUnpartitionedBatchPatternIntegrationTest(unittest.TestCase):
+class ParquetUnpartitionedBatchPatternTest(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
@@ -763,7 +854,22 @@ class ParquetUnpartitionedBatchPatternIntegrationTest(unittest.TestCase):
                     {'id': 6, 'data': 'f'}
                 ])
 
-            # data frame insert should also overwrite
+    @spark_only
+    def test_batch_pattern_dataframe_overwrite(self):
+        with temp_table(
+                "batch_overwrite_test",
+                "CREATE TABLE {0} (id bigint, data string) STORED AS parquet") as t:
+
+            # write some data as the first batch
+            sql("INSERT INTO {0} VALUES (1, 'a'), (2, 'b'), (3, 'c')", t)
+            rows = collect(spark.table(t))
+            self.assertEqual(rows, [
+                    {'id': 1, 'data': 'a'},
+                    {'id': 2, 'data': 'b'},
+                    {'id': 3, 'data': 'c'}
+                ])
+
+            # data frame insert should overwrite
             spark.createDataFrame([(7, "g"), (8, "h"), (9, "i")], ("id", "data")).write.insertInto(t)
             rows = collect(spark.table(t))
             self.assertEqual(rows, [
@@ -772,7 +878,7 @@ class ParquetUnpartitionedBatchPatternIntegrationTest(unittest.TestCase):
                     {'id': 9, 'data': 'i'}
                 ])
 
-            # test by name insert
+            # test by name insert overwrite
             spark.createDataFrame([("j", 10), ("k", 11)], ("data", "id")).write.byName().insertInto(t)
             rows = collect(spark.table(t))
             self.assertEqual(rows, [
@@ -795,4 +901,4 @@ if __name__ == '__main__':
         if _spark_accessed:
             spark.stop()
 
-    SYS.exit(exit_code)
+    sys.exit(exit_code)
