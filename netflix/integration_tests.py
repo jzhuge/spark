@@ -133,7 +133,7 @@ class IcebergDDLTest(unittest.TestCase):
                 ])
 
             sql("ALTER TABLE {0} ADD COLUMNS (ts timestamp)", t)
-            sql("REFRESH TABLE {0}", t)
+
             self.assertEqual(schema(t), [
                     ('id', 'bigint'),
                     ('data', 'string'),
@@ -874,6 +874,198 @@ class ParquetPartitionedBatchPatternTest(unittest.TestCase):
                 ])
 
 
+class IcebergIdentityPartitionedBatchPatternTest(unittest.TestCase):
+    """This test case is a copy of ParquetPartitionedBatchPatternTest.
+
+    This tests the behavior of Iceberg tables when
+    spark.behavior.compatibility=true, which should match the behavior of batch
+    pattern tables.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.data_table = temp_table_name('temp_data')
+        sql("CREATE TABLE {0} (id bigint, data string) STORED AS parquet", cls.data_table)
+        sql("INSERT INTO {0} VALUES (1, 'a'), (2, 'b'), (3, 'c')", cls.data_table)
+
+    @classmethod
+    def tearDownClass(cls):
+        # clean up
+        sql("DROP TABLE IF EXISTS {0}", cls.data_table)
+
+    @spark_only
+    def test_batch_pattern_overwrite(self):
+        with temp_table(
+                "partitioned_batch_overwrite_test",
+                "CREATE TABLE {0} (id bigint, data string, part string) USING iceberg PARTITIONED BY (part)") as t:
+
+            # set the behavior compatibility property to convert appends to dynamic partition overwrites
+            sql("ALTER TABLE {0} SET TBLPROPERTIES ('spark.behavior.compatibility' = 'true')", t)
+
+            # write some data as the first batch
+            sql("""
+                INSERT INTO {0}
+                SELECT id, data, case when (id % 2) == 0 then 'even' else 'odd' end
+                FROM {1}
+                """, t, self.data_table)
+            rows = collect(spark.table(t))
+            self.assertEqual(sort_by_id(rows), [
+                    {'id': 1, 'data': 'a', 'part': 'odd'},
+                    {'id': 2, 'data': 'b', 'part': 'even'},
+                    {'id': 3, 'data': 'c', 'part': 'odd'}
+                ])
+
+            # second insert should overwrite all evens -- all ids * 2
+            sql("""
+                INSERT INTO {0}
+                SELECT id, data, case when (id % 2) == 0 then 'even' else 'odd' end
+                FROM (SELECT id * 2 as id, data FROM {1})
+                """, t, self.data_table)
+            sql("REFRESH TABLE {0}", t)
+            rows = collect(spark.table(t))
+            # original id:2 row was replaced by the new 'even' data
+            self.assertEqual(sort_by_id(rows), [
+                    {'id': 1, 'data': 'a', 'part': 'odd'},
+                    {'id': 2, 'data': 'a', 'part': 'even'}, # data is not 'b' because it was replaced
+                    {'id': 3, 'data': 'c', 'part': 'odd'},
+                    {'id': 4, 'data': 'b', 'part': 'even'},
+                    {'id': 6, 'data': 'c', 'part': 'even'}
+                ])
+
+    @spark_only
+    def test_batch_pattern_overwrite_static_partition(self):
+        with temp_table(
+                "partitioned_batch_overwrite_test",
+                "CREATE TABLE {0} (id bigint, data string, static_part string, part string) USING iceberg PARTITIONED BY (static_part, part)") as t:
+
+            # set the behavior compatibility property to convert appends to dynamic partition overwrites
+            sql("ALTER TABLE {0} SET TBLPROPERTIES ('spark.behavior.compatibility' = 'true')", t)
+
+            # write some data as the first batch
+            sql("""
+                INSERT INTO {0} PARTITION (static_part='str', part)
+                SELECT id, data, case when (id % 2) == 0 then 'even' else 'odd' end
+                FROM {1}
+                """, t, self.data_table)
+            rows = collect(spark.table(t))
+            self.assertEqual(sort_by_id(rows), [
+                    {'id': 1, 'data': 'a', 'static_part': 'str', 'part': 'odd'},
+                    {'id': 2, 'data': 'b', 'static_part': 'str', 'part': 'even'},
+                    {'id': 3, 'data': 'c', 'static_part': 'str', 'part': 'odd'}
+                ])
+
+            # second insert should overwrite evens but not odds
+            sql("""
+                INSERT INTO {0} PARTITION (static_part='str', part='even')
+                SELECT id, data
+                FROM (SELECT id * 2 as id, data FROM {1})
+                """, t, self.data_table)
+            sql("REFRESH TABLE {0}", t)
+            rows = collect(spark.table(t))
+            # original id:2 row was replaced by the new 'even' data
+            self.assertEqual(sort_by_id(rows), [
+                    {'id': 1, 'data': 'a', 'static_part': 'str', 'part': 'odd'},
+                    {'id': 2, 'data': 'a', 'static_part': 'str', 'part': 'even'}, # data is not 'b' because it was replaced
+                    {'id': 3, 'data': 'c', 'static_part': 'str', 'part': 'odd'},
+                    {'id': 4, 'data': 'b', 'static_part': 'str', 'part': 'even'},
+                    {'id': 6, 'data': 'c', 'static_part': 'str', 'part': 'even'}
+                ])
+
+    @spark_only
+    def test_batch_pattern_overwrite_static_and_dynamic_partitions(self):
+        """Tests SQL insert statement with both static and dynamic partitions.
+
+        The behavior of this test deviates from Spark's default behavior in
+        2.1.1, but matches Spark's behavior in 2.3.0+ when
+        spark.sql.sources.partitionOverwriteMode=dynamic. In older versions or
+        when the overwrite mode is static, all partitions under the static
+        location are deleted.
+
+        Batch pattern writes never implemented this behavior from Spark, which
+        differs from Hive's default behavior.
+        """
+        with temp_table(
+                "partitioned_batch_overwrite_test",
+                "CREATE TABLE {0} (id bigint, data string, static_part string, part string) USING iceberg PARTITIONED BY (static_part, part)") as t:
+
+            # set the behavior compatibility property to convert appends to dynamic partition overwrites
+            sql("ALTER TABLE {0} SET TBLPROPERTIES ('spark.behavior.compatibility' = 'true')", t)
+
+            # write some data as the first batch
+            sql("""
+                INSERT INTO {0} PARTITION (static_part='str', part)
+                SELECT id, data, case when (id % 2) == 0 then 'even' else 'odd' end
+                FROM {1}
+                """, t, self.data_table)
+            rows = collect(spark.table(t))
+            self.assertEqual(sort_by_id(rows), [
+                    {'id': 1, 'data': 'a', 'static_part': 'str', 'part': 'odd'},
+                    {'id': 2, 'data': 'b', 'static_part': 'str', 'part': 'even'},
+                    {'id': 3, 'data': 'c', 'static_part': 'str', 'part': 'odd'}
+                ])
+
+            # second insert should overwrite evens but not odds
+            sql("""
+                INSERT INTO {0} PARTITION (static_part='str', part)
+                SELECT id, data, case when (id % 2) == 0 then 'even' else 'odd' end
+                FROM (SELECT id * 2 as id, data FROM {1})
+                """, t, self.data_table)
+            sql("REFRESH TABLE {0}", t)
+            rows = collect(spark.table(t))
+            # original id:2 row was replaced by the new 'even' data
+            self.assertEqual(sort_by_id(rows), [
+                    {'id': 1, 'data': 'a', 'static_part': 'str', 'part': 'odd'},
+                    {'id': 2, 'data': 'a', 'static_part': 'str', 'part': 'even'}, # data is not 'b' because it was replaced
+                    {'id': 3, 'data': 'c', 'static_part': 'str', 'part': 'odd'},
+                    {'id': 4, 'data': 'b', 'static_part': 'str', 'part': 'even'},
+                    {'id': 6, 'data': 'c', 'static_part': 'str', 'part': 'even'}
+                ])
+
+    @spark_only
+    def test_batch_pattern_dataframe_overwrite(self):
+        with temp_table(
+                "partitioned_batch_overwrite_test",
+                "CREATE TABLE {0} (id bigint, data string, part string) USING iceberg PARTITIONED BY (part)") as t:
+
+            # set the behavior compatibility property to convert appends to dynamic partition overwrites
+            sql("ALTER TABLE {0} SET TBLPROPERTIES ('spark.behavior.compatibility' = 'true')", t)
+
+            # write some data as the first batch
+            sql("""
+                INSERT INTO {0}
+                SELECT id, data, case when (id % 2) == 0 then 'even' else 'odd' end
+                FROM {1}
+                """, t, self.data_table)
+            rows = collect(spark.table(t))
+            self.assertEqual(sort_by_id(rows), [
+                    {'id': 1, 'data': 'a', 'part': 'odd'},
+                    {'id': 2, 'data': 'b', 'part': 'even'},
+                    {'id': 3, 'data': 'c', 'part': 'odd'}
+                ])
+
+            # data frame insert should also overwrite
+            spark.createDataFrame([(1, 'd', 'odd'), (3, 'e', 'odd'), (5, 'f', 'odd')]).write.insertInto(t)
+            sql("REFRESH TABLE {0}", t)
+            rows = collect(spark.table(t))
+            self.assertEqual(sort_by_id(rows), [
+                    {'id': 1, 'data': 'd', 'part': 'odd'}, # note new data
+                    {'id': 2, 'data': 'b', 'part': 'even'},
+                    {'id': 3, 'data': 'e', 'part': 'odd'}, # note new data
+                    {'id': 5, 'data': 'f', 'part': 'odd'} # note new data
+                ])
+
+            # data frame insert by name should reorder columns
+            spark.createDataFrame([(1, 'odd', 'g'), (3, 'odd', 'h')], ("id", "part", "data")).write.byName().insertInto(t)
+            sql("REFRESH TABLE {0}", t)
+            rows = collect(spark.table(t))
+            self.assertEqual(sort_by_id(rows), [
+                    {'id': 1, 'data': 'g', 'part': 'odd'}, # note new data
+                    {'id': 2, 'data': 'b', 'part': 'even'},
+                    {'id': 3, 'data': 'h', 'part': 'odd'} # note new data
+                    # note no id:5
+                ])
+
+
 class ParquetUnpartitionedBatchPatternTest(unittest.TestCase):
 
     @classmethod
@@ -961,6 +1153,79 @@ class ParquetUnpartitionedBatchPatternTest(unittest.TestCase):
 
             # test by name insert overwrite
             spark.createDataFrame([("j", 10), ("k", 11)], ("data", "id")).write.byName().insertInto(t)
+            rows = collect(spark.table(t))
+            self.assertEqual(rows, [
+                    {'id': 10, 'data': 'j'},
+                    {'id': 11, 'data': 'k'},
+                ])
+
+
+class IcebergUnpartitionedBatchPatternTest(unittest.TestCase):
+    """This test case is a copy of ParquetUnpartitionedBatchPatternTest.
+
+    This tests the behavior of Iceberg tables when
+    spark.behavior.compatibility=true, which should match the behavior of batch
+    pattern tables.
+    """
+    @spark_only
+    def test_batch_pattern_overwrite(self):
+        with temp_table(
+                "overwrite_test",
+                "CREATE TABLE {0} (id bigint, data string) USING iceberg") as t:
+
+            # set the behavior compatibility property to convert appends to dynamic partition overwrites
+            sql("ALTER TABLE {0} SET TBLPROPERTIES ('spark.behavior.compatibility' = 'true')", t)
+
+            # write some data as the first batch
+            sql("INSERT INTO {0} VALUES (1, 'a'), (2, 'b'), (3, 'c')", t)
+            rows = collect(spark.table(t))
+            self.assertEqual(rows, [
+                    {'id': 1, 'data': 'a'},
+                    {'id': 2, 'data': 'b'},
+                    {'id': 3, 'data': 'c'}
+                ])
+
+            # second insert should overwrite
+            sql("INSERT INTO {0} VALUES (4, 'd'), (5, 'e'), (6, 'f')", t)
+            sql("REFRESH TABLE {0}", t)
+            rows = collect(spark.table(t))
+            self.assertEqual(rows, [
+                    {'id': 4, 'data': 'd'},
+                    {'id': 5, 'data': 'e'},
+                    {'id': 6, 'data': 'f'}
+                ])
+
+    @spark_only
+    def test_batch_pattern_dataframe_overwrite(self):
+        with temp_table(
+                "batch_df_overwrite_test",
+                "CREATE TABLE {0} (id bigint, data string) USING iceberg") as t:
+
+            # set the behavior compatibility property to convert appends to dynamic partition overwrites
+            sql("ALTER TABLE {0} SET TBLPROPERTIES ('spark.behavior.compatibility' = 'true')", t)
+
+            # write some data as the first batch
+            sql("INSERT INTO {0} VALUES (1, 'a'), (2, 'b'), (3, 'c')", t)
+            rows = collect(spark.table(t))
+            self.assertEqual(rows, [
+                    {'id': 1, 'data': 'a'},
+                    {'id': 2, 'data': 'b'},
+                    {'id': 3, 'data': 'c'}
+                ])
+
+            # data frame insert should overwrite
+            spark.createDataFrame([(7, "g"), (8, "h"), (9, "i")], ("id", "data")).write.insertInto(t)
+            sql("REFRESH TABLE {0}", t)
+            rows = collect(spark.table(t))
+            self.assertEqual(rows, [
+                    {'id': 7, 'data': 'g'},
+                    {'id': 8, 'data': 'h'},
+                    {'id': 9, 'data': 'i'}
+                ])
+
+            # test by name insert overwrite
+            spark.createDataFrame([("j", 10), ("k", 11)], ("data", "id")).write.byName().insertInto(t)
+            sql("REFRESH TABLE {0}", t)
             rows = collect(spark.table(t))
             self.assertEqual(rows, [
                     {'id': 10, 'data': 'j'},
