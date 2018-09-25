@@ -172,7 +172,10 @@ object FileFormatWriter extends Logging {
 
       committer.commitJob(job, commitMsgs)
       logInfo(s"Job ${job.getJobID} committed.")
-      refreshFunction(updatedPartitions)
+      if (!committer.isInstanceOf[S3MapReduceCommitProtocol]) {
+        // the S3 committer handles partition updates. running the refresh function clobbers them
+        refreshFunction(updatedPartitions)
+      }
     } catch { case cause: Throwable =>
       logError(s"Aborting job ${job.getJobID}.", cause)
       committer.abortJob(job)
