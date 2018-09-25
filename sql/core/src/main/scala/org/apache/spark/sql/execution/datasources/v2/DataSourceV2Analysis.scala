@@ -108,7 +108,7 @@ class DataSourceV2Analysis(spark: SparkSession) extends Rule[LogicalPlan] {
         throw new AnalysisException(s"Cannot write, IF NOT EXISTS is not supported for table: $v2")
       }
 
-      val staticPartitionValues: Map[String, Any] =
+      val staticPartitionValues: Map[String, String] =
         insert.partition.filter(_._2.isDefined).mapValues(_.get)
 
       val query = if (staticPartitionValues.isEmpty) {
@@ -142,7 +142,7 @@ class DataSourceV2Analysis(spark: SparkSession) extends Rule[LogicalPlan] {
         // for each output column, add the static value as a literal or use the next input column
         val queryColumns = insert.child.output.iterator
         val projectExprs = output.map { col =>
-          outputNameToStaticName.get(col.name).map(staticPartitionValues.get) match {
+          outputNameToStaticName.get(col.name).flatMap(staticPartitionValues.get) match {
             case Some(staticValue) =>
               Alias(Literal(staticValue), col.name)()
             case _ =>
