@@ -17,6 +17,8 @@
 
 package org.apache.spark.sql.hive
 
+import scala.util.Try
+
 import com.netflix.iceberg.spark.source.IcebergMetacatSource
 
 import org.apache.spark.sql.SparkSession
@@ -35,7 +37,8 @@ class NetflixAnalysis(spark: SparkSession) extends Rule[LogicalPlan] {
   import CatalogV2Implicits._
   import NetflixAnalysis._
 
-  private lazy val icebergCatalog: TableCatalog = spark.catalog(Some("iceberg")).asTableCatalog
+  private lazy val icebergCatalog: TableCatalog =
+    Try(spark.catalog(Some("iceberg"))).getOrElse(spark.catalog(None)).asTableCatalog
   private lazy val icebergTables: DataSourceV2 = new IcebergMetacatSource()
 
   override def apply(plan: LogicalPlan): LogicalPlan = plan transformUp {
