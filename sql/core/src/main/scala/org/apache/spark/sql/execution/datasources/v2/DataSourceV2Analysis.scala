@@ -27,7 +27,7 @@ import org.apache.spark.sql.catalyst.catalog.CatalogTable
 import org.apache.spark.sql.catalyst.expressions.{Alias, Literal}
 import org.apache.spark.sql.catalyst.plans.logical.{AlterTable, AppendData, CreateTable, CreateTableAsSelect, InsertIntoTable, LogicalPlan, OverwritePartitionsDynamic, Project, ReplaceTableAsSelect}
 import org.apache.spark.sql.catalyst.rules.Rule
-import org.apache.spark.sql.execution.command.{AlterTableAddColumnsCommand, AlterTableSetPropertiesCommand, AlterTableUnsetPropertiesCommand}
+import org.apache.spark.sql.execution.command.{AlterTableAddColumnsCommand, AlterTableDropColumnsCommand, AlterTableSetPropertiesCommand, AlterTableUnsetPropertiesCommand}
 import org.apache.spark.sql.execution.datasources
 import org.apache.spark.sql.execution.datasources.{DataSource, LogicalRelation}
 import org.apache.spark.sql.sources.BaseRelation
@@ -59,6 +59,9 @@ class DataSourceV2Analysis(spark: SparkSession) extends Rule[LogicalPlan] {
       convertAlterTable(ident, alter)
 
     case alter @ AlterTableUnsetPropertiesCommand(ident, _, _, false /* isView */ ) =>
+      convertAlterTable(ident, alter)
+
+    case alter @ AlterTableDropColumnsCommand(ident, _) =>
       convertAlterTable(ident, alter)
 
     case datasources.CreateTable(catalogTable, mode, None)
@@ -189,14 +192,16 @@ class DataSourceV2Analysis(spark: SparkSession) extends Rule[LogicalPlan] {
         lazy val changes = alter match {
           case AlterTableAddColumnsCommand(_, columns) =>
             columns.map { field =>
-              val (parent, name) = field.name match {
+              field.name match {
                 case NestedFieldName(path, fieldName) =>
-                  (path, fieldName)
+                  TableChange.addColumn(path, fieldName, field.dataType)
                 case fieldName =>
-                  (null, fieldName)
+                  TableChange.addColumn(fieldName, field.dataType)
               }
-              TableChange.addColumn(parent, name, field.dataType)
             }
+
+          case AlterTableDropColumnsCommand(_, columns) =>
+            columns.map(TableChange.deleteColumn)
 
           case AlterTableSetPropertiesCommand(_, properties, false /* isView */ ) =>
             properties.map {
