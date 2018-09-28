@@ -726,6 +726,21 @@ class SparkSqlAstBuilder(conf: SQLConf) extends AstBuilder {
   }
 
   /**
+   * Create a [[AlterTableDropColumnsCommand]].
+   *
+   * Example syntax:
+   * {{{
+   *   ALTER TABLE t DROP COLUMNS c1, nested.c2, ...;
+   * }}}
+   */
+  override def visitDropTableColumns(
+      ctx: DropTableColumnsContext): LogicalPlan = withOrigin(ctx) {
+    AlterTableDropColumnsCommand(
+      visitTableIdentifier(ctx.tableIdentifier()),
+      ctx.columns.qualifiedName.asScala.map(ctx => ctx.getText))
+  }
+
+  /**
    * Create an [[AlterTableSetPropertiesCommand]] command.
    *
    * For example:

@@ -31,6 +31,7 @@ import org.apache.spark.sql.catalyst.analysis.{NoSuchTableException, Resolver}
 import org.apache.spark.sql.catalyst.catalog._
 import org.apache.spark.sql.catalyst.catalog.CatalogTypes.TablePartitionSpec
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference}
+import org.apache.spark.sql.catalyst.plans.logical.Command
 import org.apache.spark.sql.execution.datasources.PartitioningUtils
 import org.apache.spark.sql.types._
 import org.apache.spark.util.{SerializableConfiguration, ThreadUtils}
@@ -271,6 +272,18 @@ case class AlterTableUnsetPropertiesCommand(
   }
 
 }
+
+/**
+ * A command that drops table columns.
+ *
+ * The syntax of this command is:
+ * {{{
+ *   ALTER TABLE t DROP COLUMNS (col1, nested.col2, ...);
+ * }}}
+ */
+case class AlterTableDropColumnsCommand(
+    tableName: TableIdentifier,
+    columns: Seq[String]) extends Command
 
 /**
  * A command that sets the serde class and/or serde properties of a table/view.
