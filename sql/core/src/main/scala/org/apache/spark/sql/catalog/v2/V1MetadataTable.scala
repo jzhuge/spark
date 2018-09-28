@@ -36,6 +36,8 @@ private[sql] class V1MetadataTable(
     v1Table: CatalogTable,
     v2Source: Option[Any]) extends Table {
 
+  override def toString: String = s"CatalogTableAsV2(${v1Table.identifier.unquotedString})"
+
   def catalogTable: CatalogTable = v1Table
 
   def readDelegate: ReadSupport = v2Source match {
