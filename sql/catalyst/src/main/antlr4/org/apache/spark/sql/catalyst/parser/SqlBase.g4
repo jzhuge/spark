@@ -96,6 +96,8 @@ statement
         (identifier | FOR COLUMNS identifierSeq)?                      #analyze
     | ALTER TABLE tableIdentifier
         ADD COLUMNS '(' columns=qualifiedColTypeList ')'               #addTableColumns
+    | ALTER TABLE tableIdentifier
+        DROP COLUMNS columns=qualifiedNameList                         #dropTableColumns
     | ALTER (TABLE | VIEW) from=tableIdentifier
         RENAME TO to=tableIdentifier                                   #renameTable
     | ALTER (TABLE | VIEW) tableIdentifier
@@ -696,6 +698,10 @@ frameBound
     : UNBOUNDED boundType=(PRECEDING | FOLLOWING)
     | boundType=CURRENT ROW
     | expression boundType=(PRECEDING | FOLLOWING)
+    ;
+
+qualifiedNameList
+    : qualifiedName (',' qualifiedName)*
     ;
 
 qualifiedName

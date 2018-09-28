@@ -29,11 +29,11 @@ import org.apache.hadoop.mapred.{FileInputFormat, JobConf}
 
 import org.apache.spark.sql.{AnalysisException, Row, SparkSession}
 import org.apache.spark.sql.catalyst.TableIdentifier
-import org.apache.spark.sql.catalyst.analysis.{EliminateBarriers, NoSuchTableException, Resolver}
+import org.apache.spark.sql.catalyst.analysis.{EliminateBarriers, Resolver}
 import org.apache.spark.sql.catalyst.catalog._
 import org.apache.spark.sql.catalyst.catalog.CatalogTypes.TablePartitionSpec
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference}
-import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
+import org.apache.spark.sql.catalyst.plans.logical.{Command, LogicalPlan}
 import org.apache.spark.sql.execution.datasources.{HadoopFsRelation, LogicalRelation, PartitioningUtils}
 import org.apache.spark.sql.execution.datasources.orc.OrcFileFormat
 import org.apache.spark.sql.execution.datasources.parquet.ParquetSchemaConverter
@@ -289,6 +289,18 @@ case class AlterTableUnsetPropertiesCommand(
   }
 
 }
+
+/**
+ * A command that drops table columns.
+ *
+ * The syntax of this command is:
+ * {{{
+ *   ALTER TABLE t DROP COLUMNS (col1, nested.col2, ...);
+ * }}}
+ */
+case class AlterTableDropColumnsCommand(
+    tableName: TableIdentifier,
+    columns: Seq[String]) extends Command
 
 
 /**
