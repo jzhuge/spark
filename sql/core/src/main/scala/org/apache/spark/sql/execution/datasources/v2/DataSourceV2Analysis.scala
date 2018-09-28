@@ -17,6 +17,8 @@
 
 package org.apache.spark.sql.execution.datasources.v2
 
+import scala.util.Try
+
 import org.apache.spark.sql.{AnalysisException, SaveMode, SparkSession, SQLContext}
 import org.apache.spark.sql.catalog.v2.{PartitionUtil, Table, TableChange, V1MetadataTable}
 import org.apache.spark.sql.catalyst.TableIdentifier
@@ -25,7 +27,7 @@ import org.apache.spark.sql.catalyst.catalog.CatalogTable
 import org.apache.spark.sql.catalyst.expressions.{Alias, Literal}
 import org.apache.spark.sql.catalyst.plans.logical.{AlterTable, AppendData, CreateTable, CreateTableAsSelect, InsertIntoTable, LogicalPlan, OverwritePartitionsDynamic, Project, ReplaceTableAsSelect}
 import org.apache.spark.sql.catalyst.rules.Rule
-import org.apache.spark.sql.execution.command.{AlterTableAddColumnsCommand, AlterTableSetPropertiesCommand}
+import org.apache.spark.sql.execution.command.{AlterTableAddColumnsCommand, AlterTableSetPropertiesCommand, AlterTableUnsetPropertiesCommand}
 import org.apache.spark.sql.execution.datasources
 import org.apache.spark.sql.execution.datasources.{DataSource, LogicalRelation}
 import org.apache.spark.sql.sources.BaseRelation
@@ -54,6 +56,9 @@ class DataSourceV2Analysis(spark: SparkSession) extends Rule[LogicalPlan] {
       convertAlterTable(ident, alter)
 
     case alter @ AlterTableSetPropertiesCommand(ident, _, false /* isView */ ) =>
+      convertAlterTable(ident, alter)
+
+    case alter @ AlterTableUnsetPropertiesCommand(ident, _, _, false /* isView */ ) =>
       convertAlterTable(ident, alter)
 
     case datasources.CreateTable(catalogTable, mode, None) if isV2Source(catalogTable) =>
@@ -173,41 +178,46 @@ class DataSourceV2Analysis(spark: SparkSession) extends Rule[LogicalPlan] {
 
   private def convertAlterTable(ident: TableIdentifier, alter: LogicalPlan): LogicalPlan = {
     val identifier = fixIdent(ident)
-    val table = catalog.loadTable(identifier)
+    Try(catalog.loadTable(identifier)).toOption match {
+      case Some(table) =>
+        // create a relation so that the alter table command can be validated
+        lazy val relation = DataSourceV2Relation.create(
+          catalog.name, identifier, table,
+          Map("database" -> identifier.database.get, "table" -> identifier.table))
 
-    // create a relation so that the alter table command can be validated
-    lazy val relation = DataSourceV2Relation.create(
-      catalog.name, identifier, table,
-      Map("database" -> identifier.database.get, "table" -> identifier.table))
+        lazy val changes = alter match {
+          case AlterTableAddColumnsCommand(_, columns) =>
+            columns.map { field =>
+              val (parent, name) = field.name match {
+                case NestedFieldName(path, fieldName) =>
+                  (path, fieldName)
+                case fieldName =>
+                  (null, fieldName)
+              }
+              TableChange.addColumn(parent, name, field.dataType)
+            }
 
-    lazy val changes = alter match {
-      case AlterTableAddColumnsCommand(_, columns) =>
-        columns.map { field =>
-          val (parent, name) = field.name match {
-            case NestedFieldName(path, fieldName) =>
-              (path, fieldName)
-            case fieldName =>
-              (null, fieldName)
-          }
-          TableChange.addColumn(parent, name, field.dataType)
+          case AlterTableSetPropertiesCommand(_, properties, false /* isView */ ) =>
+            properties.map {
+              case (property, null) =>
+                TableChange.removeProperty(property)
+              case (property, value) =>
+                TableChange.setProperty(property, value)
+            }.toSeq
+
+          case AlterTableUnsetPropertiesCommand(_, properties, _, false /* isView */ ) =>
+            properties.map(TableChange.removeProperty)
         }
 
-      case AlterTableSetPropertiesCommand(_, properties, false /* isView */ ) =>
-        properties.map {
-          case (property, null) =>
-            TableChange.removeProperty(property)
-          case (property, value) =>
-            TableChange.setProperty(property, value)
-        }.toSeq
-    }
+        table match {
+          case table: V1MetadataTable if !isV2Source(table.catalogTable) =>
+            alter
+          case _ =>
+            AlterTable(catalog, relation, changes)
+        }
 
-    lazy val converted = AlterTable(catalog, relation, changes)
-
-    table match {
-      case table: V1MetadataTable if !isV2Source(table.catalogTable) =>
-        alter
       case _ =>
-        converted
+        alter
     }
   }
 
