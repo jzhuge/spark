@@ -249,7 +249,14 @@ object DataSourceV2Analysis {
         }
 
       case AlterTableRenameColumnCommand(_, from, to) =>
-        Seq(TableChange.renameColumn(from, to))
+        val rename = from match {
+          case NestedFieldName(parent, fieldName) =>
+            // remove the parent if it was included in the new name
+            TableChange.renameColumn(from, to.stripPrefix(parent + "."))
+          case _ =>
+            TableChange.renameColumn(from, to)
+        }
+        Seq(rename)
 
       case AlterTableUpdateColumnCommand(_, column, dataType) =>
         Seq(TableChange.updateColumn(column, dataType))
