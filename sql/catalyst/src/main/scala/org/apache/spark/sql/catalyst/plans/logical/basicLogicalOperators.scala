@@ -19,7 +19,7 @@ package org.apache.spark.sql.catalyst.plans.logical
 
 import scala.collection.mutable.ArrayBuffer
 
-import org.apache.spark.sql.catalog.v2.{PartitionTransform, TableCatalog, TableChange}
+import org.apache.spark.sql.catalog.v2.{PartitionTransform, Table, TableCatalog, TableChange}
 import org.apache.spark.sql.catalyst.TableIdentifier
 import org.apache.spark.sql.catalyst.analysis.{MultiInstanceRelation, NamedRelation}
 import org.apache.spark.sql.catalyst.catalog.CatalogTypes
@@ -511,6 +511,14 @@ case class ReplaceTableAsSelect(
 
   override def children: Seq[LogicalPlan] = Seq(query)
   override lazy val resolved = true
+}
+
+case class ShowCreateTable(identifier: TableIdentifier, table: Table) extends Command {
+  override def output: Seq[Attribute] = Seq(
+    AttributeReference("create_statement", StringType, nullable = false)()
+  )
+
+  override def children: Seq[LogicalPlan] = Seq.empty
 }
 
 /**

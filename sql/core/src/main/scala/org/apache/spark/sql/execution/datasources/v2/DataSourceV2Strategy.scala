@@ -20,10 +20,12 @@ package org.apache.spark.sql.execution.datasources.v2
 import scala.collection.mutable
 
 import org.apache.spark.sql.Strategy
+import org.apache.spark.sql.catalog.v2.Table
+import org.apache.spark.sql.catalyst.TableIdentifier
 import org.apache.spark.sql.catalyst.analysis.NamedRelation
 import org.apache.spark.sql.catalyst.expressions.{And, AttributeReference, AttributeSet, Expression}
 import org.apache.spark.sql.catalyst.planning.PhysicalOperation
-import org.apache.spark.sql.catalyst.plans.logical.{AlterTable, AppendData, CreateTable, CreateTableAsSelect, DeleteFrom, LogicalPlan, OverwritePartitionsDynamic, ReplaceTableAsSelect}
+import org.apache.spark.sql.catalyst.plans.logical.{AlterTable, AppendData, CreateTable, CreateTableAsSelect, DeleteFrom, LogicalPlan, OverwritePartitionsDynamic, ReplaceTableAsSelect, ShowCreateTable}
 import org.apache.spark.sql.execution.{FilterExec, ProjectExec, SparkPlan}
 import org.apache.spark.sql.execution.datasources.DataSourceStrategy
 import org.apache.spark.sql.sources.Filter
@@ -107,6 +109,9 @@ object DataSourceV2Strategy extends Strategy {
   import DataSourceV2Relation._
 
   override def apply(plan: LogicalPlan): Seq[SparkPlan] = plan match {
+    case ShowCreateTable(identifier, table) =>
+      ShowCreateTableExec(identifier, table, plan.output) :: Nil
+
     case PhysicalOperation(project, filters, relation: NamedRelation)
         if relation.isInstanceOf[DataSourceV2Relation] || relation.isInstanceOf[TableV2Relation] =>
 
