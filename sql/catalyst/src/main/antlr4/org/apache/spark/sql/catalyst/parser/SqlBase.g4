@@ -84,7 +84,7 @@ statement
     | ANALYZE TABLE tableIdentifier partitionSpec? COMPUTE STATISTICS
         (identifier | FOR COLUMNS identifierSeq)?                      #analyze
     | ALTER TABLE tableIdentifier
-        ADD COLUMNS '(' columns=colTypeList ')'                        #addTableColumns
+        ADD COLUMNS '(' columns=qualifiedColTypeList ')'               #addTableColumns
     | ALTER (TABLE | VIEW) from=tableIdentifier
         RENAME TO to=tableIdentifier                                   #renameTable
     | ALTER (TABLE | VIEW) tableIdentifier
@@ -593,6 +593,14 @@ colTypeList
 
 colType
     : identifier dataType (COMMENT STRING)?
+    ;
+
+qualifiedColTypeList
+    : qualifiedColType (',' qualifiedColType)*
+    ;
+
+qualifiedColType
+    : qualifiedName dataType (COMMENT STRING) ?
     ;
 
 complexColTypeList
