@@ -27,7 +27,7 @@ import org.apache.spark.sql.catalyst.catalog.CatalogTable
 import org.apache.spark.sql.catalyst.expressions.{Alias, Literal}
 import org.apache.spark.sql.catalyst.plans.logical.{AlterTable, AppendData, CreateTable, CreateTableAsSelect, InsertIntoTable, LogicalPlan, OverwritePartitionsDynamic, Project, ReplaceTableAsSelect}
 import org.apache.spark.sql.catalyst.rules.Rule
-import org.apache.spark.sql.execution.command.{AlterTableAddColumnsCommand, AlterTableDropColumnsCommand, AlterTableSetPropertiesCommand, AlterTableUnsetPropertiesCommand}
+import org.apache.spark.sql.execution.command.{AlterTableAddColumnsCommand, AlterTableDropColumnsCommand, AlterTableRenameColumnCommand, AlterTableSetPropertiesCommand, AlterTableUnsetPropertiesCommand, AlterTableUpdateColumnCommand}
 import org.apache.spark.sql.execution.datasources
 import org.apache.spark.sql.execution.datasources.{DataSource, LogicalRelation}
 import org.apache.spark.sql.sources.BaseRelation
@@ -62,6 +62,12 @@ class DataSourceV2Analysis(spark: SparkSession) extends Rule[LogicalPlan] {
       convertAlterTable(ident, alter)
 
     case alter @ AlterTableDropColumnsCommand(ident, _) =>
+      convertAlterTable(ident, alter)
+
+    case alter @ AlterTableRenameColumnCommand(ident, _, _) =>
+      convertAlterTable(ident, alter)
+
+    case alter @ AlterTableUpdateColumnCommand(ident, _, _) =>
       convertAlterTable(ident, alter)
 
     case datasources.CreateTable(catalogTable, mode, None) if isV2Source(catalogTable) =>
@@ -183,42 +189,17 @@ class DataSourceV2Analysis(spark: SparkSession) extends Rule[LogicalPlan] {
     val identifier = fixIdent(ident)
     Try(catalog.loadTable(identifier)).toOption match {
       case Some(table) =>
-        // create a relation so that the alter table command can be validated
-        lazy val relation = DataSourceV2Relation.create(
-          catalog.name, identifier, table,
-          Map("database" -> identifier.database.get, "table" -> identifier.table))
-
-        lazy val changes = alter match {
-          case AlterTableAddColumnsCommand(_, columns) =>
-            columns.map { field =>
-              field.name match {
-                case NestedFieldName(path, fieldName) =>
-                  TableChange.addColumn(path, fieldName, field.dataType)
-                case fieldName =>
-                  TableChange.addColumn(fieldName, field.dataType)
-              }
-            }
-
-          case AlterTableDropColumnsCommand(_, columns) =>
-            columns.map(TableChange.deleteColumn)
-
-          case AlterTableSetPropertiesCommand(_, properties, false /* isView */ ) =>
-            properties.map {
-              case (property, null) =>
-                TableChange.removeProperty(property)
-              case (property, value) =>
-                TableChange.setProperty(property, value)
-            }.toSeq
-
-          case AlterTableUnsetPropertiesCommand(_, properties, _, false /* isView */ ) =>
-            properties.map(TableChange.removeProperty)
-        }
-
         table match {
           case table: V1MetadataTable if !isV2Source(table.catalogTable) =>
             alter
+
           case _ =>
-            AlterTable(catalog, relation, changes)
+            // create a relation so that the alter table command can be validated
+            val relation = DataSourceV2Relation.create(
+              catalog.name, identifier, table,
+              Map("database" -> identifier.database.get, "table" -> identifier.table))
+
+            AlterTable(catalog, relation, toChangeSet(alter))
         }
 
       case _ =>
@@ -253,5 +234,39 @@ object DataSourceV2Analysis {
     catalogTable.provider.exists(provider =>
       !"hive".equalsIgnoreCase(provider) &&
           classOf[DataSourceV2].isAssignableFrom(DataSource.lookupDataSource(provider)))
+  }
+
+  private def toChangeSet(alter: LogicalPlan): Seq[TableChange] = {
+    alter match {
+      case AlterTableAddColumnsCommand(_, columns) =>
+        columns.map { field =>
+          field.name match {
+            case NestedFieldName(path, fieldName) =>
+              TableChange.addColumn(path, fieldName, field.dataType)
+            case fieldName =>
+              TableChange.addColumn(fieldName, field.dataType)
+          }
+        }
+
+      case AlterTableRenameColumnCommand(_, from, to) =>
+        Seq(TableChange.renameColumn(from, to))
+
+      case AlterTableUpdateColumnCommand(_, column, dataType) =>
+        Seq(TableChange.updateColumn(column, dataType))
+
+      case AlterTableDropColumnsCommand(_, columns) =>
+        columns.map(TableChange.deleteColumn)
+
+      case AlterTableSetPropertiesCommand(_, properties, false /* isView */ ) =>
+        properties.map {
+          case (property, null) =>
+            TableChange.removeProperty(property)
+          case (property, value) =>
+            TableChange.setProperty(property, value)
+        }.toSeq
+
+      case AlterTableUnsetPropertiesCommand(_, properties, _, false /* isView */ ) =>
+        properties.map(TableChange.removeProperty)
+    }
   }
 }

@@ -31,7 +31,7 @@ import org.apache.spark.sql.catalyst.plans.logical.{LogicalPlan, OneRowRelation,
 import org.apache.spark.sql.execution.command._
 import org.apache.spark.sql.execution.datasources.{CreateTable, _}
 import org.apache.spark.sql.internal.{HiveSerDe, SQLConf, VariableSubstitution}
-import org.apache.spark.sql.types.StructType
+import org.apache.spark.sql.types.{DataType, HiveStringType, StructType}
 
 /**
  * Concrete parser for Spark SQL statements.
@@ -723,6 +723,38 @@ class SparkSqlAstBuilder(conf: SQLConf) extends AstBuilder {
       visitTableIdentifier(ctx.tableIdentifier),
       visitQualifiedColTypeList(ctx.columns)
     )
+  }
+
+  /**
+   * Create a [[AlterTableRenameColumnCommand]] command.
+   *
+   * For example:
+   * {{{
+   *   ALTER TABLE table1 RENAME COLUMN old_name TO new_name;
+   * }}}
+   */
+  override def visitRenameTableColumn(
+      ctx: RenameTableColumnContext): LogicalPlan = withOrigin(ctx) {
+    AlterTableRenameColumnCommand(
+      visitTableIdentifier(ctx.tableIdentifier),
+      ctx.from.getText, ctx.to.getText)
+  }
+
+  /**
+   * Create a [[AlterTableUpdateColumnCommand]] command.
+   *
+   * For example:
+   * {{{
+   *   ALTER TABLE table1 ALTER COLUMN col_name TYPE data_type;
+   * }}}
+   */
+  override def visitUpdateTableColumn(
+      ctx: UpdateTableColumnContext): LogicalPlan = withOrigin(ctx) {
+    val rawDataType = typedVisit[DataType](ctx.dataType)
+    AlterTableUpdateColumnCommand(
+      visitTableIdentifier(ctx.tableIdentifier),
+      ctx.qualifiedName.getText,
+      HiveStringType.replaceCharType(rawDataType))
   }
 
   /**

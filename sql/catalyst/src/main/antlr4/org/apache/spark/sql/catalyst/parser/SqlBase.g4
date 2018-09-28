@@ -86,7 +86,11 @@ statement
     | ALTER TABLE tableIdentifier
         ADD COLUMNS '(' columns=qualifiedColTypeList ')'               #addTableColumns
     | ALTER TABLE tableIdentifier
-        DROP COLUMNS columns=qualifiedNameList                         #dropTableColumns
+        RENAME COLUMN from=qualifiedName TO to=qualifiedName           #renameTableColumn
+    | ALTER TABLE tableIdentifier
+        ALTER COLUMN qualifiedName TYPE dataType                       #updateTableColumn
+    | ALTER TABLE tableIdentifier
+        DROP (COLUMN | COLUMNS) columns=qualifiedNameList              #dropTableColumns
     | ALTER (TABLE | VIEW) from=tableIdentifier
         RENAME TO to=tableIdentifier                                   #renameTable
     | ALTER (TABLE | VIEW) tableIdentifier
