@@ -97,7 +97,11 @@ statement
     | ALTER TABLE tableIdentifier
         ADD COLUMNS '(' columns=qualifiedColTypeList ')'               #addTableColumns
     | ALTER TABLE tableIdentifier
-        DROP COLUMNS columns=qualifiedNameList                         #dropTableColumns
+        RENAME COLUMN from=qualifiedName TO to=qualifiedName           #renameTableColumn
+    | ALTER TABLE tableIdentifier
+        ALTER COLUMN qualifiedName TYPE dataType                       #updateTableColumn
+    | ALTER TABLE tableIdentifier
+        DROP (COLUMN | COLUMNS) columns=qualifiedNameList              #dropTableColumns
     | ALTER (TABLE | VIEW) from=tableIdentifier
         RENAME TO to=tableIdentifier                                   #renameTable
     | ALTER (TABLE | VIEW) tableIdentifier
@@ -749,7 +753,7 @@ nonReserved
     | VIEW | REPLACE
     | IF
     | POSITION
-    | NO | DATA
+    | NO | DATA | TYPE
     | START | TRANSACTION | COMMIT | ROLLBACK | IGNORE
     | SORT | CLUSTER | DISTRIBUTE | UNSET | TBLPROPERTIES | SKEWED | STORED | DIRECTORIES | LOCATION
     | EXCHANGE | ARCHIVE | UNARCHIVE | FILEFORMAT | TOUCH | COMPACT | CONCATENATE | CHANGE
@@ -874,6 +878,7 @@ COMMENT: 'COMMENT';
 SET: 'SET';
 RESET: 'RESET';
 DATA: 'DATA';
+TYPE: 'TYPE';
 START: 'START';
 TRANSACTION: 'TRANSACTION';
 COMMIT: 'COMMIT';

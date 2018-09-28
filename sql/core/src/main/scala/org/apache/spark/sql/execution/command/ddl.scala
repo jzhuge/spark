@@ -296,6 +296,8 @@ case class AlterTableUnsetPropertiesCommand(
  * The syntax of this command is:
  * {{{
  *   ALTER TABLE t DROP COLUMNS (col1, nested.col2, ...);
+ *   ALTER TABLE t DROP COLUMNS col1, nested.col2, ...;
+ *   ALTER TABLE t DROP COLUMN col1;
  * }}}
  */
 case class AlterTableDropColumnsCommand(
@@ -372,6 +374,38 @@ case class AlterTableChangeColumnCommand(
     resolver(field.name, other.name) && field.dataType == other.dataType
   }
 }
+
+/**
+ * A command that drops table columns.
+ *
+ * The syntax of this command is:
+ * {{{
+ *   ALTER TABLE t RENAME COLUMN old_name TO new_name;
+ *   ALTER TABLE t RENAME COLUMN nested.old_name TO new_name;
+ * }}}
+ *
+ * This syntax is based on PosgresQL.
+ */
+case class AlterTableRenameColumnCommand(
+    tableName: TableIdentifier,
+    fromName: String,
+    toName: String) extends Command
+
+/**
+ * A command that updates a column's type.
+ *
+ * The syntax of this command is:
+ * {{{
+ *   ALTER TABLE t ALTER COLUMN col TYPE double;
+ *   ALTER TABLE t ALTER COLUMN nested.col TYPE bigint;
+ * }}}
+ *
+ * This syntax is based on PosgresQL.
+ */
+case class AlterTableUpdateColumnCommand(
+    tableName: TableIdentifier,
+    columnName: String,
+    dataType: DataType) extends Command
 
 /**
  * A command that sets the serde class and/or serde properties of a table/view.
