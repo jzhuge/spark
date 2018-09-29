@@ -24,6 +24,7 @@ import org.apache.spark.sql.catalog.v2.Table
 import org.apache.spark.sql.catalyst.{InternalRow, TableIdentifier}
 import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.execution.SparkPlan
+import org.apache.spark.unsafe.types.UTF8String
 
 case class ShowCreateTableExec(
     ident: TableIdentifier,
@@ -49,7 +50,7 @@ case class ShowCreateTableExec(
 
   override protected def doExecute(): RDD[InternalRow] = {
     val create = s"CREATE TABLE ${ident.quotedString} ($schemaFragment)$usingFragment$partFragment"
-    sparkContext.parallelize(Seq(InternalRow(create)), 1)
+    sparkContext.parallelize(Seq(InternalRow(UTF8String.fromString(create))), 1)
   }
 
   override def children: Seq[SparkPlan] = Seq.empty
