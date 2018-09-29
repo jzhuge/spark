@@ -52,65 +52,34 @@ class DataSourceV2Analysis(spark: SparkSession) extends Rule[LogicalPlan] {
   private val catalog = spark.catalog(None).asTableCatalog
 
   override def apply(plan: LogicalPlan): LogicalPlan = plan transformUp {
-    case alter @ AlterTableAddColumnsCommand(ident, _) =>
-      convertAlterTable(ident, alter)
+    case alter @ AlterTableAddColumnsCommand(V2TableReference(identifier, table), _) =>
+      AlterTable(catalog, v2relation(identifier, table), toChangeSet(alter))
 
-    case alter @ AlterTableSetPropertiesCommand(ident, _, false /* isView */ ) =>
-      convertAlterTable(ident, alter)
+    case alter @ AlterTableSetPropertiesCommand(
+        V2TableReference(identifier, table), _, false /* isView */ ) =>
+      AlterTable(catalog, v2relation(identifier, table), toChangeSet(alter))
 
-    case alter @ AlterTableUnsetPropertiesCommand(ident, _, _, false /* isView */ ) =>
-      convertAlterTable(ident, alter)
+    case alter @ AlterTableUnsetPropertiesCommand(
+        V2TableReference(identifier, table), _, _, false /* isView */ ) =>
+      AlterTable(catalog, v2relation(identifier, table), toChangeSet(alter))
 
-    case alter @ AlterTableDropColumnsCommand(ident, _) =>
-      convertAlterTable(ident, alter)
+    case alter @ AlterTableDropColumnsCommand(V2TableReference(identifier, table), _) =>
+      AlterTable(catalog, v2relation(identifier, table), toChangeSet(alter))
 
-    case alter @ AlterTableRenameColumnCommand(ident, _, _) =>
-      convertAlterTable(ident, alter)
+    case alter @ AlterTableRenameColumnCommand(V2TableReference(identifier, table), _, _) =>
+      AlterTable(catalog, v2relation(identifier, table), toChangeSet(alter))
 
-    case alter @ AlterTableUpdateColumnCommand(ident, _, _) =>
-      convertAlterTable(ident, alter)
+    case alter @ AlterTableUpdateColumnCommand(V2TableReference(identifier, table), _, _) =>
+      AlterTable(catalog, v2relation(identifier, table), toChangeSet(alter))
 
-    case ShowCreateTableCommand(ident) =>
-      val identifier = fixIdent(ident)
-      Try(catalog.loadTable(identifier)).toOption match {
-        case Some(table) =>
-          table match {
-            case table: V1MetadataTable if !isV2Source(table.catalogTable, spark) =>
-              plan
-            case _ =>
-              ShowCreateTable(identifier, table)
-          }
-        case _ =>
-          plan
-      }
+    case ShowCreateTableCommand(V2TableReference(identifier, table)) =>
+      ShowCreateTable(identifier, table)
 
-    case ShowTablePropertiesCommand(ident, property) =>
-      val identifier = fixIdent(ident)
-      Try(catalog.loadTable(identifier)).toOption match {
-        case Some(table) =>
-          table match {
-            case table: V1MetadataTable if !isV2Source(table.catalogTable, spark) =>
-              plan
-            case _ =>
-              ShowProperties(table, property)
-          }
-        case _ =>
-          plan
-      }
+    case ShowTablePropertiesCommand(V2TableReference(identifier, table), property) =>
+      ShowProperties(table, property)
 
-    case DescribeTableCommand(ident, _, isExtended) =>
-      val identifier = fixIdent(ident)
-      Try(catalog.loadTable(identifier)).toOption match {
-        case Some(table) =>
-          table match {
-            case table: V1MetadataTable if !isV2Source(table.catalogTable, spark) =>
-              plan
-            case _ =>
-              DescribeTable(table, isExtended)
-          }
-        case _ =>
-          plan
-      }
+    case DescribeTableCommand(V2TableReference(identifier, table), _, isExtended) =>
+      DescribeTable(table, isExtended)
 
     case datasources.CreateTable(catalogTable, mode, None)
       if isV2Source(catalogTable, spark) =>
@@ -228,29 +197,7 @@ class DataSourceV2Analysis(spark: SparkSession) extends Rule[LogicalPlan] {
       v2.v2relation
   }
 
-  private def convertAlterTable(ident: TableIdentifier, alter: LogicalPlan): LogicalPlan = {
-    val identifier = fixIdent(ident)
-    Try(catalog.loadTable(identifier)).toOption match {
-      case Some(table) =>
-        table match {
-          case table: V1MetadataTable if !isV2Source(table.catalogTable, spark) =>
-            alter
-
-          case _ =>
-            // create a relation so that the alter table command can be validated
-            val relation = DataSourceV2Relation.create(
-              catalog.name, identifier, table,
-              Map("database" -> identifier.database.get, "table" -> identifier.table))
-
-            AlterTable(catalog, relation, toChangeSet(alter))
-        }
-
-      case _ =>
-        alter
-    }
-  }
-
-  private def fixIdent(identifier: TableIdentifier): TableIdentifier = {
+  private def ensureDatabaseIsSet(identifier: TableIdentifier): TableIdentifier = {
     identifier.database match {
       case Some(_) =>
         identifier
@@ -260,7 +207,31 @@ class DataSourceV2Analysis(spark: SparkSession) extends Rule[LogicalPlan] {
   }
 
   private def identifier(catalogTable: CatalogTable): TableIdentifier = {
-    fixIdent(catalogTable.identifier)
+    ensureDatabaseIsSet(catalogTable.identifier)
+  }
+
+  private def v2relation(identifier: TableIdentifier, table: Table): NamedRelation = {
+    // create a relation so that the alter table command can be validated
+    DataSourceV2Relation.create(
+      catalog.name, identifier, table,
+      Map("database" -> identifier.database.get, "table" -> identifier.table))
+  }
+
+  object V2TableReference {
+    def unapply(ident: TableIdentifier): Option[(TableIdentifier, Table)] = {
+      val identifier = ensureDatabaseIsSet(ident)
+      Try(catalog.loadTable(identifier)).toOption match {
+        case Some(table) =>
+          table match {
+            case table: V1MetadataTable if !isV2Source(table.catalogTable, spark) =>
+              None
+            case _ =>
+              Some((identifier, table))
+          }
+        case _ =>
+          None
+      }
+    }
   }
 }
 
