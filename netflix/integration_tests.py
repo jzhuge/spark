@@ -391,8 +391,8 @@ class UnpartitionedIcebergTest(unittest.TestCase):
         describe = sql("DESCRIBE FORMATTED {0}", self.shared_table)
 
         # describe produces a table with col_name, table_type, and comment columns, with properties mixed in after the schema
-        types = list(filter(lambda r: r['col_name'].strip() == 'table_type', collect(describe)))
-        self.assertEqual(len(types), 1, "Should produce one table_type property entry")
+        types = list(filter(lambda r: r['col_name'].strip() == 'provider', collect(describe)))
+        self.assertEqual(len(types), 1, "Should produce one provider property entry")
         self.assertEqual(types[0]['data_type'].strip().lower(), 'iceberg', "Should be an iceberg table")
 
     def test_simple_read(self):
@@ -601,8 +601,8 @@ class IdentityPartitionedIcebergTest(unittest.TestCase):
         describe = sql("DESCRIBE FORMATTED {0}", self.shared_table)
 
         # describe produces a table with col_name, table_type, and comment columns, with properties mixed in after the schema
-        types = list(filter(lambda r: r['col_name'].strip() == 'table_type', collect(describe)))
-        self.assertEqual(len(types), 1, "Should produce one table_type property entry")
+        types = list(filter(lambda r: r['col_name'].strip() == 'provider', collect(describe)))
+        self.assertEqual(len(types), 1, "Should produce one provider property entry")
         self.assertEqual(types[0]['data_type'].strip().lower(), 'iceberg', "Should be an iceberg table")
 
     def test_simple_read(self):
