@@ -4,6 +4,7 @@ import sys
 import traceback
 import unittest
 import random
+import re
 from pyspark.sql.utils import AnalysisException
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import *
@@ -16,7 +17,8 @@ SPARK_ERROR_MESSAGES = {
         'missing-column': 'not enough data columns',
         'extra-column': 'too many data columns',
         'cannot-cast': 'Cannot safely cast',
-        'cannot-delete': 'Cannot delete file where some, but not all, rows match filter'
+        'cannot-delete': 'Cannot delete file where some, but not all, rows match filter',
+        'already-exists': 'already exists'
     }
 
 
@@ -84,8 +86,11 @@ class temp_table:
         sql("DROP TABLE IF EXISTS {0}".format(self.table_name))
         return False # don't suppress exceptions
 
+def sort_by(col_name, rows):
+    return sorted(rows, cmp = lambda a, b: cmp(a[col_name], b[col_name]))
+
 def sort_by_id(rows):
-    return sorted(rows, cmp = lambda a, b: cmp(a['id'], b['id']))
+    return sort_by('id', rows)
 
 def collect(df):
     return list(map(lambda r: r.asDict(), df.collect()))
@@ -120,9 +125,120 @@ def expected_error_text(desc):
 def schema(table):
     return [ (row['col_name'], row['data_type']) for row in collect(sql("DESCRIBE {0}", table)) ]
 
+
+
 # test cases
 
+class ParquetDDLTest(unittest.TestCase):
+
+    def test_rename_table(self):
+        with temp_table("test_rename") as t1:
+            with temp_table("test_rename") as t2:
+                sql("CREATE TABLE {0} (id bigint, data string) STORED AS parquet", t1)
+
+                sql("INSERT INTO {0} VALUES (1, 'a'), (2, 'b'), (3, 'c')", t1)
+
+                rows = collect(sql("select * from {0}", t1))
+                self.assertEqual(rows, [
+                        {'id': 1, 'data': 'a'},
+                        {'id': 2, 'data': 'b'},
+                        {'id': 3, 'data': 'c'}
+                    ])
+
+                sql("ALTER TABLE {0} RENAME TO {1}", t1, t2)
+
+                rows = collect(sql("select * from {0}", t2))
+                self.assertEqual(rows, [
+                        {'id': 1, 'data': 'a'},
+                        {'id': 2, 'data': 'b'},
+                        {'id': 3, 'data': 'c'}
+                    ])
+
+
 class IcebergDDLTest(unittest.TestCase):
+
+    def test_rename_table(self):
+        with temp_table("test_rename") as t1:
+            with temp_table("test_rename") as t2:
+                sql("CREATE TABLE {0} (id bigint, data string) USING iceberg", t1)
+
+                sql("INSERT INTO {0} VALUES (1, 'a'), (2, 'b'), (3, 'c')", t1)
+
+                rows = collect(sql("select * from {0}", t1))
+                self.assertEqual(rows, [
+                        {'id': 1, 'data': 'a'},
+                        {'id': 2, 'data': 'b'},
+                        {'id': 3, 'data': 'c'}
+                    ])
+
+                sql("ALTER TABLE {0} RENAME TO {1}", t1, t2)
+
+                rows = collect(sql("select * from {0}", t2))
+                self.assertEqual(rows, [
+                        {'id': 1, 'data': 'a'},
+                        {'id': 2, 'data': 'b'},
+                        {'id': 3, 'data': 'c'}
+                    ])
+
+    def test_create_hidden_partition_table(self):
+        with temp_table("test_hidden_partitions") as t:
+            sql("CREATE TABLE {0} (id bigint, data string, ts timestamp) USING iceberg PARTITIONED BY (date(ts))", t)
+
+            self.assertEqual(schema(t), [
+                    ('id', 'bigint'),
+                    ('data', 'string'),
+                    ('ts', 'timestamp')
+                ])
+
+            describe = sql("DESCRIBE FORMATTED {0}", t)
+
+            types = list(filter(lambda r: r['col_name'].strip() == 'Part 0', collect(describe)))
+            self.assertEqual(len(types), 1, "Should produce a 'Part 0' entry")
+            self.assertEqual(types[0]['data_type'].strip().lower(), 'date(ts)', "Should use date transform")
+
+    def test_show_create_table(self):
+        with temp_table("test_show_create") as t:
+            sql("CREATE TABLE {0} (id bigint, data string) USING iceberg", t)
+            create_sql = collect(sql("SHOW CREATE TABLE {0}", t))[0]['create_statement']
+
+            quoted = '.'.join([ "`" + part + "`" for part in t.split('.') ])
+            expected = "CREATE TABLE {0} ( id bigint, data string) USING iceberg".format(quoted)
+            self.assertEqual(expected, re.sub(r"[\s]+", ' ', create_sql))
+
+    def test_create_table_like(self):
+        with temp_table("test_source") as source:
+            sql("CREATE TABLE {0} (id bigint, data string) USING iceberg", source)
+            with temp_table("test_copy") as copy:
+                sql("CREATE TABLE {0} LIKE {1}", copy, source)
+                create_sql = collect(sql("SHOW CREATE TABLE {0}", copy))[0]['create_statement']
+
+                quoted = '.'.join([ "`" + part + "`" for part in copy.split('.') ])
+                expected = "CREATE TABLE {0} ( id bigint, data string) USING iceberg".format(quoted)
+                self.assertEqual(expected, re.sub(r"[\s]+", ' ', create_sql))
+
+    def test_alter_table_properties(self):
+        with temp_table("test_table_properties") as t:
+            sql("CREATE TABLE {0} (id bigint, data string) USING iceberg", t)
+            rows = collect(sql("SHOW TBLPROPERTIES {0}", t))
+            self.assertEqual(sort_by('property', rows), [
+                    {'property': 'provider', 'value': 'iceberg'}
+                ])
+
+            sql("ALTER TABLE {0} SET TBLPROPERTIES ('aa'='AA', 'zz'='ZZ')", t)
+
+            # test all table properties
+            rows = collect(sql("SHOW TBLPROPERTIES {0}", t))
+            self.assertEqual(sort_by('property', rows), [
+                    {'property': 'aa', 'value': 'AA'},
+                    {'property': 'provider', 'value': 'iceberg'},
+                    {'property': 'zz', 'value': 'ZZ'}
+                ])
+
+            # test single property lookup
+            rows = collect(sql("SHOW TBLPROPERTIES {0} ('provider')", t))
+            self.assertEqual(sort_by('property', rows), [
+                    {'property': 'provider', 'value': 'iceberg'}
+                ])
 
     def test_alter_table_add_columns(self):
         with temp_table("test_add_columns") as t:
@@ -140,19 +256,90 @@ class IcebergDDLTest(unittest.TestCase):
                     ('ts', 'timestamp')
                 ])
 
-#    def test_alter_table_add_nested_columns(self):
-#        with temp_table("test_add_nested_columns") as t:
-#            sql("CREATE TABLE {0} (id bigint, point struct<x: bigint,y: bigint>) USING iceberg", t)
-#            self.assertEqual(schema(t), [
-#                    ('id', 'bigint'),
-#                    ('point', 'struct<x:bigint,y:bigint>')
-#                ])
-#
-#            sql("ALTER TABLE {0} ADD COLUMNS (point.z bigint)", t)
-#            self.assertEqual(schema(t), [
-#                    ('id', 'bigint'),
-#                    ('point', 'struct<x:bigint,y:bigint,z:bigint>')
-#                ])
+    def test_alter_table_add_nested_columns(self):
+        with temp_table("test_add_nested_columns") as t:
+            sql("CREATE TABLE {0} (id bigint, point struct<x: bigint,y: bigint>) USING iceberg", t)
+            self.assertEqual(schema(t), [
+                    ('id', 'bigint'),
+                    ('point', 'struct<x:bigint,y:bigint>')
+                ])
+
+            sql("ALTER TABLE {0} ADD COLUMNS (point.z bigint)", t)
+            self.assertEqual(schema(t), [
+                    ('id', 'bigint'),
+                    ('point', 'struct<x:bigint,y:bigint,z:bigint>')
+                ])
+
+    def test_alter_table_drop_column(self):
+        with temp_table("test_drop_columns") as t:
+            sql("CREATE TABLE {0} (id bigint, data string, point struct<x: bigint,y: bigint,z: bigint>) USING iceberg", t)
+            self.assertEqual(schema(t), [
+                    ('id', 'bigint'),
+                    ('data', 'string'),
+                    ('point', 'struct<x:bigint,y:bigint,z:bigint>')
+                ])
+
+            sql("ALTER TABLE {0} DROP COLUMNS data, point.z", t)
+            self.assertEqual(schema(t), [
+                    ('id', 'bigint'),
+                    ('point', 'struct<x:bigint,y:bigint>')
+                ])
+
+    def test_alter_table_rename_column(self):
+        with temp_table("test_drop_columns") as t:
+            sql("CREATE TABLE {0} (id bigint, data string, point struct<x: bigint,y: bigint>) USING iceberg", t)
+            self.assertEqual(schema(t), [
+                    ('id', 'bigint'),
+                    ('data', 'string'),
+                    ('point', 'struct<x:bigint,y:bigint>')
+                ])
+
+            sql("ALTER TABLE {0} RENAME COLUMN data TO str", t)
+            self.assertEqual(schema(t), [
+                    ('id', 'bigint'),
+                    ('str', 'string'),
+                    ('point', 'struct<x:bigint,y:bigint>')
+                ])
+
+            sql("ALTER TABLE {0} RENAME COLUMN point.x TO a", t)
+            self.assertEqual(schema(t), [
+                    ('id', 'bigint'),
+                    ('str', 'string'),
+                    ('point', 'struct<a:bigint,y:bigint>')
+                ])
+
+            sql("ALTER TABLE {0} RENAME COLUMN point.y TO point.b", t)
+            self.assertEqual(schema(t), [
+                    ('id', 'bigint'),
+                    ('str', 'string'),
+                    ('point', 'struct<a:bigint,b:bigint>')
+                ])
+
+    def test_alter_table_update_column(self):
+        with temp_table("test_update_column") as t:
+            sql("CREATE TABLE {0} (id int, point struct<x: float,y: float>) USING iceberg", t)
+            self.assertEqual(schema(t), [
+                    ('id', 'int'),
+                    ('point', 'struct<x:float,y:float>')
+                ])
+
+            sql("ALTER TABLE {0} ALTER COLUMN id TYPE bigint", t)
+            self.assertEqual(schema(t), [
+                    ('id', 'bigint'),
+                    ('point', 'struct<x:float,y:float>')
+                ])
+
+            sql("ALTER TABLE {0} ALTER COLUMN point.x TYPE double", t)
+            self.assertEqual(schema(t), [
+                    ('id', 'bigint'),
+                    ('point', 'struct<x:double,y:float>')
+                ])
+
+            sql("ALTER TABLE {0} ALTER COLUMN point.y TYPE double", t)
+            self.assertEqual(schema(t), [
+                    ('id', 'bigint'),
+                    ('point', 'struct<x:double,y:double>')
+                ])
 
 
 class IcebergTypesTest(unittest.TestCase):
@@ -160,7 +347,7 @@ class IcebergTypesTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         # recreate the table each run, but keep it around as a test for others
-        cls.shared_table = temp_table_name('iceberg_types', db = 'iceberg', unique = False)
+        cls.shared_table = temp_table_name('iceberg_types')
         sql("DROP TABLE IF EXISTS {0}", cls.shared_table)
         sql("""
             CREATE TABLE IF NOT EXISTS {0} (
@@ -268,8 +455,8 @@ class UnpartitionedIcebergTest(unittest.TestCase):
         describe = sql("DESCRIBE FORMATTED {0}", self.shared_table)
 
         # describe produces a table with col_name, table_type, and comment columns, with properties mixed in after the schema
-        types = list(filter(lambda r: r['col_name'].strip() == 'table_type', collect(describe)))
-        self.assertEqual(len(types), 1, "Should produce one table_type property entry")
+        types = list(filter(lambda r: r['col_name'].strip() == 'provider', collect(describe)))
+        self.assertEqual(len(types), 1, "Should produce one provider property entry")
         self.assertEqual(types[0]['data_type'].strip().lower(), 'iceberg', "Should be an iceberg table")
 
     def test_simple_read(self):
@@ -440,7 +627,6 @@ class UnpartitionedIcebergTest(unittest.TestCase):
 
             # Python: mode is ignored in favor of the overwrite option for insertInto
             spark.createDataFrame([(10, "x"), (11, "y"), (12, "z")], ("col1", "col2")).write.insertInto(t, overwrite=True)
-            sql("REFRESH TABLE {0}", t)
 
             rows = collect(spark.table(t))
             self.assertEqual(sort_by_id(rows), [
@@ -479,8 +665,8 @@ class IdentityPartitionedIcebergTest(unittest.TestCase):
         describe = sql("DESCRIBE FORMATTED {0}", self.shared_table)
 
         # describe produces a table with col_name, table_type, and comment columns, with properties mixed in after the schema
-        types = list(filter(lambda r: r['col_name'].strip() == 'table_type', collect(describe)))
-        self.assertEqual(len(types), 1, "Should produce one table_type property entry")
+        types = list(filter(lambda r: r['col_name'].strip() == 'provider', collect(describe)))
+        self.assertEqual(len(types), 1, "Should produce one provider property entry")
         self.assertEqual(types[0]['data_type'].strip().lower(), 'iceberg', "Should be an iceberg table")
 
     def test_simple_read(self):
@@ -653,7 +839,6 @@ class IdentityPartitionedIcebergTest(unittest.TestCase):
                 ])
 
             spark.createDataFrame([(10, "x", "even"), (12, "z", "even")], ("col1", "col2", "col3")).write.insertInto(t, overwrite=True)
-            sql("REFRESH TABLE {0}", t)
             rows = collect(spark.table(t))
             self.assertEqual(sort_by_id(rows), [
                     {'id': 1, 'data': 'a', 'part': 'odd'},
@@ -663,7 +848,6 @@ class IdentityPartitionedIcebergTest(unittest.TestCase):
                 ])
 
             spark.createDataFrame([(11, "y", "odd"),], ("col1", "col2", "col3")).write.insertInto(t, overwrite=True)
-            sql("REFRESH TABLE {0}", t)
             rows = collect(spark.table(t))
             self.assertEqual(sort_by_id(rows), [
                     {'id': 10, 'data': 'x', 'part': 'even'},
@@ -873,6 +1057,77 @@ class ParquetPartitionedBatchPatternTest(unittest.TestCase):
                     # note no id:5
                 ])
 
+    @spark_only
+    def test_batch_pattern_dataframe_save_as_table_append_fails(self):
+        with temp_table(
+                "partitioned_batch_save_as_table_test",
+                "CREATE TABLE {0} (id bigint, data string) PARTITIONED BY (part string) STORED AS parquet") as t:
+
+            # write some data as the first batch
+            sql("""
+                INSERT INTO {0}
+                SELECT id, data, case when (id % 2) == 0 then 'even' else 'odd' end
+                FROM {1}
+                """, t, self.data_table)
+            rows = collect(spark.table(t))
+            self.assertEqual(sort_by_id(rows), [
+                    {'id': 1, 'data': 'a', 'part': 'odd'},
+                    {'id': 2, 'data': 'b', 'part': 'even'},
+                    {'id': 3, 'data': 'c', 'part': 'odd'}
+                ])
+
+            try:
+                # data frame saveAsTable with append fails in 2.1.1 because the table is not deleted
+                spark.createDataFrame([(1, 'd', 'odd'), (3, 'e', 'odd'), (5, 'f', 'odd')]).write.mode("append").saveAsTable(t)
+            except Exception as e:
+                self.assertIsInstance(e, AnalysisException)
+                self.assertIn(expected_error_text('already-exists'), e.desc)
+
+    @spark_only
+    def test_batch_pattern_dataframe_save_as_table_overwrite(self):
+        with temp_table(
+                "partitioned_batch_save_as_table_overwrite_test",
+                "CREATE TABLE {0} (id bigint, data string) PARTITIONED BY (part string) STORED AS parquet") as t:
+
+            # write some data as the first batch
+            sql("""
+                INSERT INTO {0}
+                SELECT id, data, case when (id % 2) == 0 then 'even' else 'odd' end
+                FROM {1}
+                """, t, self.data_table)
+            rows = collect(spark.table(t))
+            self.assertEqual(sort_by_id(rows), [
+                    {'id': 1, 'data': 'a', 'part': 'odd'},
+                    {'id': 2, 'data': 'b', 'part': 'even'},
+                    {'id': 3, 'data': 'c', 'part': 'odd'}
+                ])
+
+            try:
+                # data frame saveAsTable with append fails in 2.1.1 because the table is not deleted
+                spark.createDataFrame([(1, 'd', 'odd'), (3, 'e', 'odd'), (5, 'f', 'odd')]).write.mode("append").saveAsTable(t)
+            except Exception as e:
+                self.assertIsInstance(e, AnalysisException)
+                self.assertIn(expected_error_text('already-exists'), e.desc)
+#            # data frame saveAsTable should overwrite for batch pattern tables
+#            spark.createDataFrame([(1, 'd', 'odd'), (3, 'e', 'odd'), (5, 'f', 'odd')]).write.mode("overwrite").saveAsTable(t)
+#            rows = collect(spark.table(t))
+#            self.assertEqual(sort_by_id(rows), [
+#                    {'id': 1, 'data': 'd', 'part': 'odd'}, # note new data
+#                    {'id': 2, 'data': 'b', 'part': 'even'},
+#                    {'id': 3, 'data': 'e', 'part': 'odd'}, # note new data
+#                    {'id': 5, 'data': 'f', 'part': 'odd'} # note new data
+#                ])
+#
+#            # data frame saveAsTable should reorder columns
+#            spark.createDataFrame([(1, 'odd', 'g'), (3, 'odd', 'h')], ("id", "part", "data")).write.mode("overwrite").saveAsTable(t)
+#            rows = collect(spark.table(t))
+#            self.assertEqual(sort_by_id(rows), [
+#                    {'id': 1, 'data': 'g', 'part': 'odd'}, # note new data
+#                    {'id': 2, 'data': 'b', 'part': 'even'},
+#                    {'id': 3, 'data': 'h', 'part': 'odd'} # note new data
+#                    # note no id:5
+#                ])
+
 
 class IcebergIdentityPartitionedBatchPatternTest(unittest.TestCase):
     """This test case is a copy of ParquetPartitionedBatchPatternTest.
@@ -921,7 +1176,6 @@ class IcebergIdentityPartitionedBatchPatternTest(unittest.TestCase):
                 SELECT id, data, case when (id % 2) == 0 then 'even' else 'odd' end
                 FROM (SELECT id * 2 as id, data FROM {1})
                 """, t, self.data_table)
-            sql("REFRESH TABLE {0}", t)
             rows = collect(spark.table(t))
             # original id:2 row was replaced by the new 'even' data
             self.assertEqual(sort_by_id(rows), [
@@ -960,7 +1214,6 @@ class IcebergIdentityPartitionedBatchPatternTest(unittest.TestCase):
                 SELECT id, data
                 FROM (SELECT id * 2 as id, data FROM {1})
                 """, t, self.data_table)
-            sql("REFRESH TABLE {0}", t)
             rows = collect(spark.table(t))
             # original id:2 row was replaced by the new 'even' data
             self.assertEqual(sort_by_id(rows), [
@@ -1010,7 +1263,6 @@ class IcebergIdentityPartitionedBatchPatternTest(unittest.TestCase):
                 SELECT id, data, case when (id % 2) == 0 then 'even' else 'odd' end
                 FROM (SELECT id * 2 as id, data FROM {1})
                 """, t, self.data_table)
-            sql("REFRESH TABLE {0}", t)
             rows = collect(spark.table(t))
             # original id:2 row was replaced by the new 'even' data
             self.assertEqual(sort_by_id(rows), [
@@ -1045,7 +1297,6 @@ class IcebergIdentityPartitionedBatchPatternTest(unittest.TestCase):
 
             # data frame insert should also overwrite
             spark.createDataFrame([(1, 'd', 'odd'), (3, 'e', 'odd'), (5, 'f', 'odd')]).write.insertInto(t)
-            sql("REFRESH TABLE {0}", t)
             rows = collect(spark.table(t))
             self.assertEqual(sort_by_id(rows), [
                     {'id': 1, 'data': 'd', 'part': 'odd'}, # note new data
@@ -1056,7 +1307,6 @@ class IcebergIdentityPartitionedBatchPatternTest(unittest.TestCase):
 
             # data frame insert by name should reorder columns
             spark.createDataFrame([(1, 'odd', 'g'), (3, 'odd', 'h')], ("id", "part", "data")).write.byName().insertInto(t)
-            sql("REFRESH TABLE {0}", t)
             rows = collect(spark.table(t))
             self.assertEqual(sort_by_id(rows), [
                     {'id': 1, 'data': 'g', 'part': 'odd'}, # note new data
@@ -1187,7 +1437,6 @@ class IcebergUnpartitionedBatchPatternTest(unittest.TestCase):
 
             # second insert should overwrite
             sql("INSERT INTO {0} VALUES (4, 'd'), (5, 'e'), (6, 'f')", t)
-            sql("REFRESH TABLE {0}", t)
             rows = collect(spark.table(t))
             self.assertEqual(rows, [
                     {'id': 4, 'data': 'd'},
@@ -1215,7 +1464,6 @@ class IcebergUnpartitionedBatchPatternTest(unittest.TestCase):
 
             # data frame insert should overwrite
             spark.createDataFrame([(7, "g"), (8, "h"), (9, "i")], ("id", "data")).write.insertInto(t)
-            sql("REFRESH TABLE {0}", t)
             rows = collect(spark.table(t))
             self.assertEqual(rows, [
                     {'id': 7, 'data': 'g'},
@@ -1225,7 +1473,6 @@ class IcebergUnpartitionedBatchPatternTest(unittest.TestCase):
 
             # test by name insert overwrite
             spark.createDataFrame([("j", 10), ("k", 11)], ("data", "id")).write.byName().insertInto(t)
-            sql("REFRESH TABLE {0}", t)
             rows = collect(spark.table(t))
             self.assertEqual(rows, [
                     {'id': 10, 'data': 'j'},
