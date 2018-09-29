@@ -25,7 +25,7 @@ import org.apache.spark.sql.catalyst.TableIdentifier
 import org.apache.spark.sql.catalyst.analysis.NamedRelation
 import org.apache.spark.sql.catalyst.expressions.{And, AttributeReference, AttributeSet, Expression}
 import org.apache.spark.sql.catalyst.planning.PhysicalOperation
-import org.apache.spark.sql.catalyst.plans.logical.{AlterTable, AppendData, CreateTable, CreateTableAsSelect, DeleteFrom, LogicalPlan, OverwritePartitionsDynamic, ReplaceTableAsSelect, ShowCreateTable}
+import org.apache.spark.sql.catalyst.plans.logical.{AlterTable, AppendData, CreateTable, CreateTableAsSelect, DeleteFrom, LogicalPlan, OverwritePartitionsDynamic, ReplaceTableAsSelect, ShowCreateTable, ShowProperties}
 import org.apache.spark.sql.execution.{FilterExec, ProjectExec, SparkPlan}
 import org.apache.spark.sql.execution.datasources.DataSourceStrategy
 import org.apache.spark.sql.sources.Filter
@@ -111,6 +111,9 @@ object DataSourceV2Strategy extends Strategy {
   override def apply(plan: LogicalPlan): Seq[SparkPlan] = plan match {
     case ShowCreateTable(identifier, table) =>
       ShowCreateTableExec(identifier, table, plan.output) :: Nil
+
+    case ShowProperties(table, property) =>
+      ShowPropertiesExec(table, property, plan.output) :: Nil
 
     case PhysicalOperation(project, filters, relation: NamedRelation)
         if relation.isInstanceOf[DataSourceV2Relation] || relation.isInstanceOf[TableV2Relation] =>

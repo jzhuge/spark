@@ -513,6 +513,15 @@ case class ReplaceTableAsSelect(
   override lazy val resolved = true
 }
 
+case class ShowProperties(table: Table, prop: Option[String]) extends Command {
+  override def output: Seq[Attribute] = Seq(
+    AttributeReference("property", StringType, nullable = false)(),
+    AttributeReference("value", StringType, nullable = false)()
+  )
+
+  override def children: Seq[LogicalPlan] = Seq.empty
+}
+
 case class ShowCreateTable(identifier: TableIdentifier, table: Table) extends Command {
   override def output: Seq[Attribute] = Seq(
     AttributeReference("create_statement", StringType, nullable = false)()

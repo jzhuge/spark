@@ -25,9 +25,9 @@ import org.apache.spark.sql.catalyst.TableIdentifier
 import org.apache.spark.sql.catalyst.analysis.NamedRelation
 import org.apache.spark.sql.catalyst.catalog.CatalogTable
 import org.apache.spark.sql.catalyst.expressions.{Alias, Literal}
-import org.apache.spark.sql.catalyst.plans.logical.{AlterTable, AppendData, CreateTable, CreateTableAsSelect, InsertIntoTable, LogicalPlan, OverwritePartitionsDynamic, Project, ReplaceTableAsSelect, ShowCreateTable}
+import org.apache.spark.sql.catalyst.plans.logical.{AlterTable, AppendData, CreateTable, CreateTableAsSelect, InsertIntoTable, LogicalPlan, OverwritePartitionsDynamic, Project, ReplaceTableAsSelect, ShowCreateTable, ShowProperties}
 import org.apache.spark.sql.catalyst.rules.Rule
-import org.apache.spark.sql.execution.command.{AlterTableAddColumnsCommand, AlterTableDropColumnsCommand, AlterTableRenameColumnCommand, AlterTableSetPropertiesCommand, AlterTableUnsetPropertiesCommand, AlterTableUpdateColumnCommand, ShowCreateTableCommand}
+import org.apache.spark.sql.execution.command.{AlterTableAddColumnsCommand, AlterTableDropColumnsCommand, AlterTableRenameColumnCommand, AlterTableSetPropertiesCommand, AlterTableUnsetPropertiesCommand, AlterTableUpdateColumnCommand, ShowCreateTableCommand, ShowTablePropertiesCommand}
 import org.apache.spark.sql.execution.datasources
 import org.apache.spark.sql.execution.datasources.{DataSource, LogicalRelation}
 import org.apache.spark.sql.sources.BaseRelation
@@ -79,6 +79,20 @@ class DataSourceV2Analysis(spark: SparkSession) extends Rule[LogicalPlan] {
               plan
             case _ =>
               ShowCreateTable(identifier, table)
+          }
+        case _ =>
+          plan
+      }
+
+    case ShowTablePropertiesCommand(ident, property) =>
+      val identifier = fixIdent(ident)
+      Try(catalog.loadTable(identifier)).toOption match {
+        case Some(table) =>
+          table match {
+            case table: V1MetadataTable if !isV2Source(table.catalogTable) =>
+              plan
+            case _ =>
+              ShowProperties(table, property)
           }
         case _ =>
           plan
