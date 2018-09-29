@@ -46,4 +46,9 @@ public interface PartitionTransform {
    * The data columns that are referenced by this transform.
    */
   String[] references();
+
+  /**
+   * The transformation formatted for a DESCRIBE query.
+   */
+  String describe();
 }

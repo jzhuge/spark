@@ -132,6 +132,11 @@ public class PartitionTransforms {
     public String[] references() {
       return colNames;
     }
+
+    @Override
+    public String describe() {
+      return name() + "(" + colNames[0] + ")";
+    }
   }
 
   public static final class Identity extends SingleColumnTransform {
@@ -142,6 +147,11 @@ public class PartitionTransforms {
     @Override
     public String name() {
       return "identity";
+    }
+
+    @Override
+    public String describe() {
+      return references()[0];
     }
   }
 
@@ -166,6 +176,17 @@ public class PartitionTransforms {
     @Override
     public String[] references() {
       return colNames;
+    }
+
+    @Override
+    public String describe() {
+      StringBuilder sb = new StringBuilder();
+      sb.append(name()).append("(");
+      for (String reference : colNames) {
+        sb.append(reference).append(", ");
+      }
+      sb.append("numBuckets=").append(numBuckets).append(")");
+      return sb.toString();
     }
   }
 
@@ -209,7 +230,7 @@ public class PartitionTransforms {
 
     @Override
     public String name() {
-      return "hour";
+      return "date_hour";
     }
   }
 
@@ -224,6 +245,11 @@ public class PartitionTransforms {
     @Override
     public String name() {
       return transformName;
+    }
+
+    @Override
+    public String describe() {
+      return "apply(" + references()[0] + ", func=" + transformName + ")";
     }
   }
 }
