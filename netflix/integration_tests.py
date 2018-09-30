@@ -283,7 +283,7 @@ class IcebergTypesTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         # recreate the table each run, but keep it around as a test for others
-        cls.shared_table = temp_table_name('iceberg_types', db = 'iceberg', unique = False)
+        cls.shared_table = temp_table_name('iceberg_types')
         sql("DROP TABLE IF EXISTS {0}", cls.shared_table)
         sql("""
             CREATE TABLE IF NOT EXISTS {0} (
