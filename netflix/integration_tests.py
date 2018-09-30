@@ -4,6 +4,7 @@ import sys
 import traceback
 import unittest
 import random
+import re
 from pyspark.sql.utils import AnalysisException
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import *
@@ -85,8 +86,11 @@ class temp_table:
         sql("DROP TABLE IF EXISTS {0}".format(self.table_name))
         return False # don't suppress exceptions
 
+def sort_by(col_name, rows):
+    return sorted(rows, cmp = lambda a, b: cmp(a[col_name], b[col_name]))
+
 def sort_by_id(rows):
-    return sorted(rows, cmp = lambda a, b: cmp(a['id'], b['id']))
+    return sort_by('id', rows)
 
 def collect(df):
     return list(map(lambda r: r.asDict(), df.collect()))
@@ -175,6 +179,50 @@ class IcebergDDLTest(unittest.TestCase):
 #                        {'id': 2, 'data': 'b'},
 #                        {'id': 3, 'data': 'c'}
 #                    ])
+
+    def test_show_create_table(self):
+        with temp_table("test_show_create") as t:
+            sql("CREATE TABLE {0} (id bigint, data string) USING iceberg", t)
+            create_sql = collect(sql("SHOW CREATE TABLE {0}", t))[0]['create_statement']
+
+            quoted = '.'.join([ "`" + part + "`" for part in t.split('.') ])
+            expected = "CREATE TABLE {0} ( id bigint, data string) USING iceberg".format(quoted)
+            self.assertEqual(expected, re.sub(r"[\s]+", ' ', create_sql))
+
+    def test_create_table_like(self):
+        with temp_table("test_source") as source:
+            sql("CREATE TABLE {0} (id bigint, data string) USING iceberg", source)
+            with temp_table("test_copy") as copy:
+                sql("CREATE TABLE {0} LIKE {1}", copy, source)
+                create_sql = collect(sql("SHOW CREATE TABLE {0}", copy))[0]['create_statement']
+
+                quoted = '.'.join([ "`" + part + "`" for part in copy.split('.') ])
+                expected = "CREATE TABLE {0} ( id bigint, data string) USING iceberg".format(quoted)
+                self.assertEqual(expected, re.sub(r"[\s]+", ' ', create_sql))
+
+    def test_alter_table_properties(self):
+        with temp_table("test_table_properties") as t:
+            sql("CREATE TABLE {0} (id bigint, data string) USING iceberg", t)
+            rows = collect(sql("SHOW TBLPROPERTIES {0}", t))
+            self.assertEqual(sort_by('property', rows), [
+                    {'property': 'provider', 'value': 'iceberg'}
+                ])
+
+            sql("ALTER TABLE {0} SET TBLPROPERTIES ('aa'='AA', 'zz'='ZZ')", t)
+
+            # test all table properties
+            rows = collect(sql("SHOW TBLPROPERTIES {0}", t))
+            self.assertEqual(sort_by('property', rows), [
+                    {'property': 'aa', 'value': 'AA'},
+                    {'property': 'provider', 'value': 'iceberg'},
+                    {'property': 'zz', 'value': 'ZZ'}
+                ])
+
+            # test single property lookup
+            rows = collect(sql("SHOW TBLPROPERTIES {0} ('provider')", t))
+            self.assertEqual(sort_by('property', rows), [
+                    {'property': 'provider', 'value': 'iceberg'}
+                ])
 
     def test_alter_table_add_columns(self):
         with temp_table("test_add_columns") as t:
