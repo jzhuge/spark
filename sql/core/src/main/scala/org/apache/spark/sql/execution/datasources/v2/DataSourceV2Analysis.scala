@@ -17,6 +17,7 @@
 
 package org.apache.spark.sql.execution.datasources.v2
 
+import scala.collection.JavaConverters._
 import scala.util.Try
 
 import org.apache.spark.sql.{AnalysisException, SaveMode, SparkSession, SQLContext}
@@ -27,7 +28,7 @@ import org.apache.spark.sql.catalyst.catalog.CatalogTable
 import org.apache.spark.sql.catalyst.expressions.{Alias, Literal}
 import org.apache.spark.sql.catalyst.plans.logical.{AlterTable, AppendData, CreateTable, CreateTableAsSelect, InsertIntoTable, LogicalPlan, OverwritePartitionsDynamic, Project, ReplaceTableAsSelect}
 import org.apache.spark.sql.catalyst.rules.Rule
-import org.apache.spark.sql.execution.command.{AlterTableAddColumnsCommand, AlterTableDropColumnsCommand, AlterTableRenameColumnCommand, AlterTableSetPropertiesCommand, AlterTableUnsetPropertiesCommand, AlterTableUpdateColumnCommand, DescribeTableCommand, ShowCreateTableCommand, ShowTablePropertiesCommand}
+import org.apache.spark.sql.execution.command.{AlterTableAddColumnsCommand, AlterTableDropColumnsCommand, AlterTableRenameColumnCommand, AlterTableSetPropertiesCommand, AlterTableUnsetPropertiesCommand, AlterTableUpdateColumnCommand, CreateTableLikeCommand, DescribeTableCommand, ShowCreateTableCommand, ShowTablePropertiesCommand}
 import org.apache.spark.sql.execution.datasources
 import org.apache.spark.sql.execution.datasources.{DataSource, LogicalRelation}
 import org.apache.spark.sql.sources.BaseRelation
@@ -80,6 +81,10 @@ class DataSourceV2Analysis(spark: SparkSession) extends Rule[LogicalPlan] {
 
     case DescribeTableCommand(V2TableReference(_, table), _, isExtended, isFormatted) =>
       DescribeTable(table, isExtended, isFormatted)
+
+    case CreateTableLikeCommand(targetIdent, V2TableReference(_, source), ifNotExists) =>
+      CreateTable(catalog, ensureDatabaseIsSet(targetIdent),
+        source.schema, source.partitioning.asScala, source.properties.asScala.toMap, !ifNotExists)
 
     case datasources.CreateTable(catalogTable, mode, None) if isV2Source(catalogTable) =>
       val options = catalogTable.storage.properties + ("provider" -> catalogTable.provider.get)
