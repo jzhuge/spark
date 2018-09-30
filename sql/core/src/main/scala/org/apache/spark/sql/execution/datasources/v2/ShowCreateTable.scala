@@ -49,7 +49,7 @@ case class ShowCreateTable(
   private lazy val partFragment = if (table.partitioning.isEmpty) {
     ""
   } else {
-    table.partitioning.asScala.map(_.toString).mkString("\nPARTITIONED BY (", ", ", ")")
+    table.partitioning.asScala.map(_.describe).mkString("\nPARTITIONED BY (", ", ", ")")
   }
 
   private lazy val usingFragment = Option(table.properties.get("provider"))
