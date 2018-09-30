@@ -135,4 +135,6 @@ class V1TableCatalog(sessionState: SessionState) extends TableCatalog {
   override def initialize(name: String, options: CaseInsensitiveStringMap): Unit = {
     this._name = name
   }
+
+  override def toString: String = "v2.Catalog(SessionCatalog)"
 }
