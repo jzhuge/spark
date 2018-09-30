@@ -41,7 +41,7 @@ case class ShowCreateTable(
 
   private lazy val schemaFragment = table.schema
       .map { field =>
-        val comment = field.getComment().map(comment => s" COMMENT '$comment'")
+        val comment = field.getComment().map(comment => s" COMMENT '$comment'").getOrElse("")
         s"${field.name} ${field.dataType.simpleString}$comment"
       }
       .mkString("\n    ", ",\n    ", "")
