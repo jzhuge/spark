@@ -137,6 +137,11 @@ public class PartitionTransforms {
     public String describe() {
       return name() + "(" + colNames[0] + ")";
     }
+
+    @Override
+    public String toString() {
+      return describe();
+    }
   }
 
   public static final class Identity extends SingleColumnTransform {
@@ -187,6 +192,11 @@ public class PartitionTransforms {
       }
       sb.append("numBuckets=").append(numBuckets).append(")");
       return sb.toString();
+    }
+
+    @Override
+    public String toString() {
+      return describe();
     }
   }
 
