@@ -41,7 +41,7 @@ case class ShowCreateTable(
 
   private lazy val schemaFragment = table.schema
       .map { field =>
-        val comment = field.getComment().map(comment => s" COMMENT '$comment'")
+        val comment = field.getComment().map(comment => s" COMMENT '$comment'").getOrElse("")
         s"${field.name} ${field.dataType.simpleString}$comment"
       }
       .mkString("\n    ", ",\n    ", "")
@@ -49,7 +49,7 @@ case class ShowCreateTable(
   private lazy val partFragment = if (table.partitioning.isEmpty) {
     ""
   } else {
-    table.partitioning.asScala.map(_.toString).mkString("\nPARTITIONED BY (", ", ", ")")
+    table.partitioning.asScala.map(_.describe).mkString("\nPARTITIONED BY (", ", ", ")")
   }
 
   private lazy val usingFragment = Option(table.properties.get("provider"))
