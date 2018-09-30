@@ -33,7 +33,7 @@ case class DescribeTable(
   import DescribeTable._
 
   override val output: Seq[Attribute] = Seq(
-    // Column names are based on Hive.
+    // Column names are based on Hive. These are used in some testing and should not be changed.
     AttributeReference("col_name", StringType, nullable = false,
       new MetadataBuilder().putString("comment", "name of the column").build())(),
     AttributeReference("data_type", StringType, nullable = false,
@@ -66,15 +66,21 @@ case class DescribeTable(
 
   private def addPartitioning(rows: ArrayBuffer[Row]): Unit = {
     rows += EMPTY_ROW
-    rows += Row("Partitioning", "", "")
-    rows ++= table.partitioning.asScala.zipWithIndex.map {
-      case (transform, index) => Row(index.toString, transform.describe(), "")
+    rows += Row(" Partitioning", "", "")
+    rows += Row("--------------", "", "")
+    if (table.partitioning.isEmpty) {
+      rows += Row("Not partitioned", "", "")
+    } else {
+      rows ++= table.partitioning.asScala.zipWithIndex.map {
+        case (transform, index) => Row(s"Part $index", transform.describe(), "")
+      }
     }
   }
 
   private def addProperties(rows: ArrayBuffer[Row]): Unit = {
     rows += EMPTY_ROW
-    rows += Row("Table Property", "Value", "")
+    rows += Row(" Table Property", " Value", "")
+    rows += Row("----------------", "-------", "")
     rows ++= table.properties.asScala.map {
       case (key, value) => Row(key, value, "")
     }
