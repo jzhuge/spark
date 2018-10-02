@@ -58,10 +58,15 @@ class ExecutorSource(threadPool: ThreadPoolExecutor, executorId: String) extends
     override def getValue: Int = threadPool.getPoolSize()
   })
 
-  // Gauge got executor thread pool's largest number of threads that have ever simultaneously
-  // been in th pool
+  // Gauge for executor thread pool's maximum allowed number of threads
   metricRegistry.register(MetricRegistry.name("threadpool", "maxPool_size"), new Gauge[Int] {
     override def getValue: Int = threadPool.getMaximumPoolSize()
+  })
+
+  // Gauge for executor thread pool's largest number of threads that have ever simultaneously
+  // been in the pool
+  metricRegistry.register(MetricRegistry.name("threadpool", "largestPool_size"), new Gauge[Int] {
+    override def getValue: Int = threadPool.getLargestPoolSize()
   })
 
   // Gauge for file system stats of this executor
