@@ -36,6 +36,10 @@ BUILD_VERSION=${BUILD_VERSION:-${BASE_VERSION}-unstable}
 HADOOP_VERSION_PROFILE=hadoop-2.7
 HADOOP_VERSION=2.7.3
 
+# tag the release and push to the repository
+git tag -a v$SPARK_VERSION -m "Version $SPARK_VERSION"
+git push origin v$SPARK_VERSION
+
 wget http://www-us.apache.org/dist/maven/maven-3/3.3.9/binaries/apache-maven-3.3.9-bin.tar.gz
 tar -xf apache-maven-3.3.9-bin.tar.gz
 export M2_HOME=${WORKSPACE}/apache-maven-3.3.9
