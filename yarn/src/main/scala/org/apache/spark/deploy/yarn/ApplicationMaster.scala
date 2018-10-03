@@ -32,6 +32,7 @@ import org.apache.hadoop.yarn.api._
 import org.apache.hadoop.yarn.api.records._
 import org.apache.hadoop.yarn.conf.YarnConfiguration
 import org.apache.hadoop.yarn.util.{ConverterUtils, Records}
+import sun.misc.Signal
 
 import org.apache.spark._
 import org.apache.spark.deploy.SparkHadoopUtil
@@ -751,6 +752,11 @@ object ApplicationMaster extends Logging {
 
   def main(args: Array[String]): Unit = {
     SignalUtils.registerLogger(log)
+    SignalUtils.register("TERM") {
+      // raise SIGQUIT to print the stack trace to stderr, with thread daemon status
+      Signal.raise(new Signal("QUIT"))
+      false
+    }
     val amArgs = new ApplicationMasterArguments(args)
 
     // Load the properties file with the Spark configuration and set entries as system properties,
