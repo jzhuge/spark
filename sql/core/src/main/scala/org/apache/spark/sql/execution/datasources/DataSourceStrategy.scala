@@ -41,6 +41,7 @@ import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution.{RowDataSourceScanExec, SparkPlan}
 import org.apache.spark.sql.execution.command._
 import org.apache.spark.sql.sources._
+import org.apache.spark.sql.sources.v2.DataSourceV2
 import org.apache.spark.sql.types._
 import org.apache.spark.unsafe.types.UTF8String
 
@@ -131,7 +132,8 @@ case class DataSourceAnalysis(conf: CatalystConf) extends Rule[LogicalPlan] {
   }
 
   override def apply(plan: LogicalPlan): LogicalPlan = plan transform {
-    case sql.CreateTable(table, provider, schema, partitioning, bucketSpec, options, ifNotExists) =>
+    case sql.CreateTable(
+        table, V1Provider(provider), schema, partitioning, bucketSpec, options, ifNotExists) =>
       val (partitionColumnNames, partitionBucketing) = PartitionUtil.convertTransforms(partitioning)
       if (bucketSpec.isDefined && partitionBucketing.isDefined) {
         throw new AnalysisException("Cannot create table with CLUSTERED BY and bucket partitions")
@@ -162,7 +164,7 @@ case class DataSourceAnalysis(conf: CatalystConf) extends Rule[LogicalPlan] {
       CreateTable(tableDesc, mode, None)
 
     case sql.CreateTableAsSelect(
-        table, provider, partitioning, bucketSpec, options, query, ifNotExists) =>
+        table, V1Provider(provider), partitioning, bucketSpec, options, query, ifNotExists) =>
       val (partitionColumnNames, partitionBucketing) = PartitionUtil.convertTransforms(partitioning)
       if (bucketSpec.isDefined && partitionBucketing.isDefined) {
         throw new AnalysisException("Cannot create table with CLUSTERED BY and bucket partitions")
@@ -311,6 +313,19 @@ case class DataSourceAnalysis(conf: CatalystConf) extends Rule[LogicalPlan] {
         table)
 
       insertCmd
+  }
+
+  object V1Provider {
+    def unapply(provider: String): Option[String] = {
+      provider match {
+        case "hive" =>
+          None
+        case _ if classOf[DataSourceV2].isAssignableFrom(DataSource.lookupDataSource(provider)) =>
+          None
+        case _ =>
+          Some(provider)
+      }
+    }
   }
 
   /**

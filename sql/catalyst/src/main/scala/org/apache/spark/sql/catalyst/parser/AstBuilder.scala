@@ -771,18 +771,26 @@ class AstBuilder extends SqlBaseBaseVisitor[AnyRef] with Logging {
 
   override def visitApplyTransform(
       ctx: ApplyTransformContext): PartitionTransform = withOrigin(ctx) {
-    val args = visitSimpleTransformArgumentList(ctx.simpleTransformArgumentList)
-    (ctx.identifier.getText, args) match {
-      case (transformName, Seq(ref: UnresolvedAttribute)) =>
-        PartitionTransforms.apply(transformName, ref.name)
+    val args: Seq[Any] = ctx.simpleTransformArgumentList.simpleTransformArgument
+        .asScala.map(typedVisit[Any])
 
-      case ("bucket", Literal(numBuckets: Int, _) :: refs)
-          if refs.forall(_.isInstanceOf[UnresolvedAttribute]) =>
-        PartitionTransforms.bucket(
-          numBuckets, refs.map(_.asInstanceOf[UnresolvedAttribute].name): _*)
-
-      case _ =>
-        throw new AnalysisException(s"Unsupported transform: ${ctx.getText}")
+    ctx.identifier.getText match {
+      case "bucket" =>
+        args match {
+          case Seq(Literal(numBuckets: Int, _), refs @ _*)
+              if refs.forall(_.isInstanceOf[UnresolvedAttribute]) =>
+            PartitionTransforms.bucket(
+              numBuckets, refs.map(_.asInstanceOf[UnresolvedAttribute].name): _*)
+          case _ =>
+            throw new AnalysisException(s"Unsupported transform: ${ctx.getText}")
+        }
+      case transformName =>
+        args match {
+          case Seq(ref @ UnresolvedAttribute(_)) =>
+            PartitionTransforms.apply(transformName, ref.name)
+          case _ =>
+            throw new AnalysisException(s"Unsupported transform: ${ctx.getText}")
+        }
     }
   }
 
