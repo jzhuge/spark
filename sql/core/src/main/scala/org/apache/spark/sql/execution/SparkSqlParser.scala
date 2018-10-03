@@ -23,11 +23,13 @@ import org.antlr.v4.runtime.{ParserRuleContext, Token}
 import org.antlr.v4.runtime.tree.TerminalNode
 
 import org.apache.spark.sql.{AnalysisException, SaveMode}
+import org.apache.spark.sql.catalog.v2.{PartitionTransform, PartitionUtil}
 import org.apache.spark.sql.catalyst.{FunctionIdentifier, TableIdentifier}
 import org.apache.spark.sql.catalyst.catalog._
 import org.apache.spark.sql.catalyst.parser._
 import org.apache.spark.sql.catalyst.parser.SqlBaseParser._
 import org.apache.spark.sql.catalyst.plans.logical.{LogicalPlan, OneRowRelation, ScriptInputOutputSchema}
+import org.apache.spark.sql.catalyst.plans.logical.sql
 import org.apache.spark.sql.execution.command._
 import org.apache.spark.sql.execution.datasources.{CreateTable, _}
 import org.apache.spark.sql.internal.{HiveSerDe, SQLConf, VariableSubstitution}
@@ -348,51 +350,27 @@ class SparkSqlAstBuilder(conf: SQLConf) extends AstBuilder {
       throw new AnalysisException("Cannot create hive serde table with CREATE TABLE USING")
     }
     val schema = Option(ctx.colTypeList()).map(createSchema)
-    val partitionColumnNames =
-      Option(ctx.partitionColumnNames)
-        .map(visitIdentifierList(_).toArray)
-        .getOrElse(Array.empty[String])
+
     val bucketSpec = Option(ctx.bucketSpec()).map(visitBucketSpec)
 
-    // TODO: this may be wrong for non file-based data source like JDBC, which should be external
-    // even there is no `path` in options. We should consider allow the EXTERNAL keyword.
-    val storage = DataSource.buildStorageFormatFromOptions(options)
-    val tableType = if (storage.locationUri.isDefined) {
-      CatalogTableType.EXTERNAL
-    } else {
-      CatalogTableType.MANAGED
-    }
+    val partitions: Seq[PartitionTransform] = Option(ctx.partitions)
+        .map(_.simpleTransform.asScala.map(typedVisit[PartitionTransform](_)))
+        .getOrElse(Seq.empty)
 
-    val tableDesc = CatalogTable(
-      identifier = table,
-      tableType = tableType,
-      storage = storage,
-      schema = schema.getOrElse(new StructType),
-      provider = Some(provider),
-      partitionColumnNames = partitionColumnNames,
-      bucketSpec = bucketSpec
-    )
-
-    // Determine the storage mode.
-    val mode = if (ifNotExists) SaveMode.Ignore else SaveMode.ErrorIfExists
-
-    if (ctx.query != null) {
-      // Get the backing query.
-      val query = plan(ctx.query)
-
-      if (temp) {
+    Option(ctx.query).map(plan) match {
+      case Some(_) if temp =>
         operationNotAllowed("CREATE TEMPORARY TABLE ... USING ... AS query", ctx)
-      }
 
-      // Don't allow explicit specification of schema for CTAS
-      if (schema.nonEmpty) {
+      case Some(_) if schema.isDefined =>
         operationNotAllowed(
           "Schema may not be specified in a Create Table As Select (CTAS) statement",
           ctx)
-      }
-      CreateTable(tableDesc, mode, Some(query))
-    } else {
-      if (temp) {
+
+      case Some(asSelect) =>
+        sql.CreateTableAsSelect(table, provider, partitions, bucketSpec, options, asSelect,
+          ifNotExists = ifNotExists)
+
+      case None if temp =>
         if (ifNotExists) {
           operationNotAllowed("CREATE TEMPORARY TABLE IF NOT EXISTS", ctx)
         }
@@ -400,9 +378,10 @@ class SparkSqlAstBuilder(conf: SQLConf) extends AstBuilder {
         logWarning(s"CREATE TEMPORARY TABLE ... USING ... is deprecated, please use " +
           "CREATE TEMPORARY VIEW ... USING ... instead")
         CreateTempViewUsing(table, schema, replace = true, global = false, provider, options)
-      } else {
-        CreateTable(tableDesc, mode, None)
-      }
+
+      case _ =>
+        sql.CreateTable(table, provider, schema.getOrElse(new StructType), partitions, bucketSpec,
+          options, ifNotExists = ifNotExists)
     }
   }
 

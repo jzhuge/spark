@@ -28,6 +28,7 @@ import org.antlr.v4.runtime.tree.{ParseTree, RuleNode, TerminalNode}
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.AnalysisException
+import org.apache.spark.sql.catalog.v2.{PartitionTransform, PartitionTransforms}
 import org.apache.spark.sql.catalyst.{FunctionIdentifier, TableIdentifier}
 import org.apache.spark.sql.catalyst.analysis._
 import org.apache.spark.sql.catalyst.expressions._
@@ -762,6 +763,34 @@ class AstBuilder extends SqlBaseBaseVisitor[AnyRef] with Logging {
   /* ********************************************************************************************
    * Expression parsing
    * ******************************************************************************************** */
+
+  override def visitIdentityTransform(
+      ctx: IdentityTransformContext): PartitionTransform = withOrigin(ctx) {
+    PartitionTransforms.identity(ctx.identifier.getText)
+  }
+
+  override def visitApplyTransform(
+      ctx: ApplyTransformContext): PartitionTransform = withOrigin(ctx) {
+    val args = visitSimpleTransformArgumentList(ctx.simpleTransformArgumentList)
+    (ctx.identifier.getText, args) match {
+      case (transformName, Seq(ref: UnresolvedAttribute)) =>
+        PartitionTransforms.apply(transformName, ref.name)
+
+      case ("bucket", Literal(numBuckets: Int, _) :: refs)
+          if refs.forall(_.isInstanceOf[UnresolvedAttribute]) =>
+        PartitionTransforms.bucket(
+          numBuckets, refs.map(_.asInstanceOf[UnresolvedAttribute].name): _*)
+
+      case _ =>
+        throw new AnalysisException(s"Unsupported transform: ${ctx.getText}")
+    }
+  }
+
+  override def visitVisitTransformReference(
+      ctx: VisitTransformReferenceContext): UnresolvedAttribute = withOrigin(ctx) {
+    UnresolvedAttribute(ctx.qualifiedName.identifier.asScala.map(_.getText))
+  }
+
   /**
    * Create an expression from the given context. This method just passes the context on to the
    * visitor and only takes care of typing (We assume that the visitor returns an Expression here).

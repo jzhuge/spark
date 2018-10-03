@@ -21,18 +21,18 @@ import org.apache.spark.sql.catalog.v2.PartitionTransforms.{Bucket, Identity}
 import org.apache.spark.sql.catalyst.catalog.BucketSpec
 
 object PartitionUtil {
-  def convertToTransforms(
-      identityCols: Seq[String], bucketSpec: Option[BucketSpec]): Seq[PartitionTransform] = {
-    val bucketTransform = bucketSpec.map { spec =>
-      if (spec.sortColumnNames.nonEmpty) {
-        throw new UnsupportedOperationException(
-          s"Cannot convert bucket spec with sort columns: $bucketSpec")
-      }
-
-      PartitionTransforms.bucket(spec.numBuckets, spec.bucketColumnNames: _*)
+  def convertBucketSpec(spec: BucketSpec): PartitionTransform = {
+    if (spec.sortColumnNames.nonEmpty) {
+      throw new UnsupportedOperationException(
+        s"Cannot convert bucket spec with sort columns: $spec")
     }
 
-    identityCols.map(PartitionTransforms.identity) ++ bucketTransform.toSeq
+    PartitionTransforms.bucket(spec.numBuckets, spec.bucketColumnNames: _*)
+  }
+
+  def convertToTransforms(
+      identityCols: Seq[String], bucketSpec: Option[BucketSpec]): Seq[PartitionTransform] = {
+    identityCols.map(PartitionTransforms.identity) ++ bucketSpec.map(convertBucketSpec).toSeq
   }
 
   def convertTransforms(

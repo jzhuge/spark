@@ -24,16 +24,18 @@ import org.apache.hadoop.fs.Path
 import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql._
-import org.apache.spark.sql.catalyst.{CatalystConf, CatalystTypeConverters, InternalRow, TableIdentifier}
+import org.apache.spark.sql.catalog.v2.PartitionUtil
+import org.apache.spark.sql.catalyst.{CatalystConf, CatalystTypeConverters, InternalRow}
 import org.apache.spark.sql.catalyst.CatalystTypeConverters.convertToScala
 import org.apache.spark.sql.catalyst.analysis._
-import org.apache.spark.sql.catalyst.catalog.{CatalogTable, CatalogTablePartition, SimpleCatalogRelation}
+import org.apache.spark.sql.catalyst.catalog.{CatalogTable, CatalogTablePartition, CatalogTableType, SimpleCatalogRelation}
 import org.apache.spark.sql.catalyst.catalog.CatalogTypes.TablePartitionSpec
 import org.apache.spark.sql.catalyst.expressions
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.planning.PhysicalOperation
 import org.apache.spark.sql.catalyst.plans.logical
-import org.apache.spark.sql.catalyst.plans.logical.{LogicalPlan, Project, Union}
+import org.apache.spark.sql.catalyst.plans.logical.{LogicalPlan, Project}
+import org.apache.spark.sql.catalyst.plans.logical.sql
 import org.apache.spark.sql.catalyst.plans.physical.{HashPartitioning, UnknownPartitioning}
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution.{RowDataSourceScanExec, SparkPlan}
@@ -129,6 +131,68 @@ case class DataSourceAnalysis(conf: CatalystConf) extends Rule[LogicalPlan] {
   }
 
   override def apply(plan: LogicalPlan): LogicalPlan = plan transform {
+    case sql.CreateTable(table, provider, schema, partitioning, bucketSpec, options, ifNotExists) =>
+      val (partitionColumnNames, partitionBucketing) = PartitionUtil.convertTransforms(partitioning)
+      if (bucketSpec.isDefined && partitionBucketing.isDefined) {
+        throw new AnalysisException("Cannot create table with CLUSTERED BY and bucket partitions")
+      }
+
+      // TODO: this may be wrong for non file-based data source like JDBC, which should be external
+      // even there is no `path` in options. We should consider allow the EXTERNAL keyword.
+      val storage = DataSource.buildStorageFormatFromOptions(options)
+      val tableType = if (storage.locationUri.isDefined) {
+        CatalogTableType.EXTERNAL
+      } else {
+        CatalogTableType.MANAGED
+      }
+
+      val tableDesc = CatalogTable(
+        identifier = table,
+        tableType = tableType,
+        storage = storage,
+        schema = schema,
+        provider = Some(provider),
+        partitionColumnNames = partitionColumnNames,
+        bucketSpec = bucketSpec.orElse(partitionBucketing)
+      )
+
+      // Determine the storage mode.
+      val mode = if (ifNotExists) SaveMode.Ignore else SaveMode.ErrorIfExists
+
+      CreateTable(tableDesc, mode, None)
+
+    case sql.CreateTableAsSelect(
+        table, provider, partitioning, bucketSpec, options, query, ifNotExists) =>
+      val (partitionColumnNames, partitionBucketing) = PartitionUtil.convertTransforms(partitioning)
+      if (bucketSpec.isDefined && partitionBucketing.isDefined) {
+        throw new AnalysisException("Cannot create table with CLUSTERED BY and bucket partitions")
+      }
+
+      // TODO: this may be wrong for non file-based data source like JDBC, which should be external
+      // even there is no `path` in options. We should consider allow the EXTERNAL keyword.
+      val storage = DataSource.buildStorageFormatFromOptions(options)
+      val tableType = if (storage.locationUri.isDefined) {
+        CatalogTableType.EXTERNAL
+      } else {
+        CatalogTableType.MANAGED
+      }
+
+      val tableDesc = CatalogTable(
+        identifier = table,
+        tableType = tableType,
+        storage = storage,
+        schema = new StructType,
+        provider = Some(provider),
+        partitionColumnNames = partitionColumnNames,
+        bucketSpec = bucketSpec.orElse(partitionBucketing)
+      )
+
+      // Determine the storage mode.
+      val mode = if (ifNotExists) SaveMode.Ignore else SaveMode.ErrorIfExists
+
+      CreateTable(tableDesc, mode, Some(query))
+
+
     // If the InsertIntoTable command is for a partitioned HadoopFsRelation and
     // the user has specified static partitions, we add a Project operator on top of the query
     // to include those constant column values in the query result.

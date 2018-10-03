@@ -70,7 +70,7 @@ statement
     | DROP DATABASE (IF EXISTS)? identifier (RESTRICT | CASCADE)?      #dropDatabase
     | createTableHeader ('(' colTypeList ')')? tableProvider
         (OPTIONS tablePropertyList)?
-        (PARTITIONED BY partitionColumnNames=identifierList)?
+        (PARTITIONED BY '(' partitions=simpleTransformList ')')?
         bucketSpec? (AS? query)?                                       #createTableUsing
     | createTableHeader ('(' columns=colTypeList ')')?
         (COMMENT STRING)?
@@ -529,6 +529,24 @@ valueExpression
     | left=valueExpression operator=HAT right=valueExpression                                #arithmeticBinary
     | left=valueExpression operator=PIPE right=valueExpression                               #arithmeticBinary
     | left=valueExpression comparisonOperator right=valueExpression                          #comparison
+    ;
+
+simpleTransformList
+    : simpleTransform (',' simpleTransform)*
+    ;
+
+simpleTransform
+    : identifier                                                                               #identityTransform
+    | identifier '(' simpleTransformArgumentList ')'                                           #applyTransform
+    ;
+
+simpleTransformArgumentList
+    : simpleTransformArgument (',' simpleTransformArgument)*
+    ;
+
+simpleTransformArgument
+    : constant                                                                                 #visitTransformConstant
+    | qualifiedName                                                                            #visitTransformReference
     ;
 
 primaryExpression
