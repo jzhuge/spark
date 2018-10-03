@@ -156,7 +156,7 @@ private[spark] abstract class MapOutputTracker(conf: SparkConf) extends Logging 
     // Synchronize on the returned array because, on the driver, it gets mutated in place
     statuses.synchronized {
       val totalSizes = new Array[Long](dep.partitioner.numPartitions)
-      for (s <- statuses) {
+      for (s <- statuses if s != null) {
         for (i <- 0 until totalSizes.length) {
           totalSizes(i) += s.getSizeForBlock(i)
         }
