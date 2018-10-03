@@ -157,28 +157,44 @@ class ParquetDDLTest(unittest.TestCase):
 
 class IcebergDDLTest(unittest.TestCase):
 
-#    def test_rename_table(self):
-#        with temp_table("test_rename") as t1:
-#            with temp_table("test_rename") as t2:
-#                sql("CREATE TABLE {0} (id bigint, data string) USING iceberg", t1)
-#
-#                sql("INSERT INTO {0} VALUES (1, 'a'), (2, 'b'), (3, 'c')", t1)
-#
-#                rows = collect(sql("select * from {0}", t1))
-#                self.assertEqual(rows, [
-#                        {'id': 1, 'data': 'a'},
-#                        {'id': 2, 'data': 'b'},
-#                        {'id': 3, 'data': 'c'}
-#                    ])
-#
-#                sql("ALTER TABLE {0} RENAME TO {1}", t1, t2)
-#
-#                rows = collect(sql("select * from {0}", t2))
-#                self.assertEqual(rows, [
-#                        {'id': 1, 'data': 'a'},
-#                        {'id': 2, 'data': 'b'},
-#                        {'id': 3, 'data': 'c'}
-#                    ])
+    def test_rename_table(self):
+        with temp_table("test_rename") as t1:
+            with temp_table("test_rename") as t2:
+                sql("CREATE TABLE {0} (id bigint, data string) USING iceberg", t1)
+
+                sql("INSERT INTO {0} VALUES (1, 'a'), (2, 'b'), (3, 'c')", t1)
+
+                rows = collect(sql("select * from {0}", t1))
+                self.assertEqual(rows, [
+                        {'id': 1, 'data': 'a'},
+                        {'id': 2, 'data': 'b'},
+                        {'id': 3, 'data': 'c'}
+                    ])
+
+                sql("ALTER TABLE {0} RENAME TO {1}", t1, t2)
+
+                rows = collect(sql("select * from {0}", t2))
+                self.assertEqual(rows, [
+                        {'id': 1, 'data': 'a'},
+                        {'id': 2, 'data': 'b'},
+                        {'id': 3, 'data': 'c'}
+                    ])
+
+    def test_create_hidden_partition_table(self):
+        with temp_table("test_hidden_partitions") as t:
+            sql("CREATE TABLE {0} (id bigint, data string, ts timestamp) USING iceberg PARTITIONED BY (date(ts))", t)
+
+            self.assertEqual(schema(t), [
+                    ('id', 'bigint'),
+                    ('data', 'string'),
+                    ('ts', 'timestamp')
+                ])
+
+            describe = sql("DESCRIBE FORMATTED {0}", t)
+
+            types = list(filter(lambda r: r['col_name'].strip() == 'Part 0', collect(describe)))
+            self.assertEqual(len(types), 1, "Should produce a 'Part 0' entry")
+            self.assertEqual(types[0]['data_type'].strip().lower(), 'date(ts)', "Should use date transform")
 
     def test_show_create_table(self):
         with temp_table("test_show_create") as t:
