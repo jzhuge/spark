@@ -84,9 +84,6 @@ echo ${BUILD_NUMBER} > ${WORKSPACE}/spark-${BUILD_VERSION}/BUILD
 cp netflix/run.py ${WORKSPACE}/spark-${BUILD_VERSION}/bin/run.py
 cp netflix/run-history.py ${WORKSPACE}/spark-${BUILD_VERSION}/bin/run-history.py
 
-# Overwrite dsespark-shell and dsespark-submit
-cp bin/dsespark-* spark-${BUILD_VERSION}/bin/
-
 # Update tarball
 tar -czf spark-${BUILD_VERSION}.tgz spark-${BUILD_VERSION}
 assume-role -a arn:aws:iam::219382154434:role/BDP_JENKINS_ROLE aws s3 cp spark-${BUILD_VERSION}.tgz s3://netflix-bigdataplatform/spark-builds/${BUILD_VERSION}/
