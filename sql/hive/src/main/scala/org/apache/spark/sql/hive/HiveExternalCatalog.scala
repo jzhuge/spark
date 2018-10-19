@@ -633,6 +633,9 @@ private[spark] class HiveExternalCatalog(conf: SparkConf, hadoopConf: Configurat
     client.getTableOption(db, table).map(restoreTableMetadata)
   }
 
+  private def getTableProvider(table: CatalogTable): Option[String] =
+    table.properties.get(DATASOURCE_PROVIDER).orElse(table.properties.get("provider"))
+
   /**
    * Restores table metadata from the table properties if it's a datasouce table. This method is
    * kind of a opposite version of [[createTable]].
@@ -648,7 +651,7 @@ private[spark] class HiveExternalCatalog(conf: SparkConf, hadoopConf: Configurat
     var table = inputTable
 
     if (table.tableType != VIEW) {
-      table.properties.get(DATASOURCE_PROVIDER) match {
+      getTableProvider(table) match {
         // No provider in table properties, which means this is a Hive serde table.
         case None =>
           table = restoreHiveSerdeTable(table)
