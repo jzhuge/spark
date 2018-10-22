@@ -460,6 +460,14 @@ case class ReplaceTableAsSelect(
 }
 
 /**
+ * Drop a table using a v2 catalog.
+ */
+case class DropTable(
+    catalog: TableCatalog,
+    table: TableIdentifier,
+    ifExists: Boolean) extends Command
+
+/**
  * Insert some data into a table. Note that this plan is unresolved and has to be replaced by the
  * concrete implementations during analysis.
  *
