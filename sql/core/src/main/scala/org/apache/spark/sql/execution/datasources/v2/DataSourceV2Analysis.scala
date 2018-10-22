@@ -85,13 +85,13 @@ class DataSourceV2Analysis(spark: SparkSession) extends Rule[LogicalPlan] {
 
     case CreateTableLikeCommand(targetIdent, V2TableReference(_, source), _, ifNotExists) =>
       CreateTable(catalog, ensureDatabaseIsSet(targetIdent),
-        source.schema, source.partitioning.asScala, source.properties.asScala.toMap, !ifNotExists)
+        source.schema, source.partitioning.asScala, source.properties.asScala.toMap, ifNotExists)
 
     case sql.CreateTable(ident, V2Provider(provider), schema, transforms, bucketSpec, options,
     ifNotExists) =>
       val partitioning = transforms ++ bucketSpec.map(PartitionUtil.convertBucketSpec).toSeq
       CreateTable(catalog, ensureDatabaseIsSet(ident),
-        schema, partitioning, options + ("provider" -> provider), ignoreIfExists = !ifNotExists)
+        schema, partitioning, options + ("provider" -> provider), ignoreIfExists = ifNotExists)
 
     case datasources.CreateTable(catalogTable, mode, None) if isV2Source(catalogTable, spark) =>
       val pathOption = catalogTable.storage.locationUri.map("path" -> CatalogUtils.URIToString(_))
@@ -118,7 +118,7 @@ class DataSourceV2Analysis(spark: SparkSession) extends Rule[LogicalPlan] {
     asSelect, ifNotExists) =>
       val partitioning = transforms ++ bucketSpec.map(PartitionUtil.convertBucketSpec).toSeq
       CreateTableAsSelect(catalog, ensureDatabaseIsSet(ident),
-        partitioning, asSelect, options + ("provider" -> provider), ignoreIfExists = !ifNotExists)
+        partitioning, asSelect, options + ("provider" -> provider), ignoreIfExists = ifNotExists)
 
     case datasources.CreateTable(catalogTable, mode, Some(query))
         if isV2Source(catalogTable, spark) =>
