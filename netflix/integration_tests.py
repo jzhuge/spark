@@ -195,6 +195,23 @@ class IcebergDDLTest(unittest.TestCase):
             types = list(filter(lambda r: r['col_name'].strip() == 'Part 0', collect(describe)))
             self.assertEqual(len(types), 1, "Should produce a 'Part 0' entry")
             self.assertEqual(types[0]['data_type'].strip().lower(), 'date(ts)', "Should use date transform")
+ 
+    def test_create_if_not_exists(self):
+        with temp_table("test_create_if_not_exists") as t:
+            sql("CREATE TABLE IF NOT EXISTS {0} (id bigint, data string) USING iceberg", t)
+ 
+            self.assertEqual(schema(t), [
+                    ('id', 'bigint'),
+                    ('data', 'string')
+                ])
+ 
+            sql("CREATE TABLE IF NOT EXISTS {0} (id bigint, data string, ts timestamp) USING iceberg", t)
+ 
+            # schema should be unchanged
+            self.assertEqual(schema(t), [
+                    ('id', 'bigint'),
+                    ('data', 'string')
+                ])
 
     def test_show_create_table(self):
         with temp_table("test_show_create") as t:
