@@ -23,7 +23,7 @@ import org.apache.spark.sql.Strategy
 import org.apache.spark.sql.catalyst.analysis.NamedRelation
 import org.apache.spark.sql.catalyst.expressions.{And, AttributeReference, AttributeSet, Expression}
 import org.apache.spark.sql.catalyst.planning.PhysicalOperation
-import org.apache.spark.sql.catalyst.plans.logical.{AlterTable, AppendData, CreateTable, CreateTableAsSelect, DeleteFrom, LogicalPlan, OverwritePartitionsDynamic, ReplaceTableAsSelect}
+import org.apache.spark.sql.catalyst.plans.logical.{AlterTable, AppendData, CreateTable, CreateTableAsSelect, DeleteFrom, DropTable, LogicalPlan, OverwritePartitionsDynamic, ReplaceTableAsSelect}
 import org.apache.spark.sql.execution.{FilterExec, ProjectExec, SparkPlan}
 import org.apache.spark.sql.execution.command.ExecutedCommandExec
 import org.apache.spark.sql.execution.datasources.DataSourceStrategy
@@ -116,6 +116,9 @@ object DataSourceV2Strategy extends Strategy {
 
     case cmd: DescribeTable =>
       ExecutedCommandExec(cmd, Nil) :: Nil
+
+    case DropTable(catalog, identifier, ifExists) =>
+      DropTableExec(catalog, identifier, ifExists) :: Nil
 
     case PhysicalOperation(project, filters, relation: NamedRelation)
         if relation.isInstanceOf[DataSourceV2Relation] || relation.isInstanceOf[TableV2Relation] =>
