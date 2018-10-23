@@ -84,8 +84,15 @@ class DataSourceV2Analysis(spark: SparkSession) extends Rule[LogicalPlan] {
       DescribeTable(table, isExtended)
 
     case CreateTableLikeCommand(targetIdent, V2TableReference(_, source), _, ifNotExists) =>
+      val sourceOptions = source.properties.asScala.toMap
+      val options =
+        if (!sourceOptions.contains("provider") && source.getClass.getName.contains("iceberg")) {
+          sourceOptions + ("provider" -> "iceberg")
+        } else {
+          sourceOptions
+        }
       CreateTable(catalog, ensureDatabaseIsSet(targetIdent),
-        source.schema, source.partitioning.asScala, source.properties.asScala.toMap, ifNotExists)
+        source.schema, source.partitioning.asScala, options, ifNotExists)
 
     case sql.CreateTable(ident, V2Provider(provider), schema, transforms, bucketSpec, options,
     ifNotExists) =>

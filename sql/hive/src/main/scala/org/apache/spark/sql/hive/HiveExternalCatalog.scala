@@ -688,6 +688,13 @@ private[spark] class HiveExternalCatalog(conf: SparkConf, hadoopConf: Configurat
   private def getTableProvider(table: CatalogTable): Option[String] =
     table.properties.get(DATASOURCE_PROVIDER).orElse(table.properties.get("provider"))
 
+  private def restoreIcebergTableMetadata(table: CatalogTable): CatalogTable =
+    if (getTableProvider(table).isEmpty && NetflixAnalysis.isIcebergTable(table)) {
+      table.copy(properties = table.properties + ("provider" -> "iceberg"))
+    } else {
+      table
+    }
+
   /**
    * Restores table metadata from the table properties. This method is kind of a opposite version
    * of [[createTable]].
@@ -700,7 +707,7 @@ private[spark] class HiveExternalCatalog(conf: SparkConf, hadoopConf: Configurat
       return inputTable
     }
 
-    var table = inputTable
+    var table = restoreIcebergTableMetadata(inputTable)
 
     getTableProvider(table) match {
       case None if table.tableType == VIEW =>
