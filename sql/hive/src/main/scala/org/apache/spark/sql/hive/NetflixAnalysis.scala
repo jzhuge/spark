@@ -24,7 +24,7 @@ import com.netflix.iceberg.spark.source.IcebergMetacatSource
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalog.v2.{CatalogV2Implicits, TableCatalog}
 import org.apache.spark.sql.catalyst.catalog.CatalogTable
-import org.apache.spark.sql.catalyst.plans.logical.{AlterTable, CreateTable, CreateTableAsSelect, LogicalPlan}
+import org.apache.spark.sql.catalyst.plans.logical.{AlterTable, CreateTable, CreateTableAsSelect, DropTable, LogicalPlan}
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution.datasources.LogicalRelation
 import org.apache.spark.sql.execution.datasources.v2.{DataSourceV2Relation, TableV2Relation, V2AsBaseRelation}
@@ -54,6 +54,11 @@ class NetflixAnalysis(spark: SparkSession) extends Rule[LogicalPlan] {
     case ctas @ CreateTableAsSelect(catalog, _, _, _, options, _)
         if shouldReplaceCatalog(catalog, options.get("provider")) =>
       ctas.copy(catalog = icebergCatalog)
+
+    case drop @ DropTable(catalog, identifier, _)
+        if shouldReplaceCatalog(catalog,
+          Option(catalog.loadTable(identifier).properties.get("provider"))) =>
+      drop.copy(catalog = icebergCatalog)
 
     // this case is only used for older iceberg tables that don't have the provider set
     case rel: MetastoreRelation if isIcebergTable(rel.catalogTable) =>
