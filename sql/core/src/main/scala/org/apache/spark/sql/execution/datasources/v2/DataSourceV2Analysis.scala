@@ -149,6 +149,7 @@ class DataSourceV2Analysis(spark: SparkSession) extends Rule[LogicalPlan] {
     case insert @ InsertIntoTable(LogicalRelation(v2: V2AsBaseRelation, _, _, _), _, _, _, _, _) =>
       // the DataFrame API doesn't create INSERT INTO plans for v2 tables, so this must be
       // SQL and should match columns by position, not by name.
+      assert(!insert.isFromDataFrame)
 
       // ifNotExists is append with validation, but validation is not supported
       if (insert.ifPartitionNotExists) {
