@@ -88,10 +88,12 @@ class DataSourceV2Analysis(spark: SparkSession) extends Rule[LogicalPlan] {
 
     case CreateTableLikeCommand(targetIdent, V2TableReference(_, source), ifNotExists) =>
       val sourceOptions = source.properties.asScala.toMap
-      val options = Some(sourceOptions)
-        .filter(_.contains("provider"))
-        .filterNot(_ => source.getClass.getName.contains("iceberg"))
-        .getOrElse(sourceOptions + ("provider" -> "iceberg"))
+      val options =
+        if (!sourceOptions.contains("provider") && source.getClass.getName.contains("iceberg")) {
+          sourceOptions + ("provider" -> "iceberg")
+        } else {
+          sourceOptions
+        }
       CreateTable(catalog, ensureDatabaseIsSet(targetIdent),
         source.schema, source.partitioning.asScala, options, ifNotExists)
 
