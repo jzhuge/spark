@@ -231,7 +231,7 @@
   <repositories>
     <repository>
       <id>nfrepo-everything-pom</id>
-      <url>https://artifacts.netflix.com/nfrepo-everything-pom</url>
+      <url>https://repo.test.netflix.net/artifactory/nfrepo-everything-pom</url>
       <releases>
         <enabled>true</enabled>
       </releases>
@@ -243,7 +243,7 @@
   <pluginRepositories>
     <pluginRepository>
       <id>nfrepo-everything-pom</id>
-      <url>https://artifacts.netflix.com/nfrepo-everything-pom</url>
+      <url>https://repo.test.netflix.net/artifactory/nfrepo-everything-pom</url>
       <releases>
         <enabled>true</enabled>
       </releases>
