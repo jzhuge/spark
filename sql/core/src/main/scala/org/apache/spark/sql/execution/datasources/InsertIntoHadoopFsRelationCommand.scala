@@ -66,15 +66,16 @@ case class InsertIntoHadoopFsRelationCommand(
   override def run(sparkSession: SparkSession, children: Seq[SparkPlan]): Seq[Row] = {
     assert(children.length == 1)
 
-    // Most formats don't do well with duplicate columns, so lets not allow that
-    if (query.schema.fieldNames.length != query.schema.fieldNames.distinct.length) {
-      val duplicateColumns = query.schema.fieldNames.groupBy(identity).collect {
-        case (x, ys) if ys.length > 1 => "\"" + x + "\""
-      }.mkString(", ")
-      throw new AnalysisException(s"Duplicate column(s) : $duplicateColumns found, " +
+    if(sparkSession.conf.get("spark.mode.queryservice", "false") == "false") {
+      // Most formats don't do well with duplicate columns, so lets not allow that
+      if (query.schema.fieldNames.length != query.schema.fieldNames.distinct.length) {
+        val duplicateColumns = query.schema.fieldNames.groupBy(identity).collect {
+          case (x, ys) if ys.length > 1 => "\"" + x + "\""
+        }.mkString(", ")
+        throw new AnalysisException(s"Duplicate column(s) : $duplicateColumns found, " +
           s"cannot save to file.")
+      }
     }
-
     val hadoopConf = sparkSession.sessionState.newHadoopConfWithOptions(options)
     val fs = outputPath.getFileSystem(hadoopConf)
     val qualifiedOutputPath = outputPath.makeQualified(fs.getUri, fs.getWorkingDirectory)
