@@ -182,6 +182,12 @@ private[spark] class IndexShuffleBlockResolver(
           if (dataTmp != null && dataTmp.exists() && !dataTmp.renameTo(dataFile)) {
             throw new IOException("fail to rename file " + dataTmp + " to " + dataFile)
           }
+
+          logInfo("listing parent of datatmp file:" +
+              new File(dataTmp.getParent()).listFiles().mkString(","))
+
+          logInfo("listing parent of data file:" +
+            new File(dataFile.getParent()).listFiles().mkString(","))
         }
       }
     } finally {
