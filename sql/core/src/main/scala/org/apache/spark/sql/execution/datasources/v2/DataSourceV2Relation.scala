@@ -150,6 +150,8 @@ case class StreamingDataSourceV2Relation(
 
   override def simpleString: String = "Streaming RelationV2 " + metadataString
 
+  override def pushedFilters: Seq[Expression] = Nil
+
   override def newInstance(): LogicalPlan = copy(output = output.map(_.newInstance()))
 
   // TODO: unify the equal/hashCode implementation for all data source v2 query plans.
