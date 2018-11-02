@@ -2,6 +2,9 @@
 
 set -e
 
+# work-around for environment changes in Jenkins
+export JAVA_HOME=/apps/java
+
 # configure the environment to build SparkR
 if ! grep 'cran' /etc/apt/sources.list; then
   sudo apt-key adv --keyserver keyserver.ubuntu.com --recv-keys E084DAB9
