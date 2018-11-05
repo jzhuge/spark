@@ -86,6 +86,9 @@ cp netflix/run-history.py ${WORKSPACE}/spark-${BUILD_VERSION}/bin/run-history.py
 
 # Update tarball
 tar -czf spark-${BUILD_VERSION}.tgz spark-${BUILD_VERSION}
-assume-role -a arn:aws:iam::219382154434:role/BDP_JENKINS_ROLE aws s3 cp spark-${BUILD_VERSION}.tgz s3://netflix-bigdataplatform/spark-builds/${BUILD_VERSION}/
-assume-role -a arn:aws:iam::219382154434:role/BDP_JENKINS_ROLE aws s3 cp spark-${BUILD_VERSION}.tgz s3://netflix-bigdataplatform/spark-builds/${BUILD_VERSION}/spark-${BUILD_VERSION}-${BUILD_NUMBER}.tgz
+
+source netflix/assume_role.sh
+
+aws s3 cp spark-${BUILD_VERSION}.tgz s3://netflix-bigdataplatform/spark-builds/${BUILD_VERSION}/
+aws s3 cp spark-${BUILD_VERSION}.tgz s3://netflix-bigdataplatform/spark-builds/${BUILD_VERSION}/spark-${BUILD_VERSION}-${BUILD_NUMBER}.tgz
 
