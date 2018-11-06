@@ -107,7 +107,7 @@ aws s3 cp spark-${BUILD_VERSION}.tgz s3://netflix-bigdataplatform/spark-builds/$
 
 # run integration tests
 if [ ! -f hadoop.tar.gz ]; then
-  assume-role -a arn:aws:iam::219382154434:role/BDP_JENKINS_ROLE aws s3 cp s3://netflix-bigdataplatform/apps/hadoop-spinnaker/2.7.3/hadoop.tar.gz hadoop.tar.gz
+  aws s3 cp s3://netflix-bigdataplatform/apps/hadoop-spinnaker/2.7.3/hadoop.tar.gz hadoop.tar.gz
   mkdir -p tmp
   tar xzf hadoop.tar.gz -C tmp/
 fi
