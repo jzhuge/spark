@@ -755,9 +755,9 @@ object ApplicationMaster extends Logging {
     def lockString: String = {
       lock match {
         case _: MonitorInfo =>
-          s"Monitor($lock:${lock.getClassName}@${lock.getIdentityHashCode}})"
+          s"Monitor($lock)"
         case _ =>
-          s"Lock($lock:${lock.getClassName}@${lock.getIdentityHashCode}})"
+          s"Lock($lock)"
       }
     }
   }
@@ -772,15 +772,15 @@ object ApplicationMaster extends Logging {
 
       ManagementFactory.getThreadMXBean.dumpAllThreads(true, true).foreach { info =>
         val thread = threads.get(info.getThreadId)
-        val blockedBy = Option(info.getLockInfo).map(lock => s" blockedOn${lock.lockString}")
+        val blockedBy = Option(info.getLockInfo).map(lock => s" blockedOn=${lock.lockString}")
         val heldLocks = (info.getLockedSynchronizers ++ info.getLockedMonitors).map(_.lockString)
               .toSet.mkString("[", ", ", "]")
-        val summary = s"'${info.getThreadName}' " +
-            s"tid=${info.getThreadId} " +
-            s"daemon=${thread.map(_.isDaemon).getOrElse("?")} " +
-            s"state=${info.getThreadState}" +
+        val summary = s"'${info.getThreadName}'" +
+            s" tid=${info.getThreadId}" +
+            s" daemon=${thread.map(_.isDaemon).getOrElse("?")}" +
+            s" state=${info.getThreadState}" +
             blockedBy.getOrElse("") +
-            s"heldLocks=$heldLocks"
+            s" heldLocks=$heldLocks"
 
         val monitors = info.getLockedMonitors.map(m => m.getLockedStackFrame -> m).toMap
         val trace = info.getStackTrace.map { frame =>
@@ -790,10 +790,10 @@ object ApplicationMaster extends Logging {
             case None =>
               frame.toString
           }
-        }.mkString("\t" + "\n\t")
+        }.mkString("\t", "\n\t", "")
 
         // scalastyle:off println
-        System.err.println(s"$summary\n$trace")
+        System.err.println(s"\n$summary\n$trace")
         // scalastyle:on println
       }
 
