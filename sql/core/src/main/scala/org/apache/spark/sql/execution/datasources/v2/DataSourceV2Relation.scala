@@ -46,7 +46,6 @@ case class DataSourceV2Relation(
     source: DataSourceV2,
     output: Seq[AttributeReference],
     options: Map[String, String],
-    path: Option[String] = None,
     tableIdent: Option[TableIdentifier] = None,
     userSpecifiedSchema: Option[StructType] = None)
   extends LeafNode
@@ -65,29 +64,22 @@ case class DataSourceV2Relation(
 
   override def simpleString: String = "RelationV2 " + metadataString
 
-  lazy val v2Options: DataSourceOptions = makeV2Options(options, path, tableIdent)
-
-  def newReader(): DataSourceReader = source.createReader(options, v2Options, userSpecifiedSchema)
-
-  lazy val writer = (dfSchema: StructType, mode: SaveMode) => {
-    val writer =
-      source.asWriteSupport.createWriter(UUID.randomUUID.toString, dfSchema, mode, v2Options)
-    if (writer.isPresent) Some(writer.get()) else None
-  }
+  def newReader(): DataSourceReader = source.createReader(options, userSpecifiedSchema)
 
   def newWriter(): DataSourceWriter = source.createWriter(options, schema)
 
-  override def computeStats(): Statistics = newReader match {
-    case r: SupportsReportStatistics =>
-      Statistics(sizeInBytes = r.getStatistics.sizeInBytes().orElse(conf.defaultSizeInBytes))
-    case _ =>
-      Statistics(sizeInBytes = conf.defaultSizeInBytes)
+  override def newInstance(): DataSourceV2Relation = {
+    copy(output = output.map(_.newInstance()))
   }
 
-  override def catalogTable: CatalogTable = CatalogTable(
-    tableIdent.getOrElse(path
-        .map(p => TableIdentifier(p.substring(p.lastIndexOf("/") + 1)))
-        .getOrElse(TableIdentifier("unknown"))),
+  private lazy val tableIdentifier: TableIdentifier = {
+    tableIdent.orElse(options.get("table").map(TableIdentifier(_, options.get("database"))))
+        .orElse(options.get("path").map(p => TableIdentifier(p.substring(p.lastIndexOf("/") + 1))))
+        .getOrElse(TableIdentifier("unknown"))
+  }
+
+  lazy val catalogTable: CatalogTable = CatalogTable(
+    tableIdentifier,
     CatalogTableType.EXTERNAL,
     CatalogStorageFormat(options.get("path").map(CatalogUtils.stringToURI), None, None, None,
       compressed = true, options),
@@ -95,8 +87,11 @@ case class DataSourceV2Relation(
     Some(source.name)
   )
 
-  override def newInstance(): DataSourceV2Relation = {
-    copy(output = output.map(_.newInstance()))
+  override def computeStats(): Statistics = newReader match {
+    case r: SupportsReportStatistics =>
+      Statistics(sizeInBytes = r.getStatistics.sizeInBytes().orElse(conf.defaultSizeInBytes))
+    case _ =>
+      Statistics(sizeInBytes = conf.defaultSizeInBytes)
   }
 }
 
@@ -172,8 +167,8 @@ object DataSourceV2Relation {
 
     def createReader(
         options: Map[String, String],
-        v2Options: DataSourceOptions,
         userSpecifiedSchema: Option[StructType]): DataSourceReader = {
+      val v2Options = new DataSourceOptions(options.asJava)
       userSpecifiedSchema match {
         case Some(s) =>
           asReadSupport.createReader(s, v2Options)
@@ -190,33 +185,15 @@ object DataSourceV2Relation {
     }
   }
 
-  private def makeV2Options(options: Map[String, String], path: Option[String],
-                            table: Option[TableIdentifier]): DataSourceOptions = {
-    // ensure path and table options are set correctly
-    val updatedOptions = new mutable.HashMap[String, String]
-
-    updatedOptions ++= options
-
-    path.foreach(p => updatedOptions.put("path", p))
-    table.foreach { ident =>
-      updatedOptions.put("table", ident.table)
-      ident.database.map(db => updatedOptions.put("database", db))
-    }
-
-    new DataSourceOptions(updatedOptions.asJava)
-  }
-
   def create(
       source: DataSourceV2,
       options: Map[String, String],
-      path: Option[String] = None,
       tableIdent: Option[TableIdentifier] = None,
       userSpecifiedSchema: Option[StructType] = None): DataSourceV2Relation = {
-    val v2Options = makeV2Options(options, path, tableIdent)
-    val reader = source.createReader(options, v2Options, userSpecifiedSchema)
+    val reader = source.createReader(options, userSpecifiedSchema)
     val ident = tableIdent.orElse(tableFromOptions(options))
     DataSourceV2Relation(
-      source, reader.readSchema().toAttributes, options, path, ident, userSpecifiedSchema)
+      source, reader.readSchema().toAttributes, options, ident, userSpecifiedSchema)
   }
 
   private def tableFromOptions(options: Map[String, String]): Option[TableIdentifier] = {

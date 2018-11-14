@@ -149,7 +149,7 @@ object DataSourceV2Strategy extends Strategy {
         case (true, true) =>
           SaveMode.ErrorIfExists
       }
-      WriteToDataSourceV2Exec(relation.writer(child.schema, mode).get, planLater(child)) :: Nil
+      WriteToDataSourceV2Exec(relation.newWriter(), planLater(child)) :: Nil
 
     case _ => Nil
   }
