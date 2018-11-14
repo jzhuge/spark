@@ -751,20 +751,20 @@ object ApplicationMaster extends Logging {
 
   private var master: ApplicationMaster = _
 
+  private implicit class Lock(lock: LockInfo) {
+    def lockString: String = {
+      lock match {
+        case _: MonitorInfo =>
+          s"Monitor($lock:${lock.getClassName}@${lock.getIdentityHashCode}})"
+        case _ =>
+          s"Lock($lock:${lock.getClassName}@${lock.getIdentityHashCode}})"
+      }
+    }
+  }
+
   def main(args: Array[String]): Unit = {
     SignalUtils.registerLogger(log)
     SignalUtils.register("TERM") {
-      private implicit class Lock(lock: LockInfo) {
-        def lockString: String = {
-          lock match {
-            case _: MonitorInfo =>
-              s"Monitor($lock:${lock.getClassName}@${lock.getIdentityHashCode}})"
-            case _ =>
-              s"Lock($lock:${lock.getClassName}@${lock.getIdentityHashCode}})"
-          }
-        }
-      }
-
       // raise SIGQUIT to print the stack trace to stderr, with thread daemon status
       val threads = Thread.getAllStackTraces.asScala.map {
         case (thread, _) => thread.getId -> thread
