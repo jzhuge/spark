@@ -18,10 +18,12 @@
 package org.apache.spark.deploy.yarn
 
 import java.io.{File, IOException}
+import java.lang.management.{LockInfo, ManagementFactory, MonitorInfo}
 import java.lang.reflect.InvocationTargetException
 import java.net.{Socket, URI, URL}
-import java.util.concurrent.{TimeoutException, TimeUnit}
+import java.util.concurrent.{TimeUnit, TimeoutException}
 
+import scala.collection.JavaConverters._
 import scala.collection.mutable.HashMap
 import scala.concurrent.Promise
 import scala.concurrent.duration.Duration
@@ -32,7 +34,6 @@ import org.apache.hadoop.yarn.api._
 import org.apache.hadoop.yarn.api.records._
 import org.apache.hadoop.yarn.conf.YarnConfiguration
 import org.apache.hadoop.yarn.util.{ConverterUtils, Records}
-import sun.misc.Signal
 
 import org.apache.spark._
 import org.apache.spark.deploy.SparkHadoopUtil
@@ -753,8 +754,47 @@ object ApplicationMaster extends Logging {
   def main(args: Array[String]): Unit = {
     SignalUtils.registerLogger(log)
     SignalUtils.register("TERM") {
+      private implicit class Lock(lock: LockInfo) {
+        def lockString: String = {
+          lock match {
+            case _: MonitorInfo =>
+              s"Monitor($lock:${lock.getClassName}@${lock.getIdentityHashCode}})"
+            case _ =>
+              s"Lock($lock:${lock.getClassName}@${lock.getIdentityHashCode}})"
+          }
+        }
+      }
+
       // raise SIGQUIT to print the stack trace to stderr, with thread daemon status
-      Signal.raise(new Signal("QUIT"))
+      val threads = Thread.getAllStackTraces.asScala.map {
+        case (thread, _) => thread.getId -> thread
+      }.toMap
+
+      ManagementFactory.getThreadMXBean.dumpAllThreads(true, true).foreach { info =>
+        val thread = threads.get(info.getThreadId)
+        val blockedBy = Option(info.getLockInfo).map(lock => s" blockedOn${lock.lockString}")
+        val heldLocks = (info.getLockedSynchronizers ++ info.getLockedMonitors).map(_.lockString)
+              .toSet.mkString("[", ", ", "]")
+        val summary = s"\"${info.getThreadName}\" " +
+            s"tid=${info.getThreadId} " +
+            s"daemon=${thread.map(_.isDaemon).getOrElse("?")} " +
+            s"state=${info.getThreadState}" +
+            blockedBy.getOrElse("") +
+            s"heldLocks=$heldLocks"
+
+        val monitors = info.getLockedMonitors.map(m => m.getLockedStackFrame -> m).toMap
+        val trace = info.getStackTrace.map { frame =>
+          monitors.get(frame) match {
+            case Some(lock) =>
+              lock.getLockedStackFrame.toString + s" => holding ${lock.lockString}"
+            case None =>
+              frame.toString
+          }
+        }.mkString("\t" + "\n\t")
+
+        System.err.println(s"$summary\n$trace")
+      }
+
       false
     }
     val amArgs = new ApplicationMasterArguments(args)
