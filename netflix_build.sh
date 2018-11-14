@@ -93,17 +93,7 @@ cp bin/dsespark-* spark-${BUILD_VERSION}/bin/
 # Update tarball and deploy the build, but not the application tarball
 tar -czf spark-${BUILD_VERSION}.tgz spark-${BUILD_VERSION}
 
-export BUILD_CREDENTIALS=$( \
-  aws sts assume-role \
-    --role-arn arn:aws:iam::219382154434:role/BDP_JENKINS_ROLE \
-    --role-session-name $USER \
-  | jq '.Credentials')
-
-export AWS_ACCESS_KEY_ID=$(jq -r '.AccessKeyId' <<<$BUILD_CREDENTIALS)
-export AWS_SECRET_ACCESS_KEY=$(jq -r '.SecretAccessKey' <<<$BUILD_CREDENTIALS)
-export AWS_SESSION_TOKEN=$(jq -r '.SessionToken' <<<$BUILD_CREDENTIALS)
-
-aws s3 cp spark-${BUILD_VERSION}.tgz s3://netflix-bigdataplatform/spark-builds/${BUILD_VERSION}/spark-${BUILD_VERSION}-${BUILD_NUMBER}.tgz
+bash assume_role.sh aws s3 cp spark-${BUILD_VERSION}.tgz s3://netflix-bigdataplatform/spark-builds/${BUILD_VERSION}/spark-${BUILD_VERSION}-${BUILD_NUMBER}.tgz
 
 # run integration tests
 if [ ! -f hadoop.tar.gz ]; then
@@ -119,7 +109,7 @@ if ${WORKSPACE}/spark-${BUILD_VERSION}/bin/spark-submit netflix/integration_test
   echo
   echo 'Integration tests PASSED. Deploying tarball to app location.'
   echo
-  aws s3 cp spark-${BUILD_VERSION}.tgz s3://netflix-bigdataplatform/spark-builds/${BUILD_VERSION}/
+  bash assume_role.sh aws s3 cp spark-${BUILD_VERSION}.tgz s3://netflix-bigdataplatform/spark-builds/${BUILD_VERSION}/
 else
   echo
   echo 'Integration tests FAILED. Aborting tarball deploy to app location.'
