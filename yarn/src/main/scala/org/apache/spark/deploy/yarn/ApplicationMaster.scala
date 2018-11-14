@@ -21,7 +21,7 @@ import java.io.{File, IOException}
 import java.lang.management.{LockInfo, ManagementFactory, MonitorInfo}
 import java.lang.reflect.InvocationTargetException
 import java.net.{Socket, URI, URL}
-import java.util.concurrent.{TimeUnit, TimeoutException}
+import java.util.concurrent.{TimeoutException, TimeUnit}
 
 import scala.collection.JavaConverters._
 import scala.collection.mutable.HashMap
@@ -775,7 +775,7 @@ object ApplicationMaster extends Logging {
         val blockedBy = Option(info.getLockInfo).map(lock => s" blockedOn${lock.lockString}")
         val heldLocks = (info.getLockedSynchronizers ++ info.getLockedMonitors).map(_.lockString)
               .toSet.mkString("[", ", ", "]")
-        val summary = s"\"${info.getThreadName}\" " +
+        val summary = s"'${info.getThreadName}' " +
             s"tid=${info.getThreadId} " +
             s"daemon=${thread.map(_.isDaemon).getOrElse("?")} " +
             s"state=${info.getThreadState}" +
@@ -792,7 +792,9 @@ object ApplicationMaster extends Logging {
           }
         }.mkString("\t" + "\n\t")
 
+        // scalastyle:off println
         System.err.println(s"$summary\n$trace")
+        // scalastyle:on println
       }
 
       false
