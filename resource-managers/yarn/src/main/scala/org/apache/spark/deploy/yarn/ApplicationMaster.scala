@@ -18,11 +18,13 @@
 package org.apache.spark.deploy.yarn
 
 import java.io.{File, IOException}
+import java.lang.management.{LockInfo, ManagementFactory, MonitorInfo}
 import java.lang.reflect.InvocationTargetException
 import java.net.{Socket, URI, URL}
 import java.security.PrivilegedExceptionAction
 import java.util.concurrent.{TimeoutException, TimeUnit}
 
+import scala.collection.JavaConverters._
 import scala.collection.mutable.HashMap
 import scala.concurrent.Promise
 import scala.concurrent.duration.Duration
@@ -832,8 +834,66 @@ object ApplicationMaster extends Logging {
 
   private var master: ApplicationMaster = _
 
+  private implicit class Lock(lock: LockInfo) {
+    def lockString: String = {
+      lock match {
+        case _: MonitorInfo =>
+          s"Monitor($lock)"
+        case _ =>
+          s"Lock($lock)"
+      }
+    }
+  }
+
+  private def printStacks(): Unit = {
+    // raise SIGQUIT to print the stack trace to stderr, with thread daemon status
+    val threads = Thread.getAllStackTraces.asScala.map {
+      case (thread, _) => thread.getId -> thread
+    }.toMap
+
+    ManagementFactory.getThreadMXBean.dumpAllThreads(true, true).foreach { info =>
+      val thread = threads.get(info.getThreadId)
+      val blockedBy = Option(info.getLockInfo).map(lock => s" blockedOn=${lock.lockString}")
+      val heldLocks = (info.getLockedSynchronizers ++ info.getLockedMonitors).map(_.lockString)
+          .toSet.mkString("[", ", ", "]")
+      val summary = s"'${info.getThreadName}'" +
+          s" tid=${info.getThreadId}" +
+          s" daemon=${thread.map(_.isDaemon).getOrElse("?")}" +
+          s" state=${info.getThreadState}" +
+          blockedBy.getOrElse("") +
+          s" heldLocks=$heldLocks"
+
+      val monitors = info.getLockedMonitors.map(m => m.getLockedStackFrame -> m).toMap
+      val trace = info.getStackTrace.map { frame =>
+        monitors.get(frame) match {
+          case Some(lock) =>
+            lock.getLockedStackFrame.toString + s" => holding ${lock.lockString}"
+          case None =>
+            frame.toString
+        }
+      }.mkString("\t", "\n\t", "")
+
+      // scalastyle:off println
+      System.err.println(s"\n$summary\n$trace")
+      // scalastyle:on println
+    }
+  }
+
   def main(args: Array[String]): Unit = {
     SignalUtils.registerLogger(log)
+
+    // register a hook to run a daemon thread that waits 1 minute and dumps stacks if still running
+    ShutdownHookManager.addShutdownHook { () =>
+      val thread = new Thread("dump-threads") {
+        override def run(): Unit = {
+          Thread.sleep(60000)
+          printStacks()
+        }
+      }
+      thread.setDaemon(true)
+      thread.start()
+    }
+
     val amArgs = new ApplicationMasterArguments(args)
     master = new ApplicationMaster(amArgs)
     System.exit(master.run())
