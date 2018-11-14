@@ -95,7 +95,7 @@ tar -czf spark-${BUILD_VERSION}.tgz spark-${BUILD_VERSION}
 
 export BUILD_CREDENTIALS=$( \
   aws sts assume-role \
-    --role-arn arn:aws:iam::219382154434:role/BDP_JENKINS_ROLE \
+    --role-arn arn:aws:iam::219382154434:role/DATAOVEN_S3_ROLE \
     --role-session-name $USER \
   | jq '.Credentials')
 
