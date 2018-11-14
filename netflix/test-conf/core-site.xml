@@ -52,7 +52,7 @@
 
   <property>
     <name>aws.iam.role.arn.default</name>
-    <value>arn:aws:iam::219382154434:role/DATAOVEN_S3_ROLE</value>
+    <value>arn:aws:iam::219382154434:role/BDP_JENKINS_ROLE</value>
   </property>
 
   <property>
