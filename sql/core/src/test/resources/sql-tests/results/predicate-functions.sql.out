@@ -13,7 +13,7 @@ true
 -- !query 1
 select 1 = '1'
 -- !query 1 schema
-struct<(1 = CAST(1 AS INT)):boolean>
+struct<(CAST(1 AS BIGINT) = CAST(1 AS BIGINT)):boolean>
 -- !query 1 output
 true
 
@@ -37,7 +37,7 @@ false
 -- !query 4
 select 1 > '1'
 -- !query 4 schema
-struct<(1 > CAST(1 AS INT)):boolean>
+struct<(CAST(1 AS BIGINT) > CAST(1 AS BIGINT)):boolean>
 -- !query 4 output
 false
 
@@ -45,7 +45,7 @@ false
 -- !query 5
 select 2 > '1.0'
 -- !query 5 schema
-struct<(2 > CAST(1.0 AS INT)):boolean>
+struct<(CAST(2 AS BIGINT) > CAST(1.0 AS BIGINT)):boolean>
 -- !query 5 output
 true
 
@@ -53,7 +53,7 @@ true
 -- !query 6
 select 2 > '2.0'
 -- !query 6 schema
-struct<(2 > CAST(2.0 AS INT)):boolean>
+struct<(CAST(2 AS BIGINT) > CAST(2.0 AS BIGINT)):boolean>
 -- !query 6 output
 false
 
@@ -61,7 +61,7 @@ false
 -- !query 7
 select 2 > '2.2'
 -- !query 7 schema
-struct<(2 > CAST(2.2 AS INT)):boolean>
+struct<(CAST(2 AS BIGINT) > CAST(2.2 AS BIGINT)):boolean>
 -- !query 7 output
 false
 
@@ -93,7 +93,7 @@ false
 -- !query 11
 select 1 >= '1'
 -- !query 11 schema
-struct<(1 >= CAST(1 AS INT)):boolean>
+struct<(CAST(1 AS BIGINT) >= CAST(1 AS BIGINT)):boolean>
 -- !query 11 output
 true
 
@@ -101,7 +101,7 @@ true
 -- !query 12
 select 2 >= '1.0'
 -- !query 12 schema
-struct<(2 >= CAST(1.0 AS INT)):boolean>
+struct<(CAST(2 AS BIGINT) >= CAST(1.0 AS BIGINT)):boolean>
 -- !query 12 output
 true
 
@@ -109,7 +109,7 @@ true
 -- !query 13
 select 2 >= '2.0'
 -- !query 13 schema
-struct<(2 >= CAST(2.0 AS INT)):boolean>
+struct<(CAST(2 AS BIGINT) >= CAST(2.0 AS BIGINT)):boolean>
 -- !query 13 output
 true
 
@@ -149,7 +149,7 @@ false
 -- !query 18
 select 1 < '1'
 -- !query 18 schema
-struct<(1 < CAST(1 AS INT)):boolean>
+struct<(CAST(1 AS BIGINT) < CAST(1 AS BIGINT)):boolean>
 -- !query 18 output
 false
 
@@ -157,7 +157,7 @@ false
 -- !query 19
 select 2 < '1.0'
 -- !query 19 schema
-struct<(2 < CAST(1.0 AS INT)):boolean>
+struct<(CAST(2 AS BIGINT) < CAST(1.0 AS BIGINT)):boolean>
 -- !query 19 output
 false
 
@@ -165,7 +165,7 @@ false
 -- !query 20
 select 2 < '2.0'
 -- !query 20 schema
-struct<(2 < CAST(2.0 AS INT)):boolean>
+struct<(CAST(2 AS BIGINT) < CAST(2.0 AS BIGINT)):boolean>
 -- !query 20 output
 false
 
@@ -205,7 +205,7 @@ true
 -- !query 25
 select 1 <= '1'
 -- !query 25 schema
-struct<(1 <= CAST(1 AS INT)):boolean>
+struct<(CAST(1 AS BIGINT) <= CAST(1 AS BIGINT)):boolean>
 -- !query 25 output
 true
 
@@ -213,7 +213,7 @@ true
 -- !query 26
 select 2 <= '1.0'
 -- !query 26 schema
-struct<(2 <= CAST(1.0 AS INT)):boolean>
+struct<(CAST(2 AS BIGINT) <= CAST(1.0 AS BIGINT)):boolean>
 -- !query 26 output
 false
 
@@ -221,7 +221,7 @@ false
 -- !query 27
 select 2 <= '2.0'
 -- !query 27 schema
-struct<(2 <= CAST(2.0 AS INT)):boolean>
+struct<(CAST(2 AS BIGINT) <= CAST(2.0 AS BIGINT)):boolean>
 -- !query 27 output
 true
 
