@@ -613,7 +613,7 @@ NULL
 -- !query 73
 SELECT cast(1 as int) = '1' FROM t
 -- !query 73 schema
-struct<(CAST(1 AS INT) = CAST(1 AS INT)):boolean>
+struct<(CAST(CAST(1 AS INT) AS BIGINT) = CAST(1 AS BIGINT)):boolean>
 -- !query 73 output
 true
 
@@ -621,7 +621,7 @@ true
 -- !query 74
 SELECT cast(1 as int) > '2' FROM t
 -- !query 74 schema
-struct<(CAST(1 AS INT) > CAST(2 AS INT)):boolean>
+struct<(CAST(CAST(1 AS INT) AS BIGINT) > CAST(2 AS BIGINT)):boolean>
 -- !query 74 output
 false
 
@@ -629,7 +629,7 @@ false
 -- !query 75
 SELECT cast(1 as int) >= '2' FROM t
 -- !query 75 schema
-struct<(CAST(1 AS INT) >= CAST(2 AS INT)):boolean>
+struct<(CAST(CAST(1 AS INT) AS BIGINT) >= CAST(2 AS BIGINT)):boolean>
 -- !query 75 output
 false
 

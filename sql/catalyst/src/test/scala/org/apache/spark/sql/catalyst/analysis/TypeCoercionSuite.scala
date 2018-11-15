@@ -1253,7 +1253,7 @@ class TypeCoercionSuite extends AnalysisTest {
   test("binary comparison with string promotion") {
     ruleTest(PromoteStrings,
       GreaterThan(Literal("123"), Literal(1)),
-      GreaterThan(Cast(Literal("123"), IntegerType), Literal(1)))
+      GreaterThan(Cast(Literal("123"), LongType), Cast(Literal(1), LongType)))
     ruleTest(PromoteStrings,
       LessThan(Literal(true), Literal("123")),
       LessThan(Literal(true), Cast(Literal("123"), BooleanType)))

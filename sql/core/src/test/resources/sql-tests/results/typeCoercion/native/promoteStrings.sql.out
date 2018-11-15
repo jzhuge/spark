@@ -1181,7 +1181,7 @@ true
 -- !query 141
 SELECT '1' = cast(1 as int)                             FROM t
 -- !query 141 schema
-struct<(CAST(1 AS INT) = CAST(1 AS INT)):boolean>
+struct<(CAST(1 AS BIGINT) = CAST(1 AS BIGINT)):boolean>
 -- !query 141 output
 true
 
