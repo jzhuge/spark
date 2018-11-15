@@ -808,7 +808,7 @@ object ApplicationMaster extends Logging {
         }
       }
       thread.setDaemon(true)
-      thread.run()
+      thread.start()
     }
 
     val amArgs = new ApplicationMasterArguments(args)
