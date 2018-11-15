@@ -518,6 +518,7 @@ class FileSuite extends SparkFunSuite with LocalSparkContext {
       .setAppName("test")
       .setMaster("local")
       .set(HADOOP_RDD_IGNORE_EMPTY_SPLITS, true)
+      .set("spark.sql.files.maxPartitionBytes", "0")
     sc = new SparkContext(conf)
 
     def testIgnoreEmptySplits(
