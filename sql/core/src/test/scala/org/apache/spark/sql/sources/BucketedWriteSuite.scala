@@ -80,6 +80,7 @@ abstract class BucketedWriteSuite extends QueryTest with SQLTestUtils {
   test("write bucketed data using insertInto()") {
     val df = Seq(1 -> "a", 2 -> "b").toDF("i", "j")
 
+    df.write.saveAsTable("tt")
     val e = intercept[AnalysisException] {
       df.write.bucketBy(2, "i").insertInto("tt")
     }
