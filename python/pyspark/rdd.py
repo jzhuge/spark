@@ -125,6 +125,7 @@ def _load_from_socket(port, serializer):
     for res in socket.getaddrinfo("localhost", port, socket.AF_UNSPEC, socket.SOCK_STREAM):
         af, socktype, proto, canonname, sa = res
         sock = socket.socket(af, socktype, proto)
+        sock.setsockopt(socket.SOL_TCP, socket.TCP_NODELAY, 1)
         try:
             sock.settimeout(3)
             sock.connect(sa)

@@ -205,6 +205,7 @@ if __name__ == '__main__':
     # Read a local port to connect to from stdin
     java_port = int(sys.stdin.readline())
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.setsockopt(socket.SOL_TCP, socket.TCP_NODELAY, 1)
     sock.connect(("127.0.0.1", java_port))
     sock_file = sock.makefile("rwb", 65536)
     main(sock_file, sock_file)
