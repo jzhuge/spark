@@ -179,6 +179,7 @@ def local_connect_and_auth(port, auth_secret):
         af, socktype, proto, _, sa = res
         try:
             sock = socket.socket(af, socktype, proto)
+            sock.setsockopt(socket.SOL_TCP, socket.TCP_NODELAY, 1)
             sock.settimeout(15)
             sock.connect(sa)
             sockfile = sock.makefile("rwb", 65536)
