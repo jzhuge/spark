@@ -123,6 +123,14 @@ private[spark] class IndexShuffleBlockResolver(
     }
   }
 
+  private def logFileSiblings(name: String, file: File): Unit =
+    if (file == null) {
+      logInfo(s"${name} file is null")
+    } else {
+      val list = new File(file.getParent()).listFiles()
+      logInfo(s"listing parent of ${name} file:${list.mkString(",")}")
+    }
+
   /**
    * Write an index file with the offsets of each block, plus a final offset at the end for the
    * end of the output file. This will be used by getBlockData to figure out where each block
@@ -182,6 +190,9 @@ private[spark] class IndexShuffleBlockResolver(
           if (dataTmp != null && dataTmp.exists() && !dataTmp.renameTo(dataFile)) {
             throw new IOException("fail to rename file " + dataTmp + " to " + dataFile)
           }
+
+          logFileSiblings("datatmp", dataTmp)
+          logFileSiblings("data", dataFile)
         }
       }
     } finally {
