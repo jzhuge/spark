@@ -21,6 +21,7 @@ import org.apache.spark.sql.catalyst.catalog.{CatalogRelation, CatalogTable, May
 import org.apache.spark.sql.catalyst.expressions.{AttributeMap, AttributeReference}
 import org.apache.spark.sql.catalyst.plans.QueryPlan
 import org.apache.spark.sql.catalyst.plans.logical.{LeafNode, LogicalPlan, Statistics}
+import org.apache.spark.sql.execution.datasources.v2.V2AsBaseRelation
 import org.apache.spark.sql.sources.BaseRelation
 import org.apache.spark.util.Utils
 
@@ -43,6 +44,11 @@ case class LogicalRelation(
       case _ =>
         None
     }
+  }
+
+  override lazy val resolved: Boolean = relation match {
+    case _: V2AsBaseRelation => false // avoid rules that will change the plan before conversion
+    case _ => expressions.forall(_.resolved) && childrenResolved
   }
 
   // Only care about relation when canonicalizing.
