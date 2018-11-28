@@ -347,7 +347,7 @@ case class Join(
 case class DeleteFrom(table: LogicalPlan, expr: Expression) extends LogicalPlan {
   override def output: Seq[Attribute] = Seq.empty
 
-  override def children: Seq[LogicalPlan] = Seq.empty
+  override lazy val children: Seq[LogicalPlan] = Seq(table)
 }
 
 /**

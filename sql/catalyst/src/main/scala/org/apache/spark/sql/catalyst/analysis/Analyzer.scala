@@ -22,9 +22,8 @@ import scala.collection.mutable.ArrayBuffer
 import scala.util.Random
 
 import org.apache.spark.sql.AnalysisException
-import org.apache.spark.sql.catalog.v2.V2Relation
-import org.apache.spark.sql.catalyst._
-import org.apache.spark.sql.catalyst.catalog._
+import org.apache.spark.sql.catalyst.{ScalaReflection, TableIdentifier}
+import org.apache.spark.sql.catalyst.catalog.{CatalogDatabase, CatalogRelation, InMemoryCatalog, MaybeCatalogRelation, SessionCatalog}
 import org.apache.spark.sql.catalyst.encoders.OuterScopes
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.expressions.SubExprUtils._
@@ -647,18 +646,6 @@ class Analyzer(
           if child.resolved =>
         val table = EliminateSubqueryAliases(lookupTableFromCatalog(u))
         table match {
-          case v2: V2Relation =>
-            // ifNotExists is append with validation, but validation is not supported
-            assert(!ifNotExists, s"Cannot write, IF NOT EXISTS is not supported for table: $v2")
-            // TODO: Support overwrite
-            assert(!overwrite, s"Cannot overwrite with table: $v2")
-            // TODO: Handle partition values
-            assert(parts.isEmpty, s"Cannot write static partitions into table: $v2")
-
-            // the DataFrame API doesn't create INSERT INTO plans for v2 tables, so this must be
-            // SQL and should match columns by position, not by name.
-            AppendData.byPosition(v2, child)
-
           case maybe: MaybeCatalogRelation =>
             maybe.asCatalogRelation match {
               case Some(catalogRelation) =>
