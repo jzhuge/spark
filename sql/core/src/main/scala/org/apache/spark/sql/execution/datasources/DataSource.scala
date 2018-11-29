@@ -338,8 +338,10 @@ case class DataSource(
     val relation = (providingClass.newInstance(), userSpecifiedSchema) match {
       // TODO: Throw when too much is given.
       case (dataSource: DataSourceV2, _) =>
-        val v2relation = DataSourceV2Relation.create(dataSource, options, None, userSpecifiedSchema)
-        V2AsBaseRelation(sparkSession.sqlContext, v2relation, catalogTable.get)
+        val tableDesc = catalogTable.get
+        val v2relation = DataSourceV2Relation.create(
+          dataSource, options, Some(tableDesc.identifier), userSpecifiedSchema)
+        V2AsBaseRelation(sparkSession.sqlContext, v2relation, tableDesc)
       case (dataSource: SchemaRelationProvider, Some(schema)) =>
         dataSource.createRelation(sparkSession.sqlContext, caseInsensitiveOptions, schema)
       case (dataSource: RelationProvider, None) =>
