@@ -89,6 +89,6 @@ tar -czf spark-${BUILD_VERSION}.tgz spark-${BUILD_VERSION}
 
 source netflix/assume_role.sh
 
-aws s3 cp spark-${BUILD_VERSION}.tgz s3://netflix-bigdataplatform/spark-builds/${BUILD_VERSION}/
-aws s3 cp spark-${BUILD_VERSION}.tgz s3://netflix-bigdataplatform/spark-builds/${BUILD_VERSION}/spark-${BUILD_VERSION}-${BUILD_NUMBER}.tgz
+aws s3 cp --no-progress spark-${BUILD_VERSION}.tgz s3://netflix-bigdataplatform/spark-builds/${BUILD_VERSION}/
+aws s3 cp --no-progress spark-${BUILD_VERSION}.tgz s3://netflix-bigdataplatform/spark-builds/${BUILD_VERSION}/spark-${BUILD_VERSION}-${BUILD_NUMBER}.tgz
 
