@@ -50,38 +50,11 @@ class DataSourceV2Analysis(spark: SparkSession) extends Rule[LogicalPlan] {
   private val catalog = spark.catalog(None).asTableCatalog
 
   override def apply(plan: LogicalPlan): LogicalPlan = plan transformUp {
-    case alter @ AlterTableAddColumnsCommand(ident, columns) =>
-      val identifier = fixIdent(ident)
-      val table = catalog.loadTable(identifier)
+    case alter @ AlterTableAddColumnsCommand(ident, _) =>
+      convertAlterTable(ident, alter)
 
-      // create a relation so that the alter table command can be validated
-      lazy val relation = DataSourceV2Relation.create(
-        catalog.name, identifier, table,
-        Map("database" -> identifier.database.get, "table" -> identifier.table))
-      lazy val changes = columns.map { field =>
-        val (parent, name) = field.name match {
-          case NestedFieldName(path, fieldName) =>
-            (path, fieldName)
-          case fieldName =>
-            (null, fieldName)
-        }
-        TableChange.addColumn(parent, name, field.dataType)
-      }
-      lazy val converted = AlterTable(catalog, relation, changes)
-
-      table match {
-        case table: V1MetadataTable if isV2Source(table.catalogTable, spark) =>
-          converted
-
-        case _: V1MetadataTable =>
-          alter
-
-        case _ =>
-          converted
-      }
-
-    case a @ AlterTableSetPropertiesCommand(ident, properties, false /* isView */ ) =>
-      a
+    case alter @ AlterTableSetPropertiesCommand(ident, _, false /* isView */ ) =>
+      convertAlterTable(ident, alter)
 
     case datasources.CreateTable(catalogTable, mode, None)
       if isV2Source(catalogTable, spark) =>
@@ -197,6 +170,46 @@ class DataSourceV2Analysis(spark: SparkSession) extends Rule[LogicalPlan] {
     case LogicalRelation(v2: V2AsBaseRelation, _, _, _) =>
       // unwrap v2 relation
       v2.v2relation
+  }
+
+  private def convertAlterTable(ident: TableIdentifier, alter: LogicalPlan): LogicalPlan = {
+    val identifier = fixIdent(ident)
+    val table = catalog.loadTable(identifier)
+
+    // create a relation so that the alter table command can be validated
+    lazy val relation = DataSourceV2Relation.create(
+      catalog.name, identifier, table,
+      Map("database" -> identifier.database.get, "table" -> identifier.table))
+
+    lazy val changes = alter match {
+      case AlterTableAddColumnsCommand(_, columns) =>
+        columns.map { field =>
+          val (parent, name) = field.name match {
+            case NestedFieldName(path, fieldName) =>
+              (path, fieldName)
+            case fieldName =>
+              (null, fieldName)
+          }
+          TableChange.addColumn(parent, name, field.dataType)
+        }
+
+      case AlterTableSetPropertiesCommand(_, properties, false /* isView */ ) =>
+        properties.map {
+          case (property, null) =>
+            TableChange.removeProperty(property)
+          case (property, value) =>
+            TableChange.setProperty(property, value)
+        }.toSeq
+    }
+
+    lazy val converted = AlterTable(catalog, relation, changes)
+
+    table match {
+      case table: V1MetadataTable if !isV2Source(table.catalogTable, spark) =>
+        alter
+      case _ =>
+        converted
+    }
   }
 
   private def fixIdent(identifier: TableIdentifier): TableIdentifier = {

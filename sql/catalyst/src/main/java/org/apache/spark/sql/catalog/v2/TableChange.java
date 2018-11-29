@@ -35,6 +35,27 @@ import org.apache.spark.sql.types.DataType;
 public interface TableChange {
 
   /**
+   * Create a TableChange for setting a table property.
+   *
+   * @param property the property name
+   * @param value the new property value
+   * @return a TableChange for the addition
+   */
+  static TableChange setProperty(String property, String value) {
+    return new SetProperty(property, value);
+  }
+
+  /**
+   * Create a TableChange for removing a table property.
+   *
+   * @param property the property name
+   * @return a TableChange for the addition
+   */
+  static TableChange removeProperty(String property) {
+    return new RemoveProperty(property);
+  }
+
+  /**
    * Create a TableChange for adding a top-level column to a table.
    * <p>
    * Because "." may be interpreted as a field path separator or may be used in field names, it is
@@ -105,6 +126,36 @@ public interface TableChange {
    */
   static TableChange deleteColumn(String name) {
     return new DeleteColumn(name);
+  }
+
+  final class SetProperty implements TableChange {
+    private final String property;
+    private final String value;
+
+    private SetProperty(String property, String value) {
+      this.property = property;
+      this.value = value;
+    }
+
+    public String property() {
+      return property;
+    }
+
+    public String value() {
+      return value;
+    }
+  }
+
+  final class RemoveProperty implements TableChange {
+    private final String property;
+
+    private RemoveProperty(String property) {
+      this.property = property;
+    }
+
+    public String property() {
+      return property;
+    }
   }
 
   final class AddColumn implements TableChange {
