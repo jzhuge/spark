@@ -36,6 +36,8 @@ private[sql] class V1MetadataTable(
     v1Table: CatalogTable,
     v2Source: Option[Any]) extends Table {
 
+  def catalogTable: CatalogTable = v1Table
+
   def readDelegate: ReadSupport = v2Source match {
     case r: ReadSupport => r
     case _ => throw new UnsupportedOperationException(s"Source does not support reads: $v2Source")
