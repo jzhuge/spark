@@ -25,7 +25,7 @@ import org.apache.spark.sql.catalyst.catalog._
 import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Expression, NamedExpression}
 import org.apache.spark.sql.catalyst.plans.logical.{LeafNode, LogicalPlan, Statistics, SupportsPhysicalStats}
 import org.apache.spark.sql.sources.DataSourceRegister
-import org.apache.spark.sql.sources.v2.{DataSourceV2, DataSourceV2Implicits}
+import org.apache.spark.sql.sources.v2.{DataSourceV2, DataSourceV2Implicits, DataSourceV2TableProvider}
 import org.apache.spark.sql.sources.v2.reader._
 import org.apache.spark.sql.sources.v2.writer.DataSourceWriter
 import org.apache.spark.sql.types.StructType
@@ -238,10 +238,30 @@ object DataSourceV2Relation {
       options: Map[String, String],
       tableIdent: Option[TableIdentifier] = None,
       userSpecifiedSchema: Option[StructType] = None): NamedRelation = {
-    val reader = source.createReader(options, userSpecifiedSchema)
     val ident = tableIdent.orElse(options.table)
-    DataSourceV2Relation(
-      source, reader.readSchema().toAttributes, options, ident, userSpecifiedSchema)
+    val storageOptions = ident match {
+      case Some(identifier) =>
+        identifier.database match {
+          case Some(db) =>
+            options + ("database" -> db) + ("table" -> identifier.table)
+          case None =>
+            options + ("table" -> identifier.table)
+        }
+      case None => options
+    }
+
+    source match {
+      case tableProvider: DataSourceV2TableProvider =>
+        val identifier = ident.getOrElse(TableIdentifier("anonymous"))
+        val table = tableProvider.createTable(storageOptions.asDataSourceOptions)
+        TableV2Relation(
+          source.name, identifier, table, table.schema.toAttributes, storageOptions)
+
+      case _ =>
+        val reader = source.createReader(storageOptions, userSpecifiedSchema)
+        DataSourceV2Relation(
+          source, reader.readSchema().toAttributes, storageOptions, ident, userSpecifiedSchema)
+    }
   }
 
   def create(
