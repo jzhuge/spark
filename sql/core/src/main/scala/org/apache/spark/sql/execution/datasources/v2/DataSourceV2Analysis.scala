@@ -18,13 +18,13 @@
 package org.apache.spark.sql.execution.datasources.v2
 
 import org.apache.spark.sql.{AnalysisException, SaveMode, SparkSession, SQLContext}
-import org.apache.spark.sql.catalog.v2.{PartitionUtil, TableChange}
+import org.apache.spark.sql.catalog.v2.{PartitionUtil, TableChange, V1MetadataTable}
 import org.apache.spark.sql.catalyst.TableIdentifier
 import org.apache.spark.sql.catalyst.analysis.NamedRelation
 import org.apache.spark.sql.catalyst.catalog.CatalogTable
 import org.apache.spark.sql.catalyst.plans.logical.{AlterTable, AppendData, CreateTable, CreateTableAsSelect, InsertIntoTable, LogicalPlan, ReplaceTableAsSelect}
 import org.apache.spark.sql.catalyst.rules.Rule
-import org.apache.spark.sql.execution.command.AlterTableAddColumnsCommand
+import org.apache.spark.sql.execution.command.{AlterTableAddColumnsCommand, AlterTableSetPropertiesCommand}
 import org.apache.spark.sql.execution.datasources
 import org.apache.spark.sql.execution.datasources.{DataSource, LogicalRelation}
 import org.apache.spark.sql.sources.BaseRelation
@@ -49,14 +49,15 @@ class DataSourceV2Analysis(spark: SparkSession) extends Rule[LogicalPlan] {
   private val catalog = spark.catalog(None).asTableCatalog
 
   override def apply(plan: LogicalPlan): LogicalPlan = plan transformUp {
-    case AlterTableAddColumnsCommand(ident, columns) =>
+    case alter @ AlterTableAddColumnsCommand(ident, columns) =>
       val identifier = fixIdent(ident)
-      // load the table to create a relation so that the alter table command can be validated
       val table = catalog.loadTable(identifier)
-      val relation = DataSourceV2Relation.create(
+
+      // create a relation so that the alter table command can be validated
+      lazy val relation = DataSourceV2Relation.create(
         catalog.name, identifier, table,
         Map("database" -> identifier.database.get, "table" -> identifier.table))
-      val changes = columns.map { field =>
+      lazy val changes = columns.map { field =>
         val (parent, name) = field.name match {
           case NestedFieldName(path, fieldName) =>
             (path, fieldName)
@@ -65,11 +66,24 @@ class DataSourceV2Analysis(spark: SparkSession) extends Rule[LogicalPlan] {
         }
         TableChange.addColumn(parent, name, field.dataType)
       }
+      lazy val converted = AlterTable(catalog, relation, changes)
 
-      AlterTable(catalog, relation, changes)
+      table match {
+        case table: V1MetadataTable if isV2Source(table.catalogTable, spark) =>
+          converted
+
+        case _: V1MetadataTable =>
+          alter
+
+        case _ =>
+          converted
+      }
+
+    case a @ AlterTableSetPropertiesCommand(ident, properties, false /* isView */ ) =>
+      a
 
     case datasources.CreateTable(catalogTable, mode, None)
-      if isV2CatalogTable(catalogTable, spark) =>
+      if isV2Source(catalogTable, spark) =>
       val options = catalogTable.storage.properties + ("provider" -> catalogTable.provider.get)
 
       val partitioning = PartitionUtil.convertToTransforms(
@@ -89,7 +103,7 @@ class DataSourceV2Analysis(spark: SparkSession) extends Rule[LogicalPlan] {
       }
 
     case datasources.CreateTable(catalogTable, mode, Some(query))
-        if isV2CatalogTable(catalogTable, spark) =>
+        if isV2Source(catalogTable, spark) =>
       val options = catalogTable.storage.properties + ("provider" -> catalogTable.provider.get)
 
       if (catalogTable.partitionColumnNames.nonEmpty) {
@@ -155,7 +169,7 @@ object DataSourceV2Analysis {
 
   val NestedFieldName = """([\w\.]+)\.(\w+)""".r
 
-  private def isV2CatalogTable(catalogTable: CatalogTable, spark: SparkSession): Boolean = {
+  private def isV2Source(catalogTable: CatalogTable, spark: SparkSession): Boolean = {
     catalogTable.provider.exists(provider =>
       !"hive".equalsIgnoreCase(provider) &&
           classOf[DataSourceV2].isAssignableFrom(
