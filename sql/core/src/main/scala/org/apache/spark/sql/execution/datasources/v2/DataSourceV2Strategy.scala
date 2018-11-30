@@ -23,8 +23,9 @@ import org.apache.spark.sql.{sources, Strategy}
 import org.apache.spark.sql.catalyst.analysis.NamedRelation
 import org.apache.spark.sql.catalyst.expressions.{And, AttributeReference, AttributeSet, Expression}
 import org.apache.spark.sql.catalyst.planning.PhysicalOperation
-import org.apache.spark.sql.catalyst.plans.logical.{AlterTable, AppendData, CreateTable, CreateTableAsSelect, DeleteFrom, DescribeTable, LogicalPlan, OverwritePartitionsDynamic, ReplaceTableAsSelect, ShowCreateTable, ShowProperties}
+import org.apache.spark.sql.catalyst.plans.logical.{AlterTable, AppendData, CreateTable, CreateTableAsSelect, DeleteFrom, LogicalPlan, OverwritePartitionsDynamic, ReplaceTableAsSelect}
 import org.apache.spark.sql.execution.{FilterExec, ProjectExec, SparkPlan}
+import org.apache.spark.sql.execution.command.ExecutedCommandExec
 import org.apache.spark.sql.execution.datasources.DataSourceStrategy
 import org.apache.spark.sql.sources.v2.reader.{DataSourceReader, SupportsPushDownCatalystFilters, SupportsPushDownFilters, SupportsPushDownRequiredColumns}
 
@@ -105,14 +106,14 @@ object DataSourceV2Strategy extends Strategy {
 
 
   override def apply(plan: LogicalPlan): Seq[SparkPlan] = plan match {
-    case ShowCreateTable(identifier, table) =>
-      ShowCreateTableExec(identifier, table, plan.output) :: Nil
+    case cmd: ShowCreateTable =>
+      ExecutedCommandExec(cmd) :: Nil
 
-    case ShowProperties(table, property) =>
-      ShowPropertiesExec(table, property, plan.output) :: Nil
+    case cmd: ShowProperties =>
+      ExecutedCommandExec(cmd) :: Nil
 
-    case DescribeTable(table, isExtended) =>
-      DescribeTableExec(table, isExtended, plan.output) :: Nil
+    case cmd: DescribeTable =>
+      ExecutedCommandExec(cmd) :: Nil
 
     case PhysicalOperation(project, filters, relation: NamedRelation)
         if relation.isInstanceOf[DataSourceV2Relation] || relation.isInstanceOf[TableV2Relation] =>
