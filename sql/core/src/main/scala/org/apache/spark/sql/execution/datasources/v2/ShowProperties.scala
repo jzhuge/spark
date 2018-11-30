@@ -19,32 +19,32 @@ package org.apache.spark.sql.execution.datasources.v2
 
 import scala.collection.JavaConverters._
 
-import org.apache.spark.rdd.RDD
+import org.apache.spark.sql.{Row, SparkSession}
 import org.apache.spark.sql.catalog.v2.Table
-import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.Attribute
-import org.apache.spark.sql.execution.SparkPlan
-import org.apache.spark.unsafe.types.UTF8String
+import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference}
+import org.apache.spark.sql.execution.command.RunnableCommand
+import org.apache.spark.sql.types.StringType
 
-case class ShowPropertiesExec(
+case class ShowProperties(
     table: Table,
-    property: Option[String],
-    output: Seq[Attribute]) extends SparkPlan {
-  override protected def doExecute(): RDD[InternalRow] = {
-    val rows = property match {
+    property: Option[String]) extends RunnableCommand {
+
+  override def output: Seq[Attribute] = Seq(
+    AttributeReference("property", StringType, nullable = false)(),
+    AttributeReference("value", StringType, nullable = false)()
+  )
+
+  override def run(sparkSession: SparkSession): Seq[Row] = {
+    property match {
       case Some(key) =>
         val value = Option(table.properties.get(key)).getOrElse("(not set)")
-        Seq(InternalRow(UTF8String.fromString(key), UTF8String.fromString(value)))
+        Seq(Row(key, value))
 
       case _ =>
         table.properties.asScala.map {
           case (key, value) =>
-            InternalRow(UTF8String.fromString(key), UTF8String.fromString(value))
+            Row(key, value)
         }.toSeq
     }
-
-    sparkContext.parallelize(rows, 1)
   }
-
-  override def children: Seq[SparkPlan] = Seq.empty
 }

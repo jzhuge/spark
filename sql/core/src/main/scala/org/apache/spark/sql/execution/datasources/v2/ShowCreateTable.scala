@@ -19,17 +19,25 @@ package org.apache.spark.sql.execution.datasources.v2
 
 import scala.collection.JavaConverters._
 
-import org.apache.spark.rdd.RDD
+import org.apache.spark.sql.{Row, SparkSession}
 import org.apache.spark.sql.catalog.v2.Table
-import org.apache.spark.sql.catalyst.{InternalRow, TableIdentifier}
-import org.apache.spark.sql.catalyst.expressions.Attribute
-import org.apache.spark.sql.execution.SparkPlan
-import org.apache.spark.unsafe.types.UTF8String
+import org.apache.spark.sql.catalyst.TableIdentifier
+import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference}
+import org.apache.spark.sql.execution.command.RunnableCommand
+import org.apache.spark.sql.types.StringType
 
-case class ShowCreateTableExec(
+case class ShowCreateTable(
     ident: TableIdentifier,
-    table: Table,
-    output: Seq[Attribute]) extends SparkPlan {
+    table: Table) extends RunnableCommand {
+
+  override def output: Seq[Attribute] = Seq(
+    AttributeReference("create_statement", StringType, nullable = false)()
+  )
+
+  override def run(sparkSession: SparkSession): Seq[Row] = {
+    val create = s"CREATE TABLE ${ident.quotedString} ($schemaFragment)$usingFragment$partFragment"
+    Seq(Row(create))
+  }
 
   private lazy val schemaFragment = table.schema
       .map { field =>
@@ -48,10 +56,4 @@ case class ShowCreateTableExec(
       .map(p => s"\nUSING $p")
       .getOrElse("")
 
-  override protected def doExecute(): RDD[InternalRow] = {
-    val create = s"CREATE TABLE ${ident.quotedString} ($schemaFragment)$usingFragment$partFragment"
-    sparkContext.parallelize(Seq(InternalRow(UTF8String.fromString(create))), 1)
-  }
-
-  override def children: Seq[SparkPlan] = Seq.empty
 }

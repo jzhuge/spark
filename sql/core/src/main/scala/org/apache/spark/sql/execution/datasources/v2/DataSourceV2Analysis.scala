@@ -25,7 +25,7 @@ import org.apache.spark.sql.catalyst.TableIdentifier
 import org.apache.spark.sql.catalyst.analysis.NamedRelation
 import org.apache.spark.sql.catalyst.catalog.CatalogTable
 import org.apache.spark.sql.catalyst.expressions.{Alias, Literal}
-import org.apache.spark.sql.catalyst.plans.logical.{AlterTable, AppendData, CreateTable, CreateTableAsSelect, DescribeTable, InsertIntoTable, LogicalPlan, OverwritePartitionsDynamic, Project, ReplaceTableAsSelect, ShowCreateTable, ShowProperties}
+import org.apache.spark.sql.catalyst.plans.logical.{AlterTable, AppendData, CreateTable, CreateTableAsSelect, InsertIntoTable, LogicalPlan, OverwritePartitionsDynamic, Project, ReplaceTableAsSelect}
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution.command.{AlterTableAddColumnsCommand, AlterTableDropColumnsCommand, AlterTableRenameColumnCommand, AlterTableSetPropertiesCommand, AlterTableUnsetPropertiesCommand, AlterTableUpdateColumnCommand, DescribeTableCommand, ShowCreateTableCommand, ShowTablePropertiesCommand}
 import org.apache.spark.sql.execution.datasources
@@ -75,10 +75,10 @@ class DataSourceV2Analysis(spark: SparkSession) extends Rule[LogicalPlan] {
     case ShowCreateTableCommand(V2TableReference(identifier, table)) =>
       ShowCreateTable(identifier, table)
 
-    case ShowTablePropertiesCommand(V2TableReference(identifier, table), property) =>
+    case ShowTablePropertiesCommand(V2TableReference(_, table), property) =>
       ShowProperties(table, property)
 
-    case DescribeTableCommand(V2TableReference(identifier, table), _, isExtended) =>
+    case DescribeTableCommand(V2TableReference(_, table), _, isExtended) =>
       DescribeTable(table, isExtended)
 
     case datasources.CreateTable(catalogTable, mode, None)
