@@ -1706,6 +1706,36 @@ class AstBuilder(conf: SQLConf) extends SqlBaseBaseVisitor[AnyRef] with Logging 
   }
 
   /**
+   * Return nested fields as a seq of [[StructField]].
+   */
+  override def visitQualifiedColTypeList(
+      ctx: QualifiedColTypeListContext): Seq[StructField] = withOrigin(ctx) {
+    ctx.qualifiedColType().asScala.map(visitQualifiedColType)
+  }
+
+  /**
+   * Create a [[StructField]] from a column definition with a qualified name.
+   */
+  override def visitQualifiedColType(
+      ctx: QualifiedColTypeContext): StructField = withOrigin(ctx) {
+    import ctx._
+
+    val builder = new MetadataBuilder
+    // Add comment to metadata
+    if (STRING != null) {
+      builder.putString("comment", string(STRING))
+    }
+    // Add Hive type string to metadata.
+    val rawDataType = typedVisit[DataType](ctx.dataType)
+    val cleanedDataType = HiveStringType.replaceCharType(rawDataType)
+    if (rawDataType != cleanedDataType) {
+      builder.putString(HIVE_TYPE_STRING, rawDataType.catalogString)
+    }
+
+    StructField(ctx.qualifiedName.getText, cleanedDataType, nullable = true, builder.build())
+  }
+
+  /**
    * Create a [[StructType]] from a number of column definitions.
    */
   override def visitColTypeList(ctx: ColTypeListContext): Seq[StructField] = withOrigin(ctx) {
