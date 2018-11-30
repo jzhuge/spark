@@ -19,14 +19,8 @@ package org.apache.spark.sql.execution.command
 
 import java.net.URI
 
-import com.netflix.iceberg.PartitionSpec
-import com.netflix.iceberg.metacat.MetacatTables
-import com.netflix.iceberg.spark.SparkSchemaUtil
-
-import org.apache.spark.SparkException
 import org.apache.spark.sql._
 import org.apache.spark.sql.catalyst.catalog._
-import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.datasources._
@@ -49,8 +43,6 @@ import org.apache.spark.sql.types.StructType
 case class CreateDataSourceTableCommand(table: CatalogTable, ignoreIfExists: Boolean)
   extends RunnableCommand {
 
-  import CreateDataSourceTableCommand._
-
   override def run(sparkSession: SparkSession): Seq[Row] = {
     assert(table.tableType != CatalogTableType.VIEW)
     assert(table.provider.isDefined)
@@ -64,86 +56,36 @@ case class CreateDataSourceTableCommand(table: CatalogTable, ignoreIfExists: Boo
       }
     }
 
-    if (table.provider.get == "iceberg") {
-      val hadoopConf = sparkSession.sparkContext.hadoopConfiguration
-      val hiveEnv = hadoopConf.get("spark.sql.hive.env", "prod")
-      val catalog = conf.getConfString("spark.sql.metacat.write.catalog", hiveEnv + "hive")
-      val db = table.identifier.database.getOrElse(sparkSession.catalog.currentDatabase)
-      val tableName = table.identifier.table
-
-      val tables = new MetacatTables(
-        hadoopConf, sparkSession.sparkContext.applicationId, catalog)
-
-      val nonIdentityPartitions = table.partitionColumnNames.filter {
-        case Year(name) if table.schema.fieldNames.contains(name) => true
-        case Month(name) if table.schema.fieldNames.contains(name) => true
-        case Day(name) if table.schema.fieldNames.contains(name) => true
-        case Hour(name) if table.schema.fieldNames.contains(name) => true
-        case Bucket(name, _) if table.schema.fieldNames.contains(name) => true
-        case Truncate(name, _) if table.schema.fieldNames.contains(name) => true
-        case _ => false
-      }.toSet
-
-      // filter our the partition columns, except for identity partitions
-      val baseSchema = table.schema.toAttributes
-          .filterNot(a => nonIdentityPartitions.contains(a.name))
-          .toStructType
-
-      val schema = SparkSchemaUtil.convert(baseSchema)
-      val specBuilder = PartitionSpec.builderFor(schema)
-      table.partitionColumnNames.foreach {
-        case Year(name) if schema.findField(name) != null =>
-          specBuilder.year(name)
-        case Month(name) if schema.findField(name) != null =>
-          specBuilder.month(name)
-        case Day(name) if schema.findField(name) != null =>
-          specBuilder.day(name)
-        case Hour(name) if schema.findField(name) != null =>
-          specBuilder.hour(name)
-        case Bucket(name, numBuckets) if schema.findField(name) != null =>
-          specBuilder.bucket(name, numBuckets.toInt)
-        case Truncate(name, width) if schema.findField(name) != null =>
-          specBuilder.truncate(name, width.toInt)
-        case Identity(name) if schema.findField(name) != null =>
-          specBuilder.identity(name)
-        case name: String =>
-          specBuilder.identity(name)
-        case other =>
-          throw new SparkException(s"Cannot determine partition type: $other")
-      }
-
-      tables.create(schema, specBuilder.build, db, tableName)
-    } else {
-      // Create the relation to validate the arguments before writing the metadata to metastore,
-      // and infer the table schema and partition if users didn't specify schema in CREATE TABLE.
-      val pathOption = table.storage.locationUri.map("path" -> CatalogUtils.URIToString(_))
-      // Fill in some default table options from the session conf
-      val tableWithDefaultOptions = table.copy(
-        identifier = table.identifier.copy(
-          database = Some(
-            table.identifier.database.getOrElse(sessionState.catalog.getCurrentDatabase))),
+    // Create the relation to validate the arguments before writing the metadata to metastore,
+    // and infer the table schema and partition if users didn't specify schema in CREATE TABLE.
+    val pathOption = table.storage.locationUri.map("path" -> CatalogUtils.URIToString(_))
+    // Fill in some default table options from the session conf
+    val tableWithDefaultOptions = table.copy(
+      identifier = table.identifier.copy(
+        database = Some(
+          table.identifier.database.getOrElse(sessionState.catalog.getCurrentDatabase))),
         tracksPartitionsInCatalog = sessionState.conf.manageFilesourcePartitions)
-      val dataSource: BaseRelation =
-        DataSource(
-          sparkSession = sparkSession,
-          userSpecifiedSchema = if (table.schema.isEmpty) None else Some(table.schema),
-          partitionColumns = table.partitionColumnNames,
-          className = table.provider.get,
-          bucketSpec = table.bucketSpec,
-          options = table.storage.properties ++ pathOption,
+    val dataSource: BaseRelation =
+      DataSource(
+        sparkSession = sparkSession,
+        userSpecifiedSchema = if (table.schema.isEmpty) None else Some(table.schema),
+        partitionColumns = table.partitionColumnNames,
+        className = table.provider.get,
+        bucketSpec = table.bucketSpec,
+        options = table.storage.properties ++ pathOption,
           // As discussed in SPARK-19583, we don't check if the location is existed
           catalogTable = Some(tableWithDefaultOptions)).resolveRelation(checkFilesExist = false)
 
-      val partitionColumnNames = if (table.schema.nonEmpty) {
-        table.partitionColumnNames
-      } else {
-        // This is guaranteed in `PreprocessDDL`.
-        assert(table.partitionColumnNames.isEmpty)
-        dataSource match {
-          case r: HadoopFsRelation => r.partitionSchema.fieldNames.toSeq
-          case _ => Nil
-        }
+    val partitionColumnNames = if (table.schema.nonEmpty) {
+      table.partitionColumnNames
+    } else {
+      // This is guaranteed in `PreprocessDDL`.
+      assert(table.partitionColumnNames.isEmpty)
+      dataSource match {
+        case r: HadoopFsRelation => r.partitionSchema.fieldNames.toSeq
+        case _ => Nil
       }
+    }
 
       val newTable = dataSource match {
         // Since Spark 2.1, we store the inferred schema of data source in metastore, to avoid
@@ -161,33 +103,22 @@ case class CreateDataSourceTableCommand(table: CatalogTable, ignoreIfExists: Boo
 
         case _ =>
           table.copy(
-            schema = dataSource.schema,
-            partitionColumnNames = partitionColumnNames,
+      schema = dataSource.schema,
+      partitionColumnNames = partitionColumnNames,
             // If metastore partition mgmt for file source tables is enabled, we start off with
-            // partition provider hive, but no partitions in the metastore. The user has to call
-            // `msck repair table` to populate the table partitions.
-            tracksPartitionsInCatalog = partitionColumnNames.nonEmpty &&
+      // partition provider hive, but no partitions in the metastore. The user has to call
+      // `msck repair table` to populate the table partitions.
+      tracksPartitionsInCatalog = partitionColumnNames.nonEmpty &&
               sessionState.conf.manageFilesourcePartitions)
 
       }
 
       // We will return Nil or throw exception at the beginning if the table already exists, so when
       // we reach here, the table should not exist and we should set `ignoreIfExists` to false.
-      sessionState.catalog.createTable(newTable, ignoreIfExists = false)
-    }
+    sessionState.catalog.createTable(newTable, ignoreIfExists = false)
 
     Seq.empty[Row]
   }
-}
-
-object CreateDataSourceTableCommand {
-  lazy val Identity = "^(\\w+)_identity$".r
-  lazy val Year = "^(\\w+)_year$".r
-  lazy val Month = "^(\\w+)_month$".r
-  lazy val Day = "^(\\w+)_day$".r
-  lazy val Hour = "^(\\w+)_hour$".r
-  lazy val Bucket = "^(\\w+)_bucket_(\\d+)$".r
-  lazy val Truncate = "^(\\w+)_truncate_(\\d+)$".r
 }
 
 /**
