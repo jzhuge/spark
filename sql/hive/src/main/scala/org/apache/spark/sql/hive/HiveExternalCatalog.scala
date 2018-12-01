@@ -685,6 +685,9 @@ private[spark] class HiveExternalCatalog(conf: SparkConf, hadoopConf: Configurat
     restoreTableMetadata(getRawTable(db, table))
   }
 
+  private def getTableProvider(table: CatalogTable): Option[String] =
+    table.properties.get(DATASOURCE_PROVIDER).orElse(table.properties.get("provider"))
+
   /**
    * Restores table metadata from the table properties. This method is kind of a opposite version
    * of [[createTable]].
@@ -699,7 +702,7 @@ private[spark] class HiveExternalCatalog(conf: SparkConf, hadoopConf: Configurat
 
     var table = inputTable
 
-    table.properties.get(DATASOURCE_PROVIDER) match {
+    getTableProvider(table) match {
       case None if table.tableType == VIEW =>
         // If this is a view created by Spark 2.2 or higher versions, we should restore its schema
         // from table properties.
