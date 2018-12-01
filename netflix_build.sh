@@ -51,7 +51,7 @@ cp netflix/metrics-site.xml core/src/main/resources/
 export ZINC_PORT=3232
 
 # set the maven version to include the build number
-build/mvn versions:set -DnewVersion=$SPARK_VERSION -DgenerateBackupPoms=false
+build/mvn --quiet versions:set -DnewVersion=$SPARK_VERSION -DgenerateBackupPoms=false
 
 dev/make-distribution.sh --tgz -P${HADOOP_VERSION_PROFILE} -Pmesos -Pyarn -Phive-thriftserver -Psparkr -Pkinesis-asl -Phadoop-provided
 
