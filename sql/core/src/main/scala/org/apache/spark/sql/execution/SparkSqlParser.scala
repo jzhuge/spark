@@ -25,12 +25,14 @@ import org.antlr.v4.runtime.{ParserRuleContext, Token}
 import org.antlr.v4.runtime.tree.TerminalNode
 
 import org.apache.spark.sql.SaveMode
+import org.apache.spark.sql.catalog.v2.PartitionTransform
 import org.apache.spark.sql.catalyst.{FunctionIdentifier, TableIdentifier}
 import org.apache.spark.sql.catalyst.catalog._
 import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.parser._
 import org.apache.spark.sql.catalyst.parser.SqlBaseParser._
 import org.apache.spark.sql.catalyst.plans.logical._
+import org.apache.spark.sql.catalyst.plans.logical.sql
 import org.apache.spark.sql.execution.command._
 import org.apache.spark.sql.execution.datasources.{CreateTable, _}
 import org.apache.spark.sql.internal.{HiveSerDe, SQLConf, VariableSubstitution}
@@ -414,72 +416,38 @@ class SparkSqlAstBuilder(conf: SQLConf) extends AstBuilder(conf) {
     val options = Option(ctx.options).map(visitPropertyKeyValues).getOrElse(Map.empty)
     val provider = ctx.tableProvider.qualifiedName.getText
     val schema = Option(ctx.colTypeList()).map(createSchema)
-    val partitionColumnNames =
-      Option(ctx.partitionColumnNames)
-        .map(visitIdentifierList(_).toArray)
-        .getOrElse(Array.empty[String])
     val properties = Option(ctx.tableProps).map(visitPropertyKeyValues).getOrElse(Map.empty)
     val bucketSpec = ctx.bucketSpec().asScala.headOption.map(visitBucketSpec)
 
-    val location = ctx.locationSpec.asScala.headOption.map(visitLocationSpec)
-    val storage = DataSource.buildStorageFormatFromOptions(options)
+    val partitions: Seq[PartitionTransform] = Option(ctx.partitions)
+        .map(_.simpleTransform.asScala.map(typedVisit[PartitionTransform](_)))
+        .getOrElse(Seq.empty)
 
-    if (location.isDefined && storage.locationUri.isDefined) {
-      throw new ParseException(
-        "LOCATION and 'path' in OPTIONS are both used to indicate the custom table path, " +
-          "you can only specify one of them.", ctx)
-    }
-    val customLocation = storage.locationUri.orElse(location.map(CatalogUtils.stringToURI))
-
-    val tableType = if (customLocation.isDefined) {
-      CatalogTableType.EXTERNAL
-    } else {
-      CatalogTableType.MANAGED
-    }
-
-    val tableDesc = CatalogTable(
-      identifier = table,
-      tableType = tableType,
-      storage = storage.copy(locationUri = customLocation),
-      schema = schema.getOrElse(new StructType),
-      provider = Some(provider),
-      partitionColumnNames = partitionColumnNames,
-      bucketSpec = bucketSpec,
-      properties = properties,
-      comment = Option(ctx.comment).map(string))
-
-    // Determine the storage mode.
-    val mode = if (ifNotExists) SaveMode.Ignore else SaveMode.ErrorIfExists
-
-    if (ctx.query != null) {
-      // Get the backing query.
-      val query = plan(ctx.query)
-
-      if (temp) {
+    Option(ctx.query).map(plan) match {
+      case Some(_) if temp =>
         operationNotAllowed("CREATE TEMPORARY TABLE ... USING ... AS query", ctx)
-      }
 
-      // Don't allow explicit specification of schema for CTAS
-      if (schema.nonEmpty) {
+      case Some(_) if schema.isDefined =>
         operationNotAllowed(
           "Schema may not be specified in a Create Table As Select (CTAS) statement",
           ctx)
-      }
-      CreateTable(tableDesc, mode, Some(query))
-    } else {
-      if (temp) {
+
+      case Some(asSelect) =>
+        sql.CreateTableAsSelect(table, provider, partitions, bucketSpec, options, asSelect,
+          ifNotExists = ifNotExists)
+
+      case None if temp =>
         if (ifNotExists) {
           operationNotAllowed("CREATE TEMPORARY TABLE IF NOT EXISTS", ctx)
         }
 
         logWarning(s"CREATE TEMPORARY TABLE ... USING ... is deprecated, please use " +
           "CREATE TEMPORARY VIEW ... USING ... instead")
-        // Unlike CREATE TEMPORARY VIEW USING, CREATE TEMPORARY TABLE USING does not support
-        // IF NOT EXISTS. Users are not allowed to replace the existing temp table.
-        CreateTempViewUsing(table, schema, replace = false, global = false, provider, options)
-      } else {
-        CreateTable(tableDesc, mode, None)
-      }
+        CreateTempViewUsing(table, schema, replace = true, global = false, provider, options)
+
+      case _ =>
+        sql.CreateTable(table, provider, schema.getOrElse(new StructType), partitions, bucketSpec,
+          options, ifNotExists = ifNotExists)
     }
   }
 

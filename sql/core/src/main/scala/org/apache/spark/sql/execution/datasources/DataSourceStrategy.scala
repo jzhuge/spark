@@ -26,6 +26,7 @@ import org.apache.hadoop.fs.Path
 import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql._
+import org.apache.spark.sql.catalog.v2.PartitionUtil
 import org.apache.spark.sql.catalyst.{expressions => _, _}
 import org.apache.spark.sql.catalyst.CatalystTypeConverters.convertToScala
 import org.apache.spark.sql.catalyst.analysis._
@@ -34,6 +35,7 @@ import org.apache.spark.sql.catalyst.expressions
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.planning.PhysicalOperation
 import org.apache.spark.sql.catalyst.plans.logical.{InsertIntoDir, InsertIntoTable, LogicalPlan, Project}
+import org.apache.spark.sql.catalyst.plans.logical.sql
 import org.apache.spark.sql.catalyst.plans.physical.HashPartitioning
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution.{RowDataSourceScanExec, SparkPlan}
@@ -135,6 +137,68 @@ case class DataSourceAnalysis(conf: SQLConf) extends Rule[LogicalPlan] with Cast
   }
 
   override def apply(plan: LogicalPlan): LogicalPlan = plan transform {
+    case sql.CreateTable(table, V1Provider(provider), schema, partitioning, bucketSpec, options,
+    ifNotExists) =>
+      val (partitionColumnNames, partitionBucketing) = PartitionUtil.convertTransforms(partitioning)
+      if (bucketSpec.isDefined && partitionBucketing.isDefined) {
+        throw new AnalysisException("Cannot create table with CLUSTERED BY and bucket partitions")
+      }
+
+      // TODO: this may be wrong for non file-based data source like JDBC, which should be external
+      // even there is no `path` in options. We should consider allow the EXTERNAL keyword.
+      val storage = DataSource.buildStorageFormatFromOptions(options)
+      val tableType = if (storage.locationUri.isDefined) {
+        CatalogTableType.EXTERNAL
+      } else {
+        CatalogTableType.MANAGED
+      }
+
+      val tableDesc = CatalogTable(
+        identifier = table,
+        tableType = tableType,
+        storage = storage,
+        schema = schema,
+        provider = Some(provider),
+        partitionColumnNames = partitionColumnNames,
+        bucketSpec = bucketSpec.orElse(partitionBucketing)
+      )
+
+      // Determine the storage mode.
+      val mode = if (ifNotExists) SaveMode.Ignore else SaveMode.ErrorIfExists
+
+      CreateTable(tableDesc, mode, None)
+
+    case sql.CreateTableAsSelect(table, V1Provider(provider), partitioning, bucketSpec, options,
+    query, ifNotExists) =>
+      val (partitionColumnNames, partitionBucketing) = PartitionUtil.convertTransforms(partitioning)
+      if (bucketSpec.isDefined && partitionBucketing.isDefined) {
+        throw new AnalysisException("Cannot create table with CLUSTERED BY and bucket partitions")
+      }
+
+      // TODO: this may be wrong for non file-based data source like JDBC, which should be external
+      // even there is no `path` in options. We should consider allow the EXTERNAL keyword.
+      val storage = DataSource.buildStorageFormatFromOptions(options)
+      val tableType = if (storage.locationUri.isDefined) {
+        CatalogTableType.EXTERNAL
+      } else {
+        CatalogTableType.MANAGED
+      }
+
+      val tableDesc = CatalogTable(
+        identifier = table,
+        tableType = tableType,
+        storage = storage,
+        schema = new StructType,
+        provider = Some(provider),
+        partitionColumnNames = partitionColumnNames,
+        bucketSpec = bucketSpec.orElse(partitionBucketing)
+      )
+
+      // Determine the storage mode.
+      val mode = if (ifNotExists) SaveMode.Ignore else SaveMode.ErrorIfExists
+
+      CreateTable(tableDesc, mode, Some(query))
+
     case CreateTable(tableDesc, mode, None) if DDLUtils.isDatasourceTable(tableDesc) =>
       DDLUtils.checkDataColNames(tableDesc)
       CreateDataSourceTableCommand(tableDesc, ignoreIfExists = mode == SaveMode.Ignore)
@@ -158,29 +222,29 @@ case class DataSourceAnalysis(conf: SQLConf) extends Rule[LogicalPlan] with Cast
 
     case i @ InsertIntoTable(
         l @ LogicalRelation(t: HadoopFsRelation, _, table, _), parts, query, overwrite, _, _) =>
-      // If the InsertIntoTable command is for a partitioned HadoopFsRelation and
-      // the user has specified static partitions, we add a Project operator on top of the query
-      // to include those constant column values in the query result.
-      //
-      // Example:
-      // Let's say that we have a table "t", which is created by
-      // CREATE TABLE t (a INT, b INT, c INT) USING parquet PARTITIONED BY (b, c)
-      // The statement of "INSERT INTO TABLE t PARTITION (b=2, c) SELECT 1, 3"
-      // will be converted to "INSERT INTO TABLE t PARTITION (b, c) SELECT 1, 2, 3".
-      //
-      // Basically, we will put those partition columns having a assigned value back
-      // to the SELECT clause. The output of the SELECT clause is organized as
-      // normal_columns static_partitioning_columns dynamic_partitioning_columns.
-      // static_partitioning_columns are partitioning columns having assigned
-      // values in the PARTITION clause (e.g. b in the above example).
-      // dynamic_partitioning_columns are partitioning columns that do not assigned
-      // values in the PARTITION clause (e.g. c in the above example).
+    // If the InsertIntoTable command is for a partitioned HadoopFsRelation and
+    // the user has specified static partitions, we add a Project operator on top of the query
+    // to include those constant column values in the query result.
+    //
+    // Example:
+    // Let's say that we have a table "t", which is created by
+    // CREATE TABLE t (a INT, b INT, c INT) USING parquet PARTITIONED BY (b, c)
+    // The statement of "INSERT INTO TABLE t PARTITION (b=2, c) SELECT 1, 3"
+    // will be converted to "INSERT INTO TABLE t PARTITION (b, c) SELECT 1, 2, 3".
+    //
+    // Basically, we will put those partition columns having a assigned value back
+    // to the SELECT clause. The output of the SELECT clause is organized as
+    // normal_columns static_partitioning_columns dynamic_partitioning_columns.
+    // static_partitioning_columns are partitioning columns having assigned
+    // values in the PARTITION clause (e.g. b in the above example).
+    // dynamic_partitioning_columns are partitioning columns that do not assigned
+    // values in the PARTITION clause (e.g. c in the above example).
       val actualQuery = if (parts.exists(_._2.isDefined)) {
-        val projectList = convertStaticPartitions(
-          sourceAttributes = query.output,
-          providedPartitions = parts,
+      val projectList = convertStaticPartitions(
+        sourceAttributes = query.output,
+        providedPartitions = parts,
           targetAttributes = l.output,
-          targetPartitionSchema = t.partitionSchema)
+        targetPartitionSchema = t.partitionSchema)
         Project(projectList, query)
       } else {
         query
@@ -214,8 +278,21 @@ case class DataSourceAnalysis(conf: SQLConf) extends Rule[LogicalPlan] with Cast
         Some(t.location),
         actualQuery.output.map(_.name))
   }
-}
 
+  object V1Provider {
+    def unapply(provider: String): Option[String] = {
+      provider match {
+        case "hive" =>
+          None
+        case _ if classOf[DataSourceV2].isAssignableFrom(
+          DataSource.lookupDataSource(provider, conf)) =>
+          None
+        case _ =>
+          Some(provider)
+      }
+    }
+  }
+}
 
 /**
  * Replaces [[UnresolvedCatalogRelation]] with concrete relation logical plans.

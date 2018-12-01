@@ -29,6 +29,7 @@ import org.antlr.v4.runtime.tree.{ParseTree, RuleNode, TerminalNode}
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.AnalysisException
+import org.apache.spark.sql.catalog.v2.{PartitionTransform, PartitionTransforms}
 import org.apache.spark.sql.catalyst.{FunctionIdentifier, TableIdentifier}
 import org.apache.spark.sql.catalyst.analysis._
 import org.apache.spark.sql.catalyst.catalog.CatalogStorageFormat
@@ -911,6 +912,42 @@ class AstBuilder(conf: SQLConf) extends SqlBaseBaseVisitor[AnyRef] with Logging 
   /* ********************************************************************************************
    * Expression parsing
    * ******************************************************************************************** */
+
+  override def visitIdentityTransform(
+      ctx: IdentityTransformContext): PartitionTransform = withOrigin(ctx) {
+    PartitionTransforms.identity(ctx.identifier.getText)
+  }
+
+  override def visitApplyTransform(
+      ctx: ApplyTransformContext): PartitionTransform = withOrigin(ctx) {
+    val args: Seq[Any] = ctx.simpleTransformArgumentList.simpleTransformArgument
+        .asScala.map(typedVisit[Any])
+
+    ctx.identifier.getText match {
+      case "bucket" =>
+        args match {
+          case Seq(Literal(numBuckets: Int, _), refs @ _*)
+              if refs.forall(_.isInstanceOf[UnresolvedAttribute]) =>
+            PartitionTransforms.bucket(
+              numBuckets, refs.map(_.asInstanceOf[UnresolvedAttribute].name): _*)
+          case _ =>
+            throw new AnalysisException(s"Unsupported transform: ${ctx.getText}")
+        }
+      case transformName =>
+        args match {
+          case Seq(ref @ UnresolvedAttribute(_)) =>
+            PartitionTransforms.apply(transformName, ref.name)
+          case _ =>
+            throw new AnalysisException(s"Unsupported transform: ${ctx.getText}")
+        }
+    }
+  }
+
+  override def visitVisitTransformReference(
+      ctx: VisitTransformReferenceContext): UnresolvedAttribute = withOrigin(ctx) {
+    UnresolvedAttribute(ctx.qualifiedName.identifier.asScala.map(_.getText))
+  }
+
   /**
    * Create an expression from the given context. This method just passes the context on to the
    * visitor and only takes care of typing (We assume that the visitor returns an Expression here).

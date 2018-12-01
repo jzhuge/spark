@@ -24,9 +24,10 @@ import org.apache.spark.sql.{AnalysisException, SaveMode, SparkSession, SQLConte
 import org.apache.spark.sql.catalog.v2.{PartitionUtil, Table, TableChange, V1MetadataTable}
 import org.apache.spark.sql.catalyst.TableIdentifier
 import org.apache.spark.sql.catalyst.analysis.NamedRelation
-import org.apache.spark.sql.catalyst.catalog.CatalogTable
+import org.apache.spark.sql.catalyst.catalog.{CatalogTable, CatalogUtils}
 import org.apache.spark.sql.catalyst.expressions.{Alias, Literal}
 import org.apache.spark.sql.catalyst.plans.logical.{AlterTable, AppendData, CreateTable, CreateTableAsSelect, InsertIntoTable, LogicalPlan, OverwritePartitionsDynamic, Project, ReplaceTableAsSelect}
+import org.apache.spark.sql.catalyst.plans.logical.sql
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution.command.{AlterTableAddColumnsCommand, AlterTableDropColumnsCommand, AlterTableRenameColumnCommand, AlterTableSetPropertiesCommand, AlterTableUnsetPropertiesCommand, AlterTableUpdateColumnCommand, CreateTableLikeCommand, DescribeTableCommand, ShowCreateTableCommand, ShowTablePropertiesCommand}
 import org.apache.spark.sql.execution.datasources
@@ -86,9 +87,16 @@ class DataSourceV2Analysis(spark: SparkSession) extends Rule[LogicalPlan] {
       CreateTable(catalog, ensureDatabaseIsSet(targetIdent),
         source.schema, source.partitioning.asScala, source.properties.asScala.toMap, !ifNotExists)
 
-    case datasources.CreateTable(catalogTable, mode, None)
-      if isV2Source(catalogTable, spark) =>
-      val options = catalogTable.storage.properties + ("provider" -> catalogTable.provider.get)
+    case sql.CreateTable(ident, V2Provider(provider), schema, transforms, bucketSpec, options,
+    ifNotExists) =>
+      val partitioning = transforms ++ bucketSpec.map(PartitionUtil.convertBucketSpec).toSeq
+      CreateTable(catalog, ensureDatabaseIsSet(ident),
+        schema, partitioning, options + ("provider" -> provider), ignoreIfExists = !ifNotExists)
+
+    case datasources.CreateTable(catalogTable, mode, None) if isV2Source(catalogTable, spark) =>
+      val pathOption = catalogTable.storage.locationUri.map("path" -> CatalogUtils.URIToString(_))
+      val providerOption = catalogTable.provider.map("provider" -> _)
+      val options = catalogTable.storage.properties ++ providerOption ++ pathOption
 
       val partitioning = PartitionUtil.convertToTransforms(
         catalogTable.partitionColumnNames, catalogTable.bucketSpec)
@@ -106,9 +114,17 @@ class DataSourceV2Analysis(spark: SparkSession) extends Rule[LogicalPlan] {
           throw new AnalysisException(s"$mode cannot be used for table creation in v2 data sources")
       }
 
+    case sql.CreateTableAsSelect(ident, V2Provider(provider), transforms, bucketSpec, options,
+    asSelect, ifNotExists) =>
+      val partitioning = transforms ++ bucketSpec.map(PartitionUtil.convertBucketSpec).toSeq
+      CreateTableAsSelect(catalog, ensureDatabaseIsSet(ident),
+        partitioning, asSelect, options + ("provider" -> provider), ignoreIfExists = !ifNotExists)
+
     case datasources.CreateTable(catalogTable, mode, Some(query))
         if isV2Source(catalogTable, spark) =>
-      val options = catalogTable.storage.properties + ("provider" -> catalogTable.provider.get)
+      val pathOption = catalogTable.storage.locationUri.map("path" -> CatalogUtils.URIToString(_))
+      val providerOption = catalogTable.provider.map("provider" -> _)
+      val options = catalogTable.storage.properties ++ providerOption ++ pathOption
 
       if (catalogTable.partitionColumnNames.nonEmpty) {
         throw new AnalysisException("CTAS with partitions is not yet supported.")
@@ -220,6 +236,20 @@ class DataSourceV2Analysis(spark: SparkSession) extends Rule[LogicalPlan] {
     DataSourceV2Relation.create(
       catalog.name, identifier, table,
       Map("database" -> identifier.database.get, "table" -> identifier.table))
+  }
+
+  object V2Provider {
+    def unapply(provider: String): Option[String] = {
+      provider match {
+        case "hive" =>
+          None
+        case _ if classOf[DataSourceV2].isAssignableFrom(
+          DataSource.lookupDataSource(provider, spark.sqlContext.conf)) =>
+          Some(provider)
+        case _ =>
+          None
+      }
+    }
   }
 
   object V2TableReference {
