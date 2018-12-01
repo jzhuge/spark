@@ -44,7 +44,7 @@ public class PartitionTransforms {
       return month(colName);
     } else if ("date".equals(transform)) {
       return date(colName);
-    } else if ("hour".equals(transform)) {
+    } else if ("date_hour".equals(transform)) {
       return hour(colName);
     }
 
@@ -121,7 +121,7 @@ public class PartitionTransforms {
     return new DateAndHour(colName);
   }
 
-  private abstract static class SingleColumnTransform implements PartitionTransform {
+  public abstract static class SingleColumnTransform implements PartitionTransform {
     private final String[] colNames;
 
     private SingleColumnTransform(String colName) {
