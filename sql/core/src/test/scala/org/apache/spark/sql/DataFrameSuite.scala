@@ -1461,7 +1461,7 @@ class DataFrameSuite extends QueryTest with SharedSQLContext {
     assert(java.lang.Float.isNaN(maxFloat.getFloat(0)))
   }
 
-  test("SPARK-8072: Better Exception for Duplicate Columns") {
+  ignore("SPARK-8072: Better Exception for Duplicate Columns") {
     // only one duplicate column present
     val e = intercept[org.apache.spark.sql.AnalysisException] {
       Seq((1, 2, 3), (2, 3, 4), (3, 4, 5)).toDF("column1", "column2", "column1")
@@ -1483,7 +1483,7 @@ class DataFrameSuite extends QueryTest with SharedSQLContext {
     assert(!f.getMessage.contains("column2"))
   }
 
-  test("SPARK-6941: Better error message for inserting into RDD-based Table") {
+  ignore("SPARK-6941: Better error message for inserting into RDD-based Table") {
     withTempDir { dir =>
 
       val tempParquetFile = new File(dir, "tmp_parquet")
