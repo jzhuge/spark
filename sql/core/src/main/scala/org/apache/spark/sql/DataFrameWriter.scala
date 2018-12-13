@@ -750,7 +750,9 @@ final class DataFrameWriter[T] private[sql](ds: Dataset[T]) {
         "Cannot create partitioned hive serde table with saveAsTable API")
     }
 
-    val tableType = if (storage.locationUri.isDefined) {
+    val tableType = if (tableExists) {
+      existingTable.get.tableType
+    } else if (storage.locationUri.isDefined) {
       CatalogTableType.EXTERNAL
     } else {
       CatalogTableType.MANAGED
