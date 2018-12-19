@@ -932,8 +932,8 @@ class ParquetPartitionedBatchPatternTest(unittest.TestCase):
         types = list(filter(lambda r: r['col_name'].strip() == 'table_type', collect(describe)))
         self.assertEqual(len(types), 0, "Should produce no table_type property entry")
 
-        formats = list(filter(lambda r: r['col_name'].strip() == 'InputFormat:', collect(describe)))
-        self.assertEqual(len(formats), 1, "Should produce an InputFormat: property entry")
+        formats = list(filter(lambda r: r['col_name'].strip().rstrip(':') == 'InputFormat', collect(describe)))
+        self.assertEqual(len(formats), 1, "Should produce an InputFormat property entry")
         self.assertEqual(
                 formats[0]['data_type'].strip(),
                 'org.apache.hadoop.hive.ql.io.parquet.MapredParquetInputFormat',
@@ -1383,8 +1383,8 @@ class ParquetUnpartitionedBatchPatternTest(unittest.TestCase):
         types = list(filter(lambda r: r['col_name'].strip() == 'table_type', collect(describe)))
         self.assertEqual(len(types), 0, "Should produce no table_type property entry")
 
-        formats = list(filter(lambda r: r['col_name'].strip() == 'InputFormat:', collect(describe)))
-        self.assertEqual(len(formats), 1, "Should produce an InputFormat: property entry")
+        formats = list(filter(lambda r: r['col_name'].strip().rstrip(':') == 'InputFormat', collect(describe)))
+        self.assertEqual(len(formats), 1, "Should produce an InputFormat property entry")
         self.assertEqual(
                 formats[0]['data_type'].strip(),
                 'org.apache.hadoop.hive.ql.io.parquet.MapredParquetInputFormat',
