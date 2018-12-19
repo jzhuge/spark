@@ -2147,7 +2147,7 @@ class SQLQuerySuite extends QueryTest with SharedSQLContext {
     }
   }
 
-  test("data source table created in InMemoryCatalog should be able to read/write") {
+  ignore("data source table created in InMemoryCatalog should be able to read/write") {
     withTable("tbl") {
       val provider = spark.sessionState.conf.defaultDataSourceName
       sql(s"CREATE TABLE tbl(i INT, j STRING) USING $provider")

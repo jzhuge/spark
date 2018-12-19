@@ -675,9 +675,6 @@ final class DataFrameWriter[T] private[sql](ds: Dataset[T]) {
       case (true, SaveMode.Ignore) =>
         // Do nothing
 
-      case (true, SaveMode.ErrorIfExists) =>
-        throw new AnalysisException(s"Table $tableIdent already exists.")
-
       case (true, SaveMode.Overwrite) =>
         // Get all input data source or hive relations of the query.
         val srcRelations = df.logicalPlan.collect {
@@ -704,6 +701,9 @@ final class DataFrameWriter[T] private[sql](ds: Dataset[T]) {
         createTable(tableIdentWithDB, tableExists)
         // Refresh the cache of the table in the catalog.
         catalog.refreshTable(tableIdentWithDB)
+
+      case (true, m) if m == SaveMode.ErrorIfExists || m != SaveMode.Ignore =>
+        throw new AnalysisException(s"Table $tableIdent already exists.")
 
       case _ => createTable(tableIdent, tableExists)
     }
