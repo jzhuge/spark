@@ -125,6 +125,9 @@ def expected_error_text(desc):
 def schema(table):
     return [ (row['col_name'], row['data_type']) for row in collect(sql("DESCRIBE {0}", table)) ]
 
+def schema_with_comments(table):
+    return [ (row['col_name'], row['data_type'], row['comment']) for row in collect(sql("DESCRIBE {0}", table)) ]
+
 
 
 # test cases
@@ -199,7 +202,7 @@ class IcebergDDLTest(unittest.TestCase):
     def test_create_if_not_exists(self):
         with temp_table("test_create_if_not_exists") as t:
             sql("CREATE TABLE IF NOT EXISTS {0} (id bigint, data string) USING iceberg", t)
- 
+
             self.assertEqual(schema(t), [
                     ('id', 'bigint'),
                     ('data', 'string')
@@ -376,6 +379,19 @@ class IcebergDDLTest(unittest.TestCase):
             self.assertEqual(schema(t), [
                     ('id', 'bigint'),
                     ('point', 'struct<x:double,y:double>')
+                ])
+
+    def test_create_with_comments(self):
+        with temp_table("test_create_with_comments") as t:
+            sql("""
+                CREATE TABLE {0} (
+                    id bigint COMMENT 'unique identifier',
+                    data string COMMENT 'payload'
+                  ) USING iceberg
+                """, t)
+            self.assertEqual(schema_with_comments(t), [
+                    ('id', 'bigint', 'unique identifier'),
+                    ('data', 'string', 'payload')
                 ])
 
 
