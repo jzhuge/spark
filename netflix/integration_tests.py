@@ -378,6 +378,19 @@ class IcebergDDLTest(unittest.TestCase):
                     ('point', 'struct<x:double,y:double>')
                 ])
 
+    def test_create_with_comments(self):
+        with temp_table("test_create_with_comments") as t:
+            sql("""
+                CREATE TABLE {0} (
+                    id bigint COMMENT 'unique identifier',
+                    data string COMMENT 'payload'
+                  ) USING iceberg
+                """, t)
+            self.assertEqual(schema_with_comments(t), [
+                    ('id', 'bigint', 'unique identifier'),
+                    ('data', 'string', 'payload')
+                ])
+
 
 class IcebergTypesTest(unittest.TestCase):
 
