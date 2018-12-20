@@ -61,7 +61,7 @@ class NetflixAnalysis(spark: SparkSession) extends Rule[LogicalPlan] {
       drop.copy(catalog = icebergCatalog)
 
     // this case is only used for older iceberg tables that don't have the provider set
-    case rel: LogicalRelation if isIcebergTable(rel.catalogTable.get) =>
+    case rel: LogicalRelation if rel.catalogTable.map(isIcebergTable).getOrElse(false) =>
       toLogicalRelation(rel)
   }
 
