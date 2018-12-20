@@ -166,7 +166,8 @@ case class DataSourceAnalysis(conf: SQLConf) extends Rule[LogicalPlan] with Cast
       // Determine the storage mode.
       val mode = if (ifNotExists) SaveMode.Ignore else SaveMode.ErrorIfExists
 
-      CreateTable(tableDesc, mode, None)
+      DDLUtils.checkDataColNames(tableDesc)
+      CreateDataSourceTableCommand(tableDesc, ignoreIfExists = mode == SaveMode.Ignore)
 
     case sql.CreateTableAsSelect(table, V1Provider(provider), partitioning, bucketSpec, options,
     query, ifNotExists) =>
@@ -197,7 +198,8 @@ case class DataSourceAnalysis(conf: SQLConf) extends Rule[LogicalPlan] with Cast
       // Determine the storage mode.
       val mode = if (ifNotExists) SaveMode.Ignore else SaveMode.ErrorIfExists
 
-      CreateTable(tableDesc, mode, Some(query))
+      DDLUtils.checkDataColNames(tableDesc.copy(schema = query.schema))
+      CreateDataSourceTableAsSelectCommand(tableDesc, mode, query, query.output.map(_.name))
 
     case CreateTable(tableDesc, mode, None) if DDLUtils.isDatasourceTable(tableDesc) =>
       DDLUtils.checkDataColNames(tableDesc)
