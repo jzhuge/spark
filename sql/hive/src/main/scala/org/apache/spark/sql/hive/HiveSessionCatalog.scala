@@ -17,6 +17,7 @@
 
 package org.apache.spark.sql.hive
 
+import scala.collection.JavaConverters._
 import scala.util.{Failure, Success, Try}
 import scala.util.control.NonFatal
 
@@ -25,17 +26,17 @@ import org.apache.hadoop.hive.ql.exec.{UDAF, UDF}
 import org.apache.hadoop.hive.ql.exec.{FunctionRegistry => HiveFunctionRegistry}
 import org.apache.hadoop.hive.ql.udf.generic.{AbstractGenericUDAFResolver, GenericUDF, GenericUDTF}
 
-import org.apache.spark.sql.{AnalysisException, SparkSession}
+import org.apache.spark.sql.{AnalysisException, SparkSession, UDFLibrary}
 import org.apache.spark.sql.catalyst.{FunctionIdentifier, TableIdentifier}
 import org.apache.spark.sql.catalyst.analysis.{FunctionRegistry, NoSuchTableException}
 import org.apache.spark.sql.catalyst.analysis.FunctionRegistry.FunctionBuilder
 import org.apache.spark.sql.catalyst.catalog.{FunctionResourceLoader, GlobalTempViewManager, SessionCatalog}
-import org.apache.spark.sql.catalyst.expressions.{Cast, Expression, ExpressionInfo}
+import org.apache.spark.sql.catalyst.expressions.{Cast, Expression, ExpressionInfo, ScalaUDF}
 import org.apache.spark.sql.catalyst.plans.logical.{LogicalPlan, SubqueryAlias}
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.hive.HiveShim.HiveFunctionWrapper
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.types.{DecimalType, DoubleType}
+import org.apache.spark.sql.types.{BinaryType, BooleanType, ByteType, DataType, DateType, DecimalType, DoubleType, FloatType, IntegerType, LongType, ShortType, StringType, TimestampType}
 import org.apache.spark.util.Utils
 
 
@@ -125,7 +126,11 @@ private[sql] class HiveSessionCatalog(
     // mismatch, etc. Here we catch the exception and throw AnalysisException instead.
     (children: Seq[Expression]) => {
       try {
-        if (classOf[UDF].isAssignableFrom(clazz)) {
+        if (classOf[UDFLibrary].isAssignableFrom(clazz)) {
+          val plugin = clazz.newInstance.asInstanceOf[UDFLibrary]
+          val udf = plugin.loadUDF(name, children.map(_.dataType).asJava)
+          ScalaUDF(udf.f, udf.dataType, children, udf.inputTypes.getOrElse(Nil))
+        } else if (classOf[UDF].isAssignableFrom(clazz)) {
           val udf = HiveSimpleUDF(name, new HiveFunctionWrapper(clazz.getName), children)
           udf.dataType // Force it to check input data types.
           udf
@@ -150,7 +155,50 @@ private[sql] class HiveSessionCatalog(
           udtf.elementSchema // Force it to check input data types.
           udtf
         } else {
-          throw new AnalysisException(s"No handler for Hive UDF '${clazz.getCanonicalName}'")
+          // try to load the function with reflection
+          val dataTypes = children.map(_.dataType)
+          val javaTypes = dataTypes.map(dt => HiveSessionCatalog.JAVA_TYPES.getOrElse(dt,
+            throw new AnalysisException(
+              s"Cannot load UDF ${clazz.getCanonicalName}.$name: $dt is not supported")))
+
+          try {
+            val method = clazz.getDeclaredMethod(name, javaTypes: _*)
+
+            if (!method.isAccessible) {
+              method.setAccessible(true)
+            }
+
+//            if (!Modifier.isStatic(method.getModifiers)) {
+//              throw new AnalysisException(
+//                s"Cannot load non-static function as UDF: '$name' in ${clazz.getCanonicalName}")
+//            }
+
+            val javaReturn = method.getReturnType
+            val returnType = HiveSessionCatalog.DATA_TYPES.getOrElse(javaReturn,
+              throw new AnalysisException(s"Cannot load UDF ${clazz.getCanonicalName}.$name: " +
+                  s"return type $javaReturn is not supported"))
+
+            val f = javaTypes.size match {
+              case 0 => () => method.invoke(null)
+              case 1 => (a: Any) => method.invoke(null, a)
+              case 2 => (a: Any, v: Any) => method.invoke(null, a, v)
+              case 3 => (a: Any, b: Any, c: Any) => method.invoke(null, a, b, c)
+              case 4 => (a: Any, b: Any, c: Any, d: Any) => method.invoke(null, a, b, c, d)
+              case _ =>
+                throw new AnalysisException(s"Cannot load UDF ${clazz.getCanonicalName}.$name: " +
+                    s"too many arguments (${javaTypes.size}, max 4)")
+            }
+
+            ScalaUDF(f, returnType, children, dataTypes)
+
+          } catch {
+            case e: SecurityException =>
+              throw new AnalysisException(
+                s"Cannot load UDF ${clazz.getCanonicalName}.$name", cause = Some(e))
+            case _: NoSuchMethodException =>
+              throw new AnalysisException(s"Cannot load UDF ${clazz.getCanonicalName}.$name: " +
+                  s"cannot find $name(${javaTypes.mkString(", ")})")
+          }
         }
       } catch {
         case ae: AnalysisException =>
@@ -240,4 +288,21 @@ private[sql] class HiveSessionCatalog(
   private val hiveFunctions = Seq(
     "histogram_numeric"
   )
+}
+
+object HiveSessionCatalog {
+  private val JAVA_TYPES: Map[DataType, Class[_]] = Map(
+    BooleanType -> java.lang.Boolean.TYPE,
+    ByteType -> java.lang.Byte.TYPE,
+    ShortType -> java.lang.Short.TYPE,
+    IntegerType -> java.lang.Integer.TYPE,
+    DateType -> java.lang.Integer.TYPE,
+    LongType -> java.lang.Long.TYPE,
+    TimestampType -> java.lang.Long.TYPE,
+    FloatType -> java.lang.Float.TYPE,
+    DoubleType -> java.lang.Double.TYPE,
+    StringType -> classOf[java.lang.String],
+    BinaryType -> classOf[Array[Byte]])
+
+  private val DATA_TYPES: Map[Class[_], DataType] = JAVA_TYPES.map(pair => pair._2 -> pair._1)
 }
