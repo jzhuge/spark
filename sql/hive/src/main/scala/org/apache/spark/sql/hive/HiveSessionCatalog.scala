@@ -129,6 +129,10 @@ private[sql] class HiveSessionCatalog(
         if (classOf[UDFLibrary].isAssignableFrom(clazz)) {
           val plugin = clazz.newInstance.asInstanceOf[UDFLibrary]
           val udf = plugin.loadUDF(name, children.map(_.dataType).asJava)
+          if (udf == null) {
+            throw new AnalysisException(
+              s"Cannot load UDF using ${clazz.getCanonicalName}: not found")
+          }
           ScalaUDF(udf.f, udf.dataType, children, udf.inputTypes.getOrElse(Nil))
         } else if (classOf[UDF].isAssignableFrom(clazz)) {
           val udf = HiveSimpleUDF(name, new HiveFunctionWrapper(clazz.getName), children)
@@ -305,5 +309,22 @@ object HiveSessionCatalog {
     StringType -> classOf[java.lang.String],
     BinaryType -> classOf[Array[Byte]])
 
-  private val DATA_TYPES: Map[Class[_], DataType] = JAVA_TYPES.map(pair => pair._2 -> pair._1)
+  private val DATA_TYPES: Map[Class[_], DataType] = Map(
+    java.lang.Boolean.TYPE -> BooleanType,
+    classOf[java.lang.Boolean] -> BooleanType.asNullable,
+    java.lang.Byte.TYPE -> ByteType,
+    classOf[java.lang.Byte] -> ByteType.asNullable,
+    java.lang.Short.TYPE -> ShortType,
+    classOf[java.lang.Short] -> ShortType.asNullable,
+    java.lang.Integer.TYPE -> IntegerType,
+    classOf[java.lang.Integer] -> IntegerType.asNullable,
+    java.lang.Long.TYPE -> LongType,
+    classOf[java.lang.Long] -> LongType.asNullable,
+    java.lang.Float.TYPE -> FloatType,
+    classOf[java.lang.Float] -> FloatType.asNullable,
+    java.lang.Double.TYPE -> DoubleType,
+    classOf[java.lang.Double] -> DoubleType.asNullable,
+    classOf[java.lang.String] -> StringType.asNullable,
+    classOf[Array[Byte]] -> BinaryType)
+
 }
