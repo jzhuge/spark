@@ -180,10 +180,11 @@ private[sql] class HiveSessionCatalog(
 
             val f = javaTypes.size match {
               case 0 => () => method.invoke(null)
-              case 1 => (a: Any) => method.invoke(null, a)
-              case 2 => (a: Any, v: Any) => method.invoke(null, a, v)
-              case 3 => (a: Any, b: Any, c: Any) => method.invoke(null, a, b, c)
-              case 4 => (a: Any, b: Any, c: Any, d: Any) => method.invoke(null, a, b, c, d)
+              case 1 => (a: AnyRef) => method.invoke(null, a)
+              case 2 => (a: AnyRef, v: AnyRef) => method.invoke(null, a, v)
+              case 3 => (a: AnyRef, b: AnyRef, c: AnyRef) => method.invoke(null, a, b, c)
+              case 4 => (a: AnyRef, b: AnyRef, c: AnyRef, d: AnyRef) =>
+                method.invoke(null, a, b, c, d)
               case _ =>
                 throw new AnalysisException(s"Cannot load UDF ${clazz.getCanonicalName}.$name: " +
                     s"too many arguments (${javaTypes.size}, max 4)")
