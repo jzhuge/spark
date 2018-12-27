@@ -163,10 +163,7 @@ private[sql] class HiveSessionCatalog(
         } else {
           // try to load the function with reflection
           val reflected = ReflectedFunction(name, clazz, children.map(_.dataType))
-
-          reflected.javaMethod // verify that the method can be loaded
-          reflected.target // verify that the class can be instantiated if needed
-
+          reflected.validate
           ScalaUDF(reflected.toFunc, reflected.returnType, children, reflected.inputTypes)
         }
       } catch {
@@ -270,13 +267,10 @@ case class ReflectedFunction(
         s"Cannot load UDF ${clazz.getCanonicalName}.$name: $dt is not supported")))
   }
 
-  @transient lazy val javaMethod: Method = {
+  def validate: Unit = {
     try {
-      val method = clazz.getDeclaredMethod(name, javaTypes: _*)
-      if (!method.isAccessible) {
-        method.setAccessible(true)
-      }
-      method
+      javaMethod // ensure the method can be loaded
+      target // ensure the method is static or that the class can be instantiated
     } catch {
       case _: NoSuchMethodException =>
         throw new AnalysisException(s"Cannot load UDF ${clazz.getCanonicalName}.$name: " +
@@ -284,24 +278,29 @@ case class ReflectedFunction(
       case e: SecurityException =>
         throw new AnalysisException(
           s"Cannot load UDF ${clazz.getCanonicalName}.$name", cause = Some(e))
+      case _: InstantiationException =>
+        throw new AnalysisException(
+          s"Cannot instantiate class: ${clazz.getCanonicalName} (no empty constructor)")
+      case e: ExceptionInInitializerError =>
+        throw new AnalysisException(
+          s"Failed to instantiate class: ${clazz.getCanonicalName}", cause = Some(e))
+      case e: IllegalAccessException =>
+        throw new AnalysisException(
+          s"Failed to instantiate class: ${clazz.getCanonicalName}", cause = Some(e))
     }
+  }
+
+  @transient lazy val javaMethod: Method = {
+    val method = clazz.getDeclaredMethod(name, javaTypes: _*)
+    if (!method.isAccessible) {
+      method.setAccessible(true)
+    }
+    method
   }
 
   @transient lazy val target: AnyRef = {
     if (!Modifier.isStatic(javaMethod.getModifiers)) {
-      try {
-        clazz.newInstance().asInstanceOf[AnyRef]
-      } catch {
-        case _: InstantiationException =>
-          throw new AnalysisException(
-            s"Cannot instantiate class: ${clazz.getCanonicalName} (no empty constructor)")
-        case e: ExceptionInInitializerError =>
-          throw new AnalysisException(
-            s"Failed to instantiate class: ${clazz.getCanonicalName}", cause = Some(e))
-        case e: IllegalAccessException =>
-          throw new AnalysisException(
-            s"Failed to instantiate class: ${clazz.getCanonicalName}", cause = Some(e))
-      }
+      clazz.newInstance().asInstanceOf[AnyRef]
     } else {
       null
     }
