@@ -17,6 +17,8 @@
 
 package org.apache.spark.sql.hive
 
+import java.lang.reflect.Modifier
+
 import scala.collection.JavaConverters._
 import scala.util.{Failure, Success, Try}
 import scala.util.control.NonFatal
@@ -172,10 +174,23 @@ private[sql] class HiveSessionCatalog(
               method.setAccessible(true)
             }
 
-//            if (!Modifier.isStatic(method.getModifiers)) {
-//              throw new AnalysisException(
-//                s"Cannot load non-static function as UDF: '$name' in ${clazz.getCanonicalName}")
-//            }
+            val target = if (!Modifier.isStatic(method.getModifiers)) {
+              try {
+                clazz.newInstance()
+              } catch {
+                case _: InstantiationException =>
+                  throw new AnalysisException(
+                    s"Cannot instantiate class: ${clazz.getCanonicalName} (no empty constructor)")
+                case e: ExceptionInInitializerError =>
+                  throw new AnalysisException(
+                    s"Failed to instantiate class: ${clazz.getCanonicalName}", cause = Some(e))
+                case e: IllegalAccessException =>
+                  throw new AnalysisException(
+                    s"Failed to instantiate class: ${clazz.getCanonicalName}", cause = Some(e))
+              }
+            } else {
+              null
+            }
 
             val javaReturn = method.getReturnType
             val returnType = HiveSessionCatalog.DATA_TYPES.getOrElse(javaReturn,
@@ -183,12 +198,12 @@ private[sql] class HiveSessionCatalog(
                   s"return type $javaReturn is not supported"))
 
             val f = javaTypes.size match {
-              case 0 => () => method.invoke(null)
-              case 1 => (a: AnyRef) => method.invoke(null, a)
-              case 2 => (a: AnyRef, v: AnyRef) => method.invoke(null, a, v)
-              case 3 => (a: AnyRef, b: AnyRef, c: AnyRef) => method.invoke(null, a, b, c)
+              case 0 => () => method.invoke(target)
+              case 1 => (a: AnyRef) => method.invoke(target, a)
+              case 2 => (a: AnyRef, v: AnyRef) => method.invoke(target, a, v)
+              case 3 => (a: AnyRef, b: AnyRef, c: AnyRef) => method.invoke(target, a, b, c)
               case 4 => (a: AnyRef, b: AnyRef, c: AnyRef, d: AnyRef) =>
-                method.invoke(null, a, b, c, d)
+                method.invoke(target, a, b, c, d)
               case _ =>
                 throw new AnalysisException(s"Cannot load UDF ${clazz.getCanonicalName}.$name: " +
                     s"too many arguments (${javaTypes.size}, max 4)")
