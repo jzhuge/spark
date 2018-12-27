@@ -17,7 +17,7 @@
 
 package org.apache.spark.sql.hive
 
-import java.lang.reflect.Modifier
+import java.lang.reflect.{Method, Modifier}
 
 import scala.collection.JavaConverters._
 import scala.util.{Failure, Success, Try}
@@ -162,63 +162,12 @@ private[sql] class HiveSessionCatalog(
           udtf
         } else {
           // try to load the function with reflection
-          val dataTypes = children.map(_.dataType)
-          val javaTypes = dataTypes.map(dt => HiveSessionCatalog.JAVA_TYPES.getOrElse(dt,
-            throw new AnalysisException(
-              s"Cannot load UDF ${clazz.getCanonicalName}.$name: $dt is not supported")))
+          val reflected = ReflectedFunction(name, clazz, children.map(_.dataType))
 
-          try {
-            val method = clazz.getDeclaredMethod(name, javaTypes: _*)
+          reflected.javaMethod // verify that the method can be loaded
+          reflected.target // verify that the class can be instantiated if needed
 
-            if (!method.isAccessible) {
-              method.setAccessible(true)
-            }
-
-            val target = if (!Modifier.isStatic(method.getModifiers)) {
-              try {
-                clazz.newInstance()
-              } catch {
-                case _: InstantiationException =>
-                  throw new AnalysisException(
-                    s"Cannot instantiate class: ${clazz.getCanonicalName} (no empty constructor)")
-                case e: ExceptionInInitializerError =>
-                  throw new AnalysisException(
-                    s"Failed to instantiate class: ${clazz.getCanonicalName}", cause = Some(e))
-                case e: IllegalAccessException =>
-                  throw new AnalysisException(
-                    s"Failed to instantiate class: ${clazz.getCanonicalName}", cause = Some(e))
-              }
-            } else {
-              null
-            }
-
-            val javaReturn = method.getReturnType
-            val returnType = HiveSessionCatalog.DATA_TYPES.getOrElse(javaReturn,
-              throw new AnalysisException(s"Cannot load UDF ${clazz.getCanonicalName}.$name: " +
-                  s"return type $javaReturn is not supported"))
-
-            val f = javaTypes.size match {
-              case 0 => () => method.invoke(target)
-              case 1 => (a: AnyRef) => method.invoke(target, a)
-              case 2 => (a: AnyRef, v: AnyRef) => method.invoke(target, a, v)
-              case 3 => (a: AnyRef, b: AnyRef, c: AnyRef) => method.invoke(target, a, b, c)
-              case 4 => (a: AnyRef, b: AnyRef, c: AnyRef, d: AnyRef) =>
-                method.invoke(target, a, b, c, d)
-              case _ =>
-                throw new AnalysisException(s"Cannot load UDF ${clazz.getCanonicalName}.$name: " +
-                    s"too many arguments (${javaTypes.size}, max 4)")
-            }
-
-            ScalaUDF(f, returnType, children, dataTypes)
-
-          } catch {
-            case e: SecurityException =>
-              throw new AnalysisException(
-                s"Cannot load UDF ${clazz.getCanonicalName}.$name", cause = Some(e))
-            case _: NoSuchMethodException =>
-              throw new AnalysisException(s"Cannot load UDF ${clazz.getCanonicalName}.$name: " +
-                  s"cannot find $name(${javaTypes.mkString(", ")})")
-          }
+          ScalaUDF(reflected.toFunc, reflected.returnType, children, reflected.inputTypes)
         }
       } catch {
         case ae: AnalysisException =>
@@ -310,7 +259,77 @@ private[sql] class HiveSessionCatalog(
   )
 }
 
-object HiveSessionCatalog {
+case class ReflectedFunction(
+    name: String,
+    clazz: Class[_],
+    @transient inputTypes: Seq[DataType]) {
+
+  val javaTypes: Seq[Class[_]] = {
+    inputTypes.map(dt => ReflectedFunction.JAVA_TYPES.getOrElse(dt,
+      throw new AnalysisException(
+        s"Cannot load UDF ${clazz.getCanonicalName}.$name: $dt is not supported")))
+  }
+
+  @transient lazy val javaMethod: Method = {
+    try {
+      val method = clazz.getDeclaredMethod(name, javaTypes: _*)
+      if (!method.isAccessible) {
+        method.setAccessible(true)
+      }
+      method
+    } catch {
+      case _: NoSuchMethodException =>
+        throw new AnalysisException(s"Cannot load UDF ${clazz.getCanonicalName}.$name: " +
+            s"cannot find $name(${javaTypes.mkString(", ")})")
+      case e: SecurityException =>
+        throw new AnalysisException(
+          s"Cannot load UDF ${clazz.getCanonicalName}.$name", cause = Some(e))
+    }
+  }
+
+  @transient lazy val target: AnyRef = {
+    if (!Modifier.isStatic(javaMethod.getModifiers)) {
+      try {
+        clazz.newInstance().asInstanceOf[AnyRef]
+      } catch {
+        case _: InstantiationException =>
+          throw new AnalysisException(
+            s"Cannot instantiate class: ${clazz.getCanonicalName} (no empty constructor)")
+        case e: ExceptionInInitializerError =>
+          throw new AnalysisException(
+            s"Failed to instantiate class: ${clazz.getCanonicalName}", cause = Some(e))
+        case e: IllegalAccessException =>
+          throw new AnalysisException(
+            s"Failed to instantiate class: ${clazz.getCanonicalName}", cause = Some(e))
+      }
+    } else {
+      null
+    }
+  }
+
+  @transient lazy val returnType: DataType = {
+    val javaReturn = javaMethod.getReturnType
+    ReflectedFunction.DATA_TYPES.getOrElse(javaReturn,
+      throw new AnalysisException(s"Cannot load UDF ${clazz.getCanonicalName}.$name: " +
+          s"return type $javaReturn is not supported"))
+  }
+
+  def toFunc: AnyRef = {
+    javaTypes.size match {
+      case 0 => () => javaMethod.invoke(target)
+      case 1 => (a: AnyRef) => javaMethod.invoke(target, a)
+      case 2 => (a: AnyRef, v: AnyRef) => javaMethod.invoke(target, a, v)
+      case 3 => (a: AnyRef, b: AnyRef, c: AnyRef) => javaMethod.invoke(target, a, b, c)
+      case 4 => (a: AnyRef, b: AnyRef, c: AnyRef, d: AnyRef) =>
+        javaMethod.invoke(target, a, b, c, d)
+      case _ =>
+        throw new AnalysisException(s"Cannot load UDF ${clazz.getCanonicalName}.$name: " +
+            s"too many arguments (${javaTypes.size}, max 4)")
+    }
+  }
+}
+
+object ReflectedFunction {
   private val JAVA_TYPES: Map[DataType, Class[_]] = Map(
     BooleanType -> java.lang.Boolean.TYPE,
     ByteType -> java.lang.Byte.TYPE,
