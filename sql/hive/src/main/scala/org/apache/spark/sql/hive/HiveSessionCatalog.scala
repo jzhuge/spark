@@ -116,13 +116,30 @@ private[sql] class HiveSessionCatalog(
   }
 
   override def makeFunctionBuilder(funcName: String, className: String): FunctionBuilder = {
-    makeFunctionBuilder(funcName, Utils.classForName(className))
+    val (clazz, maybeMethodName) = try {
+      (Utils.classForName(className), None)
+    } catch {
+      case e: ClassNotFoundException =>
+        val splitIndex = className.lastIndexOf('.')
+        if (splitIndex > 1) {
+          val (altClassName, methodPart) = className.splitAt(splitIndex)
+          (Utils.classForName(altClassName), Some(methodPart.substring(1)))
+        } else {
+          throw e
+        }
+    }
+
+    makeFunctionBuilder(funcName, clazz, maybeMethodName)
   }
 
   /**
    * Construct a [[FunctionBuilder]] based on the provided class that represents a function.
    */
-  private def makeFunctionBuilder(name: String, clazz: Class[_]): FunctionBuilder = {
+  private def makeFunctionBuilder(
+      name: String,
+      clazz: Class[_],
+      maybeFuncName: Option[String]): FunctionBuilder = {
+    val loadName = maybeFuncName.getOrElse(name)
     // When we instantiate hive UDF wrapper class, we may throw exception if the input
     // expressions don't satisfy the hive UDF, such as type mismatch, input number
     // mismatch, etc. Here we catch the exception and throw AnalysisException instead.
@@ -130,10 +147,10 @@ private[sql] class HiveSessionCatalog(
       try {
         if (classOf[UDFLibrary].isAssignableFrom(clazz)) {
           val plugin = clazz.newInstance.asInstanceOf[UDFLibrary]
-          val udf = plugin.loadUDF(name, children.map(_.dataType).asJava)
+          val udf = plugin.loadUDF(loadName, children.map(_.dataType).asJava)
           if (udf == null) {
             throw new AnalysisException(
-              s"Cannot load UDF using ${clazz.getCanonicalName}: not found")
+              s"Cannot load UDF using ${clazz.getCanonicalName}: $loadName not found")
           }
           ScalaUDF(udf.f, udf.dataType, children, udf.inputTypes.getOrElse(Nil))
         } else if (classOf[UDF].isAssignableFrom(clazz)) {
@@ -162,9 +179,9 @@ private[sql] class HiveSessionCatalog(
           udtf
         } else {
           // try to load the function with reflection
-          val reflected = ReflectedFunction(name, clazz, children.map(_.dataType))
+          val reflected = ReflectedFunction(loadName, clazz, children.map(_.dataType))
           reflected.validate
-          ScalaUDF(reflected.toFunc, reflected.returnType, children, reflected.inputTypes)
+          ScalaUDF(reflected.toScalaFunc, reflected.returnType, children, reflected.inputTypes)
         }
       } catch {
         case ae: AnalysisException =>
@@ -313,7 +330,7 @@ case class ReflectedFunction(
           s"return type $javaReturn is not supported"))
   }
 
-  def toFunc: AnyRef = {
+  def toScalaFunc: AnyRef = {
     javaTypes.size match {
       case 0 => () => javaMethod.invoke(target)
       case 1 => (a: AnyRef) => javaMethod.invoke(target, a)
