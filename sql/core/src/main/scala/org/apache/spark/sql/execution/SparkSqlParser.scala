@@ -724,16 +724,19 @@ class SparkSqlAstBuilder(conf: SQLConf) extends AstBuilder {
    *
    * For example:
    * {{{
-   *   ALTER TABLE table1 ALTER COLUMN col_name TYPE data_type;
+   *   ALTER TABLE table1 ALTER COLUMN col_name TYPE bigint;
+   *   ALTER TABLE table1 ALTER COLUMN col_name COMMENT 'text';
+   *   ALTER TABLE table1 ALTER COLUMN col_name TYPE bigint COMMENT 'text';
    * }}}
    */
   override def visitUpdateTableColumn(
       ctx: UpdateTableColumnContext): LogicalPlan = withOrigin(ctx) {
-    val rawDataType = typedVisit[DataType](ctx.dataType)
+    val rawDataType = Option(ctx.dataType).map(typedVisit[DataType])
     AlterTableUpdateColumnCommand(
       visitTableIdentifier(ctx.tableIdentifier),
       ctx.qualifiedName.getText,
-      HiveStringType.replaceCharType(rawDataType))
+      rawDataType.map(HiveStringType.replaceCharType),
+      Option(ctx.comment).map(string))
   }
 
   /**

@@ -74,7 +74,7 @@ class DataSourceV2Analysis(spark: SparkSession) extends Rule[LogicalPlan] {
     case alter @ AlterTableRenameColumnCommand(V2TableReference(identifier, table), _, _) =>
       AlterTable(catalog, v2relation(identifier, table), toChangeSet(alter))
 
-    case alter @ AlterTableUpdateColumnCommand(V2TableReference(identifier, table), _, _) =>
+    case alter @ AlterTableUpdateColumnCommand(V2TableReference(identifier, table), _, _, _) =>
       AlterTable(catalog, v2relation(identifier, table), toChangeSet(alter))
 
     case ShowCreateTableCommand(V2TableReference(identifier, table)) =>
@@ -301,11 +301,12 @@ object DataSourceV2Analysis {
     alter match {
       case AlterTableAddColumnsCommand(_, columns) =>
         columns.map { field =>
+          val comment = Try(field.metadata.getString("comment")).getOrElse(null)
           field.name match {
             case NestedFieldName(path, fieldName) =>
-              TableChange.addColumn(path, fieldName, field.dataType)
+              TableChange.addColumn(path, fieldName, field.dataType, comment)
             case fieldName =>
-              TableChange.addColumn(fieldName, field.dataType)
+              TableChange.addColumn(fieldName, field.dataType, comment)
           }
         }
 
@@ -319,8 +320,14 @@ object DataSourceV2Analysis {
         }
         Seq(rename)
 
-      case AlterTableUpdateColumnCommand(_, column, dataType) =>
-        Seq(TableChange.updateColumn(column, dataType))
+      case AlterTableUpdateColumnCommand(_, column, dataType, comment) =>
+        val typeChange = dataType.map { dt =>
+          TableChange.updateColumn(column, dt)
+        }
+        val commentChange = comment.map { text =>
+          TableChange.updateComment(column, text)
+        }
+        typeChange.toSeq ++ commentChange.toSeq
 
       case AlterTableDropColumnsCommand(_, columns) =>
         columns.map(TableChange.deleteColumn)

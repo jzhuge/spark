@@ -88,7 +88,9 @@ statement
     | ALTER TABLE tableIdentifier
         RENAME COLUMN from=qualifiedName TO to=qualifiedName           #renameTableColumn
     | ALTER TABLE tableIdentifier
-        ALTER COLUMN qualifiedName TYPE dataType                       #updateTableColumn
+        ALTER COLUMN qualifiedName
+        ( (TYPE dataType (COMMENT comment=STRING)?)
+        | (COMMENT comment=STRING))                                    #updateTableColumn
     | ALTER TABLE tableIdentifier
         DROP (COLUMN | COLUMNS) columns=qualifiedNameList              #dropTableColumns
     | ALTER (TABLE | VIEW) from=tableIdentifier
