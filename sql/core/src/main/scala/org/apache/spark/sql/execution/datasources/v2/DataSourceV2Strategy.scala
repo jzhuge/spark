@@ -23,7 +23,7 @@ import org.apache.spark.sql.{sources, Strategy}
 import org.apache.spark.sql.catalyst.analysis.NamedRelation
 import org.apache.spark.sql.catalyst.expressions.{And, AttributeReference, AttributeSet, Expression}
 import org.apache.spark.sql.catalyst.planning.PhysicalOperation
-import org.apache.spark.sql.catalyst.plans.logical.{AlterTable, AppendData, CreateTable, CreateTableAsSelect, DeleteFrom, DropTable, LogicalPlan, OverwritePartitionsDynamic, ReplaceTableAsSelect}
+import org.apache.spark.sql.catalyst.plans.logical.{AlterTable, AppendData, CreateTable, CreateTableAsSelect, DeleteFrom, DropTable, LogicalPlan, OverwritePartitionsDynamic, RefreshTable, ReplaceTableAsSelect}
 import org.apache.spark.sql.execution.{FilterExec, ProjectExec, SparkPlan}
 import org.apache.spark.sql.execution.command.ExecutedCommandExec
 import org.apache.spark.sql.execution.datasources.DataSourceStrategy
@@ -104,8 +104,10 @@ object DataSourceV2Strategy extends Strategy {
     }
   }
 
-
   override def apply(plan: LogicalPlan): Seq[SparkPlan] = plan match {
+    case RefreshTable(catalog, identifier) =>
+      RefreshTableExec(catalog, identifier) :: Nil
+
     case cmd: ShowCreateTable =>
       ExecutedCommandExec(cmd) :: Nil
 
