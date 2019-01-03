@@ -405,7 +405,8 @@ case class AlterTableRenameColumnCommand(
 case class AlterTableUpdateColumnCommand(
     tableName: TableIdentifier,
     columnName: String,
-    dataType: DataType) extends Command
+    dataType: Option[DataType],
+    comment: Option[String] = None) extends Command
 
 /**
  * A command that sets the serde class and/or serde properties of a table/view.
