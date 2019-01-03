@@ -24,7 +24,7 @@ import com.netflix.iceberg.spark.source.IcebergMetacatSource
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalog.v2.{CatalogV2Implicits, TableCatalog}
 import org.apache.spark.sql.catalyst.catalog.CatalogTable
-import org.apache.spark.sql.catalyst.plans.logical.{AlterTable, CreateTable, CreateTableAsSelect, DropTable, LogicalPlan}
+import org.apache.spark.sql.catalyst.plans.logical.{AlterTable, CreateTable, CreateTableAsSelect, DropTable, LogicalPlan, RefreshTable}
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution.datasources.LogicalRelation
 import org.apache.spark.sql.execution.datasources.v2.{DataSourceV2Relation, TableV2Relation, V2AsBaseRelation}
@@ -43,6 +43,10 @@ class NetflixAnalysis(spark: SparkSession) extends Rule[LogicalPlan] {
 
   override def apply(plan: LogicalPlan): LogicalPlan = plan transformUp {
     // replace the default v2 catalog with one for Iceberg tables
+    case refresh @ RefreshTable(cat, ident)
+        if shouldReplaceCatalog(cat, Option(cat.loadTable(ident).properties.get("provider"))) =>
+      refresh.copy(catalog = icebergCatalog)
+
     case alter @ AlterTable(cat, rel: TableV2Relation, _)
         if cat != icebergCatalog && rel.table.getClass.getName.contains("iceberg") =>
       alter.copy(catalog = icebergCatalog)

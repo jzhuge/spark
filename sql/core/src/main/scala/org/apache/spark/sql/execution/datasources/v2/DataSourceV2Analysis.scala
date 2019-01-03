@@ -26,7 +26,7 @@ import org.apache.spark.sql.catalyst.TableIdentifier
 import org.apache.spark.sql.catalyst.analysis.NamedRelation
 import org.apache.spark.sql.catalyst.catalog.{CatalogTable, CatalogUtils}
 import org.apache.spark.sql.catalyst.expressions.{Alias, Literal}
-import org.apache.spark.sql.catalyst.plans.logical.{AlterTable, AppendData, CreateTable, CreateTableAsSelect, DropTable, InsertIntoTable, LogicalPlan, OverwritePartitionsDynamic, Project, ReplaceTableAsSelect}
+import org.apache.spark.sql.catalyst.plans.logical.{AlterTable, AppendData, CreateTable, CreateTableAsSelect, DropTable, InsertIntoTable, LogicalPlan, OverwritePartitionsDynamic, Project, RefreshTable, ReplaceTableAsSelect}
 import org.apache.spark.sql.catalyst.plans.logical.sql
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution.command.{AlterTableAddColumnsCommand, AlterTableDropColumnsCommand, AlterTableRenameColumnCommand, AlterTableSetPropertiesCommand, AlterTableUnsetPropertiesCommand, AlterTableUpdateColumnCommand, CreateTableLikeCommand, DescribeTableCommand, DropTableCommand, ShowCreateTableCommand, ShowTablePropertiesCommand}
@@ -54,6 +54,9 @@ class DataSourceV2Analysis(spark: SparkSession) extends Rule[LogicalPlan] {
   private val catalog = spark.catalog(None).asTableCatalog
 
   override def apply(plan: LogicalPlan): LogicalPlan = plan transformUp {
+    case datasources.RefreshTable(V2TableReference(identifier, _)) =>
+      RefreshTable(catalog, identifier)
+
     case alter @ AlterTableAddColumnsCommand(V2TableReference(identifier, table), _) =>
       AlterTable(catalog, v2relation(identifier, table), toChangeSet(alter))
 
