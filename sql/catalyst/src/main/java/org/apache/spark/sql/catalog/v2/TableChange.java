@@ -60,14 +60,30 @@ public interface TableChange {
    * <p>
    * Because "." may be interpreted as a field path separator or may be used in field names, it is
    * not allowed in names passed to this method. To add to nested types or to add fields with
-   * names that contain ".", use {@link #addColumn(String, String, DataType)}.
+   * names that contain ".", use {@link #addColumn(String, String, DataType, String)}.
    *
    * @param name the new top-level column name
    * @param dataType the new column's data type
    * @return a TableChange for the addition
    */
   static TableChange addColumn(String name, DataType dataType) {
-    return new AddColumn(null, name, dataType);
+    return new AddColumn(null, name, dataType, null);
+  }
+
+  /**
+   * Create a TableChange for adding a top-level column to a table.
+   * <p>
+   * Because "." may be interpreted as a field path separator or may be used in field names, it is
+   * not allowed in names passed to this method. To add to nested types or to add fields with
+   * names that contain ".", use {@link #addColumn(String, String, DataType, String)}.
+   *
+   * @param name the new top-level column name
+   * @param dataType the new column's data type
+   * @param comment the new field's comment string
+   * @return a TableChange for the addition
+   */
+  static TableChange addColumn(String name, DataType dataType, String comment) {
+    return new AddColumn(null, name, dataType, comment);
   }
 
   /**
@@ -88,7 +104,29 @@ public interface TableChange {
    * @return a TableChange for the addition
    */
   static TableChange addColumn(String parent, String name, DataType dataType) {
-    return new AddColumn(parent, name, dataType);
+    return new AddColumn(parent, name, dataType, null);
+  }
+
+  /**
+   * Create a TableChange for adding a nested column to a table.
+   * <p>
+   * The parent name is used to find the parent struct type where the nested field will be added.
+   * If the parent name is null, the new column will be added to the root as a top-level column.
+   * If parent identifies a struct, a new column is added to that struct. If it identifies a list,
+   * the column is added to the list element struct, and if it identifies a map, the new column is
+   * added to the map's value struct.
+   * <p>
+   * The given name is used to name the new column and names containing "." are not handled
+   * differently.
+   *
+   * @param parent the new field's parent
+   * @param name the new field name
+   * @param dataType the new field's data type
+   * @param comment the new field's comment string
+   * @return a TableChange for the addition
+   */
+  static TableChange addColumn(String parent, String name, DataType dataType, String comment) {
+    return new AddColumn(parent, name, dataType, comment);
   }
 
   /**
@@ -116,6 +154,19 @@ public interface TableChange {
    */
   static TableChange updateColumn(String name, DataType newDataType) {
     return new UpdateColumn(name, newDataType);
+  }
+
+  /**
+   * Create a TableChange for updating the comment of a field.
+   * <p>
+   * The name is used to find the field to update.
+   *
+   * @param name the field name
+   * @param newComment the new comment
+   * @return a TableChange for the update
+   */
+  static TableChange updateComment(String name, String newComment) {
+    return new UpdateColumnComment(name, newComment);
   }
 
   /**
@@ -162,11 +213,13 @@ public interface TableChange {
     private final String parent;
     private final String name;
     private final DataType dataType;
+    private final String comment;
 
-    private AddColumn(String parent, String name, DataType dataType) {
+    private AddColumn(String parent, String name, DataType dataType, String comment) {
       this.parent = parent;
       this.name = name;
       this.dataType = dataType;
+      this.comment = comment;
     }
 
     public String parent() {
@@ -179,6 +232,10 @@ public interface TableChange {
 
     public DataType type() {
       return dataType;
+    }
+
+    public String comment() {
+      return comment;
     }
   }
 
@@ -215,6 +272,25 @@ public interface TableChange {
 
     public DataType newDataType() {
       return newDataType;
+    }
+  }
+
+
+  final class UpdateColumnComment implements TableChange {
+    private final String name;
+    private final String newComment;
+
+    private UpdateColumnComment(String name, String newComment) {
+      this.name = name;
+      this.newComment = newComment;
+    }
+
+    public String name() {
+      return name;
+    }
+
+    public String newComment() {
+      return newComment;
     }
   }
 
