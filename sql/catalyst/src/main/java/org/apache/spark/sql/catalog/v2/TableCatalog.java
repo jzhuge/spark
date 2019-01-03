@@ -38,6 +38,17 @@ public interface TableCatalog extends CatalogProvider {
   Table loadTable(TableIdentifier ident) throws NoSuchTableException;
 
   /**
+   * Refresh table metadata for {@link TableIdentifier identifier}.
+   *
+   * @param ident a table identifier
+   * @return the table's current metadata
+   * @throws NoSuchTableException If the table doesn't exist.
+   */
+  default Table refreshTable(TableIdentifier ident) throws NoSuchTableException {
+    return loadTable(ident);
+  }
+
+  /**
    * Test whether a table exists using an {@link TableIdentifier identifier} from the catalog.
    *
    * @param ident a table identifier

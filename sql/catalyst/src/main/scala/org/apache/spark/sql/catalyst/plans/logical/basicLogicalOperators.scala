@@ -522,6 +522,13 @@ case class DropTable(
     ifExists: Boolean) extends Command
 
 /**
+ * Refresh table metadata in a v2 catalog.
+ */
+case class RefreshTable(
+    catalog: TableCatalog,
+    table: TableIdentifier) extends Command
+
+/**
  * Insert some data into a table.
  *
  * @param table the logical plan representing the table. In the future this should be a
