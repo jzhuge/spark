@@ -238,11 +238,11 @@ class IcebergDDLTest(unittest.TestCase):
 
     def test_show_create_table(self):
         with temp_table("test_show_create") as t:
-            sql("CREATE TABLE {0} (id bigint, data string) USING iceberg", t)
+            sql("CREATE TABLE {0} (id bigint COMMENT 'unique identifier', data string) USING iceberg", t)
             create_sql = collect(sql("SHOW CREATE TABLE {0}", t))[0]['create_statement']
 
             quoted = '.'.join([ "`" + part + "`" for part in t.split('.') ])
-            expected = "CREATE TABLE {0} ( id bigint, data string) USING iceberg".format(quoted)
+            expected = "CREATE TABLE {0} ( id bigint COMMENT 'unique identifier', data string) USING iceberg".format(quoted)
             self.assertEqual(expected, re.sub(r"[\s]+", ' ', create_sql))
 
     def test_create_table_like(self):
@@ -288,12 +288,12 @@ class IcebergDDLTest(unittest.TestCase):
                     ('data', 'string')
                 ])
 
-            sql("ALTER TABLE {0} ADD COLUMNS (ts timestamp)", t)
+            sql("ALTER TABLE {0} ADD COLUMNS (ts timestamp comment 'event timestamp')", t)
 
-            self.assertEqual(schema(t), [
-                    ('id', 'bigint'),
-                    ('data', 'string'),
-                    ('ts', 'timestamp')
+            self.assertEqual(schema_with_comments(t), [
+                    ('id', 'bigint', ''),
+                    ('data', 'string', ''),
+                    ('ts', 'timestamp', 'event timestamp')
                 ])
 
     def test_alter_table_add_nested_columns(self):
@@ -363,22 +363,28 @@ class IcebergDDLTest(unittest.TestCase):
                     ('point', 'struct<x:float,y:float>')
                 ])
 
-            sql("ALTER TABLE {0} ALTER COLUMN id TYPE bigint", t)
-            self.assertEqual(schema(t), [
-                    ('id', 'bigint'),
-                    ('point', 'struct<x:float,y:float>')
+            sql("ALTER TABLE {0} ALTER COLUMN id TYPE bigint COMMENT 'unique identifier'", t)
+            self.assertEqual(schema_with_comments(t), [
+                    ('id', 'bigint', 'unique identifier'),
+                    ('point', 'struct<x:float,y:float>', '')
                 ])
 
             sql("ALTER TABLE {0} ALTER COLUMN point.x TYPE double", t)
-            self.assertEqual(schema(t), [
-                    ('id', 'bigint'),
-                    ('point', 'struct<x:double,y:float>')
+            self.assertEqual(schema_with_comments(t), [
+                    ('id', 'bigint', 'unique identifier'),
+                    ('point', 'struct<x:double,y:float>', '')
                 ])
 
             sql("ALTER TABLE {0} ALTER COLUMN point.y TYPE double", t)
-            self.assertEqual(schema(t), [
-                    ('id', 'bigint'),
-                    ('point', 'struct<x:double,y:double>')
+            self.assertEqual(schema_with_comments(t), [
+                    ('id', 'bigint', 'unique identifier'),
+                    ('point', 'struct<x:double,y:double>', '')
+                ])
+
+            sql("ALTER TABLE {0} ALTER COLUMN point COMMENT '2d point'", t)
+            self.assertEqual(schema_with_comments(t), [
+                    ('id', 'bigint', 'unique identifier'),
+                    ('point', 'struct<x:double,y:double>', '2d point')
                 ])
 
     def test_create_with_comments(self):
