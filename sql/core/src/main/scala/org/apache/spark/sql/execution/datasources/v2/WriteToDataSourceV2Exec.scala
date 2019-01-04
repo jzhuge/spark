@@ -23,6 +23,7 @@ import scala.util.control.NonFatal
 import org.apache.spark.{SparkEnv, SparkException, TaskContext}
 import org.apache.spark.executor.CommitDeniedException
 import org.apache.spark.internal.Logging
+import org.apache.spark.internal.io.SparkHadoopWriterUtils.{initHadoopOutputMetrics, maybeUpdateOutputMetrics}
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalog.v2.{PartitionTransform, Table, TableCatalog}
 import org.apache.spark.sql.catalyst.{InternalRow, TableIdentifier}
@@ -234,7 +235,14 @@ object DataWritingSparkTask extends Logging {
 
     // write the data and commit this writer.
     Utils.tryWithSafeFinallyAndFailureCallbacks(block = {
-      iter.foreach(dataWriter.write)
+      var rowsWritten: Long = 0L
+      val (outputMetrics, callback) = initHadoopOutputMetrics(context)
+
+      iter.foreach { row =>
+        dataWriter.write(row)
+        rowsWritten += 1
+        maybeUpdateOutputMetrics(outputMetrics, callback, rowsWritten)
+      }
 
       val msg = if (useCommitCoordinator) {
         val coordinator = SparkEnv.get.outputCommitCoordinator
@@ -256,6 +264,10 @@ object DataWritingSparkTask extends Logging {
       }
 
       logInfo(s"Writer for stage $stageId, task $partId.$attemptId committed.")
+
+      // do final metrics update after the committer in case it needs to write
+      outputMetrics.setBytesWritten(callback())
+      outputMetrics.setRecordsWritten(rowsWritten)
 
       msg
 
