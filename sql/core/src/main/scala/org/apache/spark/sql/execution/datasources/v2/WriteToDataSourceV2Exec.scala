@@ -20,9 +20,10 @@ package org.apache.spark.sql.execution.datasources.v2
 import scala.collection.JavaConverters._
 
 import org.apache.spark.{SparkEnv, SparkException, TaskContext}
-import org.apache.spark.executor.CommitDeniedException
+import org.apache.spark.executor.{CommitDeniedException, OutputMetrics}
 import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
+import org.apache.spark.sql.SparkHadoopWriterUtils
 import org.apache.spark.sql.catalog.v2.{PartitionTransform, Table, TableCatalog}
 import org.apache.spark.sql.catalyst.{InternalRow, TableIdentifier}
 import org.apache.spark.sql.catalyst.analysis.{NoSuchTableException, TableAlreadyExistsException}
@@ -201,9 +202,23 @@ object DataWritingSparkTask extends Logging {
     val dataWriter = writeTask.createDataWriter(
       context.partitionId(), context.taskAttemptId().toInt) // see SPARK-24552
 
+    val outputMetricsAndBytesWrittenCallback: Option[(OutputMetrics, () => Long)] =
+      SparkHadoopWriterUtils.initHadoopOutputMetrics(context)
+
+    def maybeUpdateMetrics(recordsWritten: Long, force: Boolean = false): Unit = {
+      SparkHadoopWriterUtils.maybeUpdateOutputMetrics(
+        outputMetricsAndBytesWrittenCallback, recordsWritten, force = force)
+    }
+
     // write the data and commit this writer.
     Utils.tryWithSafeFinallyAndFailureCallbacks(block = {
-      iter.foreach(dataWriter.write)
+      var rowsWritten: Long = 0L
+
+      iter.foreach { row =>
+        dataWriter.write(row)
+        rowsWritten += 1
+        maybeUpdateMetrics(rowsWritten)
+      }
 
       val msg = if (useCommitCoordinator) {
         val coordinator = SparkEnv.get.outputCommitCoordinator
@@ -226,6 +241,9 @@ object DataWritingSparkTask extends Logging {
       }
 
       logInfo(s"Writer for stage $stageId, task $partId.$attemptId committed.")
+
+      // do final metrics update after the committer in case it needs to write
+      maybeUpdateMetrics(rowsWritten, force = true)
 
       msg
 
