@@ -224,6 +224,14 @@ case class TableV2Relation(
       Statistics(sizeInBytes = conf.defaultSizeInBytes)
   }
 
+
+  override def computeStats(): Statistics = newReader match {
+    case r: SupportsReportStatistics =>
+      Statistics(sizeInBytes = r.getStatistics.sizeInBytes().orElse(conf.defaultSizeInBytes))
+    case _ =>
+      Statistics(sizeInBytes = conf.defaultSizeInBytes)
+  }
+
   override def newInstance(): TableV2Relation = {
     copy(output = output.map(_.newInstance()))
   }
