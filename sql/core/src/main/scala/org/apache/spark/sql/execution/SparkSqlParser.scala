@@ -1162,7 +1162,7 @@ class SparkSqlAstBuilder(conf: SQLConf) extends AstBuilder {
   override def visitMigrateTable(ctx: MigrateTableContext): LogicalPlan = withOrigin(ctx) {
     MigrateTable(
       visitTableIdentifier(ctx.target),
-      ctx.tableProvider.getText)
+      ctx.tableProvider.qualifiedName.getText)
   }
 
   /**
@@ -1177,7 +1177,7 @@ class SparkSqlAstBuilder(conf: SQLConf) extends AstBuilder {
     SnapshotTable(
       visitTableIdentifier(ctx.target),
       visitTableIdentifier(ctx.source),
-      ctx.tableProvider.getText)
+      ctx.tableProvider.qualifiedName.getText)
   }
 
   /**

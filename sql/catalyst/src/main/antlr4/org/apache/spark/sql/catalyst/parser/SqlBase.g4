@@ -81,9 +81,9 @@ statement
         (AS? query)?                                                   #createTable
     | CREATE TABLE (IF NOT EXISTS)? target=tableIdentifier
         LIKE source=tableIdentifier                                    #createTableLike
-    | MIGRATE TABLE? target=tableIdentifier USING tableProvider        #migrateTable
+    | MIGRATE TABLE? target=tableIdentifier tableProvider              #migrateTable
     | SNAPSHOT TABLE? source=tableIdentifier
-        AS target=tableIdentifier USING tableProvider                  #snapshotTable
+        AS target=tableIdentifier tableProvider                        #snapshotTable
     | ANALYZE TABLE tableIdentifier partitionSpec? COMPUTE STATISTICS
         (identifier | FOR COLUMNS identifierSeq)?                      #analyze
     | ALTER TABLE tableIdentifier
