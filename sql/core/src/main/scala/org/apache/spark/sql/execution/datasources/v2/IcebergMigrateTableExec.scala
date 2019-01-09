@@ -71,7 +71,7 @@ case class IcebergMigrateTableExec(
       throw new SparkException(s"Cannot convert table with non-Parquet partitions: $sourceName")
     }
 
-    val files = partitions.repartition(1000).as[Partition].flatMap { p =>
+    val files = partitions.repartition(1000).as[TablePartition].flatMap { p =>
       // list the partition and read Parquet footers to get metrics
       SparkTableUtil.listPartition(p.partition, p.uri, p.format)
     }
@@ -85,7 +85,7 @@ case class IcebergMigrateTableExec(
           ("provider" -> "iceberg") +
           ("spark.behavior.compatibility" -> "true") +
           ("write.metadata.path" -> (location + "/metadata"))
-      catalog.createTable(tempIdent, source.schema(), source.partitioning(), properties.asJava)
+      catalog.createTable(tempIdent, source.schema, source.partitioning, properties.asJava)
 
       Utils.tryWithSafeFinallyAndFailureCallbacks(block = {
         logInfo(s"Creating Iceberg table metadata for data files in $sourceName")

@@ -64,7 +64,7 @@ case class IcebergSnapshotTableExec(
       throw new SparkException(s"Cannot convert table with non-Parquet partitions: $sourceName")
     }
 
-    val files = partitions.repartition(1000).as[Partition].flatMap { p =>
+    val files = partitions.repartition(1000).as[TablePartition].flatMap { p =>
       // list the partition and read Parquet footers to get metrics
       SparkTableUtil.listPartition(p.partition, p.uri, p.format)
     }
@@ -91,7 +91,10 @@ case class IcebergSnapshotTableExec(
   override def output: Seq[Attribute] = Seq.empty
 }
 
-case class Partition(partition: CatalogTypes.TablePartitionSpec, uri: String, format: String)
+private[sql] case class TablePartition(
+    partition: CatalogTypes.TablePartitionSpec,
+    uri: String,
+    format: String)
 
 private[sql] object IcebergSnapshotTableExec {
   def addFiles(
