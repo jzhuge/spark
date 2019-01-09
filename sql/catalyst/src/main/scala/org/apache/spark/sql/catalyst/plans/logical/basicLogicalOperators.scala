@@ -529,6 +529,21 @@ case class RefreshTable(
     table: TableIdentifier) extends Command
 
 /**
+ * Migrate a table to a difference source.
+ */
+case class MigrateTable(
+    identifier: TableIdentifier,
+    provider: String) extends Command
+
+/**
+ * Snapshot a table as a difference source.
+ */
+case class SnapshotTable(
+    targetTable: TableIdentifier,
+    sourceTable: TableIdentifier,
+    provider: String) extends Command
+
+/**
  * Insert some data into a table.
  *
  * @param table the logical plan representing the table. In the future this should be a

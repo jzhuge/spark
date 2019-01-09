@@ -28,7 +28,7 @@ import org.apache.spark.sql.catalyst.{FunctionIdentifier, TableIdentifier}
 import org.apache.spark.sql.catalyst.catalog._
 import org.apache.spark.sql.catalyst.parser._
 import org.apache.spark.sql.catalyst.parser.SqlBaseParser._
-import org.apache.spark.sql.catalyst.plans.logical.{LogicalPlan, OneRowRelation, ScriptInputOutputSchema}
+import org.apache.spark.sql.catalyst.plans.logical.{LogicalPlan, MigrateTable, OneRowRelation, ScriptInputOutputSchema, SnapshotTable}
 import org.apache.spark.sql.catalyst.plans.logical.sql
 import org.apache.spark.sql.execution.command._
 import org.apache.spark.sql.execution.datasources.{CreateTable, _}
@@ -1149,6 +1149,35 @@ class SparkSqlAstBuilder(conf: SQLConf) extends AstBuilder {
     val targetTable = visitTableIdentifier(ctx.target)
     val sourceTable = visitTableIdentifier(ctx.source)
     CreateTableLikeCommand(targetTable, sourceTable, ctx.EXISTS != null)
+  }
+
+  /**
+   * Create a [[MigrateTable]] command.
+   *
+   * For example:
+   * {{{
+   *   MIGRATE TABLE [db_name.]table_name USING provider
+   * }}}
+   */
+  override def visitMigrateTable(ctx: MigrateTableContext): LogicalPlan = withOrigin(ctx) {
+    MigrateTable(
+      visitTableIdentifier(ctx.target),
+      ctx.tableProvider.getText)
+  }
+
+  /**
+   * Create a [[SnapshotTable]] command.
+   *
+   * For example:
+   * {{{
+   *   SNAPSHOT TABLE [db_name.]existing_table_name AS [other_db_name.]table_name USING provider
+   * }}}
+   */
+  override def visitSnapshotTable(ctx: SnapshotTableContext): LogicalPlan = withOrigin(ctx) {
+    SnapshotTable(
+      visitTableIdentifier(ctx.target),
+      visitTableIdentifier(ctx.source),
+      ctx.tableProvider.getText)
   }
 
   /**

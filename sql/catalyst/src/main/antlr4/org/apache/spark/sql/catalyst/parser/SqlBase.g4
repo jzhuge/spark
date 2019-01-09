@@ -81,6 +81,9 @@ statement
         (AS? query)?                                                   #createTable
     | CREATE TABLE (IF NOT EXISTS)? target=tableIdentifier
         LIKE source=tableIdentifier                                    #createTableLike
+    | MIGRATE TABLE? target=tableIdentifier USING tableProvider        #migrateTable
+    | SNAPSHOT TABLE? source=tableIdentifier
+        AS target=tableIdentifier USING tableProvider                  #snapshotTable
     | ANALYZE TABLE tableIdentifier partitionSpec? COMPUTE STATISTICS
         (identifier | FOR COLUMNS identifierSeq)?                      #analyze
     | ALTER TABLE tableIdentifier
@@ -963,6 +966,8 @@ LOCAL: 'LOCAL';
 INPATH: 'INPATH';
 CURRENT_DATE: 'CURRENT_DATE';
 CURRENT_TIMESTAMP: 'CURRENT_TIMESTAMP';
+SNAPSHOT: 'SNAPSHOT';
+MIGRATE: 'MIGRATE';
 
 STRING
     : '\'' ( ~('\''|'\\') | ('\\' .) )* '\''
