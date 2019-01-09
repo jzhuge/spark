@@ -37,6 +37,8 @@ class NetflixStrategy(spark: SparkSession) extends Strategy {
 
     case SnapshotTable(target, source, provider) if provider.equalsIgnoreCase("iceberg") =>
       IcebergSnapshotTableExec(icebergCatalog, target, source) :: Nil
+
+    case _ => Nil
   }
 }
 
