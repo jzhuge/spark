@@ -23,7 +23,7 @@ import org.apache.spark.sql.catalyst.analysis.{AnalysisTest, UnresolvedAlias, Un
 import org.apache.spark.sql.catalyst.catalog.{BucketSpec, CatalogStorageFormat, CatalogTable, CatalogTableType}
 import org.apache.spark.sql.catalyst.expressions.{Ascending, Concat, SortOrder}
 import org.apache.spark.sql.catalyst.parser.ParseException
-import org.apache.spark.sql.catalyst.plans.logical.{LogicalPlan, Project, RepartitionByExpression, Sort}
+import org.apache.spark.sql.catalyst.plans.logical.{LogicalPlan, MigrateTable, Project, RepartitionByExpression, SnapshotTable, Sort}
 import org.apache.spark.sql.execution.command._
 import org.apache.spark.sql.execution.datasources.{CreateTable, RefreshResource}
 import org.apache.spark.sql.internal.{HiveSerDe, SQLConf}
@@ -83,6 +83,13 @@ class SparkSqlParserSuite extends AnalysisTest {
     intercept("REFRESH @ $a$", "REFRESH statements cannot contain")
     intercept("REFRESH  ", "Resource paths cannot be empty in REFRESH statements")
     intercept("REFRESH", "Resource paths cannot be empty in REFRESH statements")
+  }
+
+  test("snapshot and migrate table") {
+    assertEqual("SNAPSHOT\nTABLE a AS b USING iceberg",
+      SnapshotTable(TableIdentifier("b"), TableIdentifier("a"), "iceberg"))
+    assertEqual("MIGRATE  TABLE a USING iceberg",
+      MigrateTable(TableIdentifier("a"), "iceberg"))
   }
 
   test("show functions") {
