@@ -92,6 +92,9 @@ statement
         (AS? query)?                                                   #createHiveTable
     | CREATE TABLE (IF NOT EXISTS)? target=tableIdentifier
         LIKE source=tableIdentifier locationSpec?                      #createTableLike
+    | MIGRATE_TABLE target=tableIdentifier tableProvider               #migrateTable
+    | SNAPSHOT_TABLE source=tableIdentifier
+        AS target=tableIdentifier tableProvider                        #snapshotTable
     | ANALYZE TABLE tableIdentifier partitionSpec? COMPUTE STATISTICS
         (identifier | FOR COLUMNS identifierSeq)?                      #analyze
     | ALTER TABLE tableIdentifier
@@ -1025,6 +1028,8 @@ OPTION: 'OPTION';
 ANTI: 'ANTI';
 LOCAL: 'LOCAL';
 INPATH: 'INPATH';
+SNAPSHOT_TABLE: 'SNAPSHOT' [ \r\n\t]+ 'TABLE';
+MIGRATE_TABLE: 'MIGRATE' [ \r\n\t]+ 'TABLE';
 
 STRING
     : '\'' ( ~('\''|'\\') | ('\\' .) )* '\''

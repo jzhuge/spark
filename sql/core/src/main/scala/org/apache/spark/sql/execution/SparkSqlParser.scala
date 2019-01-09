@@ -1248,6 +1248,35 @@ class SparkSqlAstBuilder(conf: SQLConf) extends AstBuilder(conf) {
   }
 
   /**
+   * Create a [[MigrateTable]] command.
+   *
+   * For example:
+   * {{{
+   *   MIGRATE TABLE [db_name.]table_name USING provider
+   * }}}
+   */
+  override def visitMigrateTable(ctx: MigrateTableContext): LogicalPlan = withOrigin(ctx) {
+    MigrateTable(
+      visitTableIdentifier(ctx.target),
+      ctx.tableProvider.qualifiedName.getText)
+  }
+
+  /**
+   * Create a [[SnapshotTable]] command.
+   *
+   * For example:
+   * {{{
+   *   SNAPSHOT TABLE [db_name.]existing_table_name AS [other_db_name.]table_name USING provider
+   * }}}
+   */
+  override def visitSnapshotTable(ctx: SnapshotTableContext): LogicalPlan = withOrigin(ctx) {
+    SnapshotTable(
+      visitTableIdentifier(ctx.target),
+      visitTableIdentifier(ctx.source),
+      ctx.tableProvider.qualifiedName.getText)
+  }
+
+  /**
    * Create a [[CatalogStorageFormat]] for creating tables.
    *
    * Format: STORED AS ...
