@@ -69,10 +69,11 @@ case class IcebergSnapshotTableExec(
     }
 
     logInfo(s"Creating new snapshot Iceberg table $targetTable from $sourceTable")
-    val properties = source.properties.asScala.toMap +
+    val properties = source.properties.asScala.toMap --
+        Seq("path", "transient_lastDdlTime", "serialization.format") +
         ("provider" -> "iceberg") +
         ("spark.behavior.compatibility" -> "true")
-    catalog.createTable(targetTable, source.schema(), source.partitioning(), properties.asJava)
+    catalog.createTable(targetTable, source.schema, source.partitioning, properties.asJava)
 
     Utils.tryWithSafeFinallyAndFailureCallbacks(block = {
       logInfo(s"Creating Iceberg table metadata for data files in $sourceTable")

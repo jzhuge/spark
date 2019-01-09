@@ -35,6 +35,8 @@ case class IcebergMigrateTableExec(
     catalog: TableCatalog,
     ident: TableIdentifier) extends LeafExecNode {
 
+  private val HasBatchID = """(.*)/batchid=\d+""".r
+
   import IcebergSnapshotTableExec.addFiles
   import CatalogV2Implicits._
 
@@ -55,7 +57,10 @@ case class IcebergMigrateTableExec(
 
     // use the default table catalog
     val source = spark.catalog(None).asTableCatalog.loadTable(ident).asInstanceOf[V1MetadataTable]
-    val location: String = source.catalogTable.location
+    val location: String = source.catalogTable.location match {
+      case HasBatchID(parent) => parent
+      case withoutBatchID => withoutBatchID
+    }
     val partitions: DataFrame = SparkTableUtil.partitionDF(spark, sourceName)
 
     if (spark.sessionState.catalog.tableExists(hiveIdent)) {
@@ -81,7 +86,8 @@ case class IcebergMigrateTableExec(
 
     Utils.tryWithSafeFinallyAndFailureCallbacks(block = {
       logInfo(s"Creating new Iceberg table $tempIdent")
-      val properties = source.properties.asScala.toMap +
+      val properties = source.properties.asScala.toMap --
+          Seq("path", "transient_lastDdlTime", "serialization.format") +
           ("provider" -> "iceberg") +
           ("spark.behavior.compatibility" -> "true") +
           ("write.metadata.path" -> (location + "/metadata"))
