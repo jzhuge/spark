@@ -28,7 +28,6 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.catalog.v2.{CatalogV2Implicits, TableCatalog}
 import org.apache.spark.sql.catalyst.{InternalRow, TableIdentifier}
-import org.apache.spark.sql.catalyst.catalog.CatalogTypes
 import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.execution.LeafExecNode
 import org.apache.spark.sql.functions._
@@ -92,7 +91,7 @@ case class IcebergSnapshotTableExec(
 }
 
 private[sql] case class TablePartition(
-    partition: CatalogTypes.TablePartitionSpec,
+    partition: Map[String, String],
     uri: String,
     format: String)
 
