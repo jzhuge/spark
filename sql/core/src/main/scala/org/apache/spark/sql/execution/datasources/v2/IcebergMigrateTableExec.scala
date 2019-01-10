@@ -36,6 +36,7 @@ case class IcebergMigrateTableExec(
     ident: TableIdentifier) extends LeafExecNode {
 
   private val HasBatchID = """(.*)/batchid=\d+""".r
+  private val HasPartitionFolder = """.*/[^/]+=[^/]+/?""".r
 
   import IcebergSnapshotTableExec.addFiles
   import CatalogV2Implicits._
@@ -61,6 +62,15 @@ case class IcebergMigrateTableExec(
       case HasBatchID(parent) => parent
       case withoutBatchID => withoutBatchID
     }
+
+    // do not allow locations that look like partitions
+    location match {
+      case HasPartitionFolder() =>
+        throw new SparkException(
+          s"Cannot migrate table $sourceName: location appears to be a table partition: $location")
+      case _ =>
+    }
+
     val partitions: DataFrame = SparkTableUtil.partitionDF(spark, sourceName)
 
     if (spark.sessionState.catalog.tableExists(hiveIdent)) {
@@ -95,7 +105,8 @@ case class IcebergMigrateTableExec(
 
       Utils.tryWithSafeFinallyAndFailureCallbacks(block = {
         logInfo(s"Creating Iceberg table metadata for data files in $sourceName")
-        files.repartition(10)
+        files.orderBy($"path")
+            .coalesce(10)
             .foreachPartition(addFiles(serializableConf, applicationId, mcCatalog, db, tempName))
 
         logInfo(s"Finished loading data into $tempIdent")

@@ -77,7 +77,8 @@ case class IcebergSnapshotTableExec(
 
     Utils.tryWithSafeFinallyAndFailureCallbacks(block = {
       logInfo(s"Creating Iceberg table metadata for data files in $sourceTable")
-      files.repartition(10)
+      files.orderBy($"path")
+          .coalesce(10)
           .foreachPartition(addFiles(serializableConf, applicationId, mcCatalog, db, name))
     })(catchBlock = {
       catalog.dropTable(targetTable)
