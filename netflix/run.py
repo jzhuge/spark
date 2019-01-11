@@ -178,7 +178,7 @@ def get_venv_path(profile):
     :param profile: one of python2 or python3
     :return:
     '''
-    venv_path = 's3://netflix-dataplatform-code/hadoop/venv/{}/bdp-python-meta/current.tar.gz'.format(profile)
+    venv_path = 'hdfs:///venv/{}/bdp-python-meta/current.tar.gz'.format(profile)
 
     sys.stderr.write("Using Python virtual environment: {} ".format(venv_path))
 
