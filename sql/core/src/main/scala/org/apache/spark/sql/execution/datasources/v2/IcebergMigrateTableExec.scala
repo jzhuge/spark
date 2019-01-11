@@ -100,7 +100,8 @@ case class IcebergMigrateTableExec(
           Seq("path", "transient_lastDdlTime", "serialization.format") +
           ("provider" -> "iceberg") +
           ("spark.behavior.compatibility" -> "true") +
-          ("write.metadata.path" -> (location + "/metadata"))
+          ("write.metadata.path" -> (location + "/metadata")) +
+          ("migrated-from-hive" -> "true")
       catalog.createTable(tempIdent, source.schema, source.partitioning, properties.asJava)
 
       Utils.tryWithSafeFinallyAndFailureCallbacks(block = {
