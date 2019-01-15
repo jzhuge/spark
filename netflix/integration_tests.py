@@ -157,6 +157,171 @@ class ParquetDDLTest(unittest.TestCase):
                         {'id': 3, 'data': 'c'}
                     ])
 
+class IcebergMigrationTest(unittest.TestCase):
+    def test_snapshot_unpartitioned_table(self):
+        with temp_table("test_source") as source:
+            sql("CREATE TABLE {0} (id bigint, data string) STORED AS parquet", source)
+            sql("INSERT INTO {0} VALUES (1, 'a'), (2, 'b'), (3, 'c')", source)
+
+            with temp_table("test_snapshot") as snap:
+                sql("SNAPSHOT TABLE {0} AS {1} USING iceberg", source, snap)
+
+                # source should still be a parquet table
+                describe = sql("DESCRIBE FORMATTED {0}", source)
+                formats = list(filter(lambda r: r['col_name'].strip() == 'InputFormat:', collect(describe)))
+                self.assertEqual(len(formats), 1, "Should produce an InputFormat: property entry")
+                self.assertEqual(
+                        formats[0]['data_type'].strip(),
+                        'org.apache.hadoop.hive.ql.io.parquet.MapredParquetInputFormat',
+                        "Should be a parquet table")
+
+                # source should still exist and can be written to
+                sql("INSERT INTO {0} VALUES (4, 'd')", source)
+                rows = collect(sql("select * from {0}", source))
+                self.assertEqual(sort_by_id(rows), [
+                        {'id': 4, 'data': 'd'}
+                    ])
+
+                # snap should be an iceberg table
+                describe = sql("DESCRIBE FORMATTED {0}", snap)
+                types = list(filter(lambda r: r['col_name'].strip() == 'provider', collect(describe)))
+                self.assertEqual(len(types), 1, "Should produce one provider property entry")
+                self.assertEqual(types[0]['data_type'].strip().lower(), 'iceberg', "Should be an iceberg table")
+
+                # snap should contain the data in source at the time it was created
+                rows = collect(sql("select * from {0}", snap))
+                self.assertEqual(sort_by_id(rows), [
+                        {'id': 1, 'data': 'a'},
+                        {'id': 2, 'data': 'b'},
+                        {'id': 3, 'data': 'c'}
+                    ])
+
+    def test_snapshot_partitioned_table(self):
+        with temp_table("test_source") as source:
+            sql("CREATE TABLE {0} (id bigint, data string) PARTITIONED BY (part string) STORED AS parquet", source)
+            sql("INSERT INTO {0} VALUES (1, 'a', 'odd'), (2, 'b', 'even'), (3, 'c', 'odd')", source)
+
+            with temp_table("test_snapshot") as snap:
+                sql("SNAPSHOT TABLE {0} AS {1} USING iceberg", source, snap)
+
+                # source should still be a parquet table
+                describe = sql("DESCRIBE FORMATTED {0}", source)
+                formats = list(filter(lambda r: r['col_name'].strip() == 'InputFormat:', collect(describe)))
+                self.assertEqual(len(formats), 1, "Should produce an InputFormat: property entry")
+                self.assertEqual(
+                        formats[0]['data_type'].strip(),
+                        'org.apache.hadoop.hive.ql.io.parquet.MapredParquetInputFormat',
+                        "Should be a parquet table")
+
+                # source should still exist and can be written to
+                sql("INSERT INTO {0} VALUES (4, 'd', 'even')", source)
+                rows = collect(sql("select * from {0}", source))
+                self.assertEqual(sort_by_id(rows), [
+                        {'id': 1, 'data': 'a', 'part': 'odd'},
+                        {'id': 3, 'data': 'c', 'part': 'odd'},
+                        {'id': 4, 'data': 'd', 'part': 'even'}
+                    ])
+
+                # snap should be an iceberg table
+                describe = sql("DESCRIBE FORMATTED {0}", snap)
+                types = list(filter(lambda r: r['col_name'].strip() == 'provider', collect(describe)))
+                self.assertEqual(len(types), 1, "Should produce one provider property entry")
+                self.assertEqual(types[0]['data_type'].strip().lower(), 'iceberg', "Should be an iceberg table")
+
+                # snap should contain the data in source at the time it was created
+                rows = collect(sql("select * from {0}", snap))
+                self.assertEqual(sort_by_id(rows), [
+                        {'id': 1, 'data': 'a', 'part': 'odd'},
+                        {'id': 2, 'data': 'b', 'part': 'even'},
+                        {'id': 3, 'data': 'c', 'part': 'odd'}
+                    ])
+
+    def test_migrate_unpartitioned_table(self):
+        with temp_table("test_source") as source:
+            backup = source + '_hive'
+            try:
+                sql("CREATE TABLE {0} (id bigint, data string) STORED AS parquet", source)
+                sql("INSERT INTO {0} VALUES (1, 'a'), (2, 'b'), (3, 'c')", source)
+
+                sql("MIGRATE TABLE {0} USING iceberg", source)
+
+                # backup should still be a parquet table
+                describe = sql("DESCRIBE FORMATTED {0}", backup)
+                formats = list(filter(lambda r: r['col_name'].strip() == 'InputFormat:', collect(describe)))
+                self.assertEqual(len(formats), 1, "Should produce an InputFormat: property entry")
+                self.assertEqual(
+                        formats[0]['data_type'].strip(),
+                        'org.apache.hadoop.hive.ql.io.parquet.MapredParquetInputFormat',
+                        "Should be a parquet table")
+
+                # backup should contain the same data
+                rows = collect(sql("select * from {0}", backup))
+                self.assertEqual(sort_by_id(rows), [
+                        {'id': 1, 'data': 'a'},
+                        {'id': 2, 'data': 'b'},
+                        {'id': 3, 'data': 'c'}
+                    ])
+
+                # source should now be an iceberg table
+                describe = sql("DESCRIBE FORMATTED {0}", source)
+                types = list(filter(lambda r: r['col_name'].strip() == 'provider', collect(describe)))
+                self.assertEqual(len(types), 1, "Should produce one provider property entry")
+                self.assertEqual(types[0]['data_type'].strip().lower(), 'iceberg', "Should be an iceberg table")
+
+                # source should contain the data in source at the time it was created
+                sql("REFRESH TABLE {0}", source)
+                rows = collect(sql("select * from {0}", source))
+                self.assertEqual(sort_by_id(rows), [
+                        {'id': 1, 'data': 'a'},
+                        {'id': 2, 'data': 'b'},
+                        {'id': 3, 'data': 'c'}
+                    ])
+            finally:
+                sql("DROP TABLE IF EXISTS {0}", backup)
+
+    def test_migrate_partitioned_table(self):
+        with temp_table("test_source") as source:
+            backup = source + '_hive'
+            try:
+                sql("CREATE TABLE {0} (id bigint, data string) PARTITIONED BY (part string) STORED AS parquet", source)
+                sql("INSERT INTO {0} VALUES (1, 'a', 'odd'), (2, 'b', 'even'), (3, 'c', 'odd')", source)
+
+                sql("MIGRATE TABLE {0} USING iceberg", source)
+
+                # backup should still be a parquet table
+                describe = sql("DESCRIBE FORMATTED {0}", backup)
+                formats = list(filter(lambda r: r['col_name'].strip() == 'InputFormat:', collect(describe)))
+                self.assertEqual(len(formats), 1, "Should produce an InputFormat: property entry")
+                self.assertEqual(
+                        formats[0]['data_type'].strip(),
+                        'org.apache.hadoop.hive.ql.io.parquet.MapredParquetInputFormat',
+                        "Should be a parquet table")
+
+                # backup should contain the same data
+                rows = collect(sql("select * from {0}", backup))
+                self.assertEqual(sort_by_id(rows), [
+                        {'id': 1, 'data': 'a', 'part': 'odd'},
+                        {'id': 2, 'data': 'b', 'part': 'even'},
+                        {'id': 3, 'data': 'c', 'part': 'odd'}
+                    ])
+
+                # source should now be an iceberg table
+                describe = sql("DESCRIBE FORMATTED {0}", source)
+                types = list(filter(lambda r: r['col_name'].strip() == 'provider', collect(describe)))
+                self.assertEqual(len(types), 1, "Should produce one provider property entry")
+                self.assertEqual(types[0]['data_type'].strip().lower(), 'iceberg', "Should be an iceberg table")
+
+                # source should contain the data in source at the time it was created
+                sql("REFRESH TABLE {0}", source)
+                rows = collect(sql("select * from {0}", source))
+                self.assertEqual(sort_by_id(rows), [
+                        {'id': 1, 'data': 'a', 'part': 'odd'},
+                        {'id': 2, 'data': 'b', 'part': 'even'},
+                        {'id': 3, 'data': 'c', 'part': 'odd'}
+                    ])
+            finally:
+                sql("DROP TABLE IF EXISTS {0}", backup)
+
 
 class IcebergDDLTest(unittest.TestCase):
 
