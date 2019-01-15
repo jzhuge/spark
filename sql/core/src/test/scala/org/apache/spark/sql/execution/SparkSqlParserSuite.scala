@@ -22,7 +22,7 @@ import org.apache.spark.sql.catalyst.{FunctionIdentifier, TableIdentifier}
 import org.apache.spark.sql.catalyst.catalog.{BucketSpec, CatalogStorageFormat, CatalogTable, CatalogTableType}
 import org.apache.spark.sql.catalyst.parser.ParseException
 import org.apache.spark.sql.catalyst.plans.PlanTest
-import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
+import org.apache.spark.sql.catalyst.plans.logical.{LogicalPlan, MigrateTable, SnapshotTable}
 import org.apache.spark.sql.execution.command._
 import org.apache.spark.sql.execution.datasources.CreateTable
 import org.apache.spark.sql.internal.{HiveSerDe, SQLConf}
@@ -62,6 +62,13 @@ class SparkSqlParserSuite extends PlanTest {
     messages.foreach { message =>
       assert(e.message.contains(message))
     }
+  }
+
+  test("snapshot and migrate table") {
+    assertEqual("SNAPSHOT\nTABLE a AS b USING iceberg",
+      SnapshotTable(TableIdentifier("b"), TableIdentifier("a"), "iceberg"))
+    assertEqual("MIGRATE  TABLE a USING iceberg",
+      MigrateTable(TableIdentifier("a"), "iceberg"))
   }
 
   test("show functions") {
