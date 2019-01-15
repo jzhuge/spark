@@ -126,6 +126,9 @@ case class IcebergMigrateTableExec(
       spark.sessionState.catalog.renameTable(hiveIdent, ident)
     })
 
+    // clear the cache for the original table because it changed.
+    spark.sessionState.catalog.refreshTable(ident)
+
     spark.sparkContext.parallelize(Seq.empty, 1)
   }
 
