@@ -438,6 +438,11 @@ class IcebergTypesTest(unittest.TestCase):
                 cast(3.1416 as decimal(18,4)))
             """, cls.shared_table)
 
+    @classmethod
+    def tearDownClass(cls):
+        # clean up the test table
+        sql("DROP TABLE IF EXISTS {0}", cls.shared_table)
+
     def test_boolean_col(self):
         rows = collect(sql('select b as value from {0}', self.shared_table))
         self.assertEqual(1, len(rows), "Should produce one row")
