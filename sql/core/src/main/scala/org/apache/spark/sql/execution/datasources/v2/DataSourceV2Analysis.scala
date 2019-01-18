@@ -20,12 +20,12 @@ package org.apache.spark.sql.execution.datasources.v2
 import scala.collection.JavaConverters._
 import scala.util.Try
 
-import org.apache.spark.sql.{AnalysisException, SaveMode, SparkSession, SQLContext}
+import org.apache.spark.sql.{AnalysisException, SQLContext, SaveMode, SparkSession}
 import org.apache.spark.sql.catalog.v2.{PartitionUtil, Table, TableChange, V1MetadataTable}
 import org.apache.spark.sql.catalyst.TableIdentifier
 import org.apache.spark.sql.catalyst.analysis.NamedRelation
 import org.apache.spark.sql.catalyst.catalog.CatalogTable
-import org.apache.spark.sql.catalyst.expressions.{Alias, Literal}
+import org.apache.spark.sql.catalyst.expressions.{Alias, Cast, Literal}
 import org.apache.spark.sql.catalyst.plans.logical.{AlterTable, AppendData, CreateTable, CreateTableAsSelect, DropTable, InsertIntoTable, LogicalPlan, OverwritePartitionsDynamic, Project, RefreshTable, ReplaceTableAsSelect}
 import org.apache.spark.sql.catalyst.plans.logical.sql
 import org.apache.spark.sql.catalyst.rules.Rule
@@ -204,7 +204,7 @@ class DataSourceV2Analysis(spark: SparkSession) extends Rule[LogicalPlan] {
         val projectExprs = output.map { col =>
           outputNameToStaticName.get(col.name).flatMap(staticPartitionValues.get) match {
             case Some(staticValue) =>
-              Alias(Literal(staticValue), col.name)()
+              Alias(Cast(Literal(staticValue), col.dataType), col.name)()
             case _ =>
               queryColumns.next
           }
