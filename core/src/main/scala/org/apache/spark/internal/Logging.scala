@@ -45,7 +45,8 @@ private[spark] trait Logging {
   // Method to get or create the logger for this object
   protected def log: Logger = {
     if (log_ == null) {
-      initializeLogIfNecessary(false)
+      initializeLogIfNecessary(
+        System.getProperty("spark.logging.is-interpreter", "false").toBoolean)
       log_ = LoggerFactory.getLogger(logName)
     }
     log_
