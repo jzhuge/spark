@@ -1,5 +1,38 @@
 #!/bin/bash
 
+usage() {
+  cat <<EOF
+assume-role.sh [-h|--help] [-a|--arn <arn>] [-s|--session-name <session_name>] [--vault] [cmd ...]
+EOF
+}
+
+while (($# > 0)); do
+  case $1 in
+  -h|--help)
+    usage
+    exit 0
+    ;;
+  -a|--arn)
+    arn=$2
+    shift
+    ;;
+  -s|--session-name)
+    session_name=$2
+    shift
+    ;;
+  --vault)
+    arn="arn:aws:iam::219382154434:role/s3_all_with_vault"
+    ;;
+  -*)
+    echo "Unknown option $1" >&2
+    exit 1
+    ;;
+  *)
+    break
+  esac
+  shift
+done
+
 export BUILD_CREDENTIALS=$( \
   aws sts assume-role \
     --role-arn arn:aws:iam::219382154434:role/BDP_JENKINS_ROLE \
