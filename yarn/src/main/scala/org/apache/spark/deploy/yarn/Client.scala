@@ -512,7 +512,8 @@ private[spark] class Client(
         destName: Option[String] = None,
         targetDir: Option[String] = None,
         appMasterOnly: Boolean = false,
-        makePublic: Boolean = false): (Boolean, String) = {
+        makePublic: Boolean = false,
+        force: Boolean = false): (Boolean, String) = {
       val trimmedPath = path.trim()
       val localURI = Utils.resolveURI(trimmedPath)
       if (localURI.getScheme != LOCAL_SCHEME) {
@@ -528,7 +529,7 @@ private[spark] class Client(
             if (!publicPath.getFileSystem(hadoopConf).exists(publicPath)) {
               val stageName = publicPath.getName + "." + UUID.randomUUID().toString
               copyFileToRemote(publicPath.getParent, localPath, replication,
-                destName = Some(stageName), symlinkCache = symlinkCache)
+                destName = Some(stageName), symlinkCache = symlinkCache, force = force)
               publicPath.getFileSystem(hadoopConf)
                 .rename(new Path(publicPath.getParent, stageName), publicPath)
             }
@@ -659,7 +660,7 @@ private[spark] class Client(
       distribute(uri.toString,
         resType = LocalResourceType.ARCHIVE,
         destName = Some(LOCALIZED_VENV_DIR),
-        makePublic = true)
+        makePublic = true, force = true)
 
       val defaultPython = "./__venv__/bin/python"
 
