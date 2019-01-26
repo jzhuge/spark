@@ -117,6 +117,7 @@ fi
 if ! ${WORKSPACE}/spark-${BUILD_VERSION}/bin/spark-submit \
     --master yarn \
     --deploy-mode cluster \
+    --py-files netflix/test_utils.py \
     --extra-properties-file ${HADOOP_CONF_DIR}/spark-cluster.properties \
     --extra-properties-file ${HADOOP_CONF_DIR}/spark-vault.properties \
     netflix/yarn_integration_tests.py; then
