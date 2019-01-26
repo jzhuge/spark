@@ -253,7 +253,7 @@ case class CatalogTable(
 
     val output =
       Seq(s"Table: ${identifier.quotedString}",
-        if (owner.nonEmpty) s"Owner: $owner" else "",
+        if (owner != null && owner.nonEmpty) s"Owner: $owner" else "",
         s"Created: ${new Date(createTime).toString}",
         s"Last Access: ${new Date(lastAccessTime).toString}",
         s"Type: ${tableType.name}",
