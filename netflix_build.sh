@@ -105,10 +105,8 @@ fi
 export HADOOP_CONF_DIR=${WORKSPACE}/netflix/test-conf
 export HADOOP_HOME=${WORKSPACE}/tmp/hadoop
 
-if ${WORKSPACE}/spark-${BUILD_VERSION}/bin/spark-submit \
+if ! ${WORKSPACE}/spark-${BUILD_VERSION}/bin/spark-submit \
     --master 'local[*]' \
-    --extra-properties-file ${HADOOP_CONF_DIR}/spark-cluster.properties \
-    --extra-properties-file ${HADOOP_CONF_DIR}/spark-vault.properties \
     netflix/integration_tests.py; then
   echo
   echo 'Integration tests FAILED.'
@@ -116,7 +114,7 @@ if ${WORKSPACE}/spark-${BUILD_VERSION}/bin/spark-submit \
   exit 1
 fi
 
-if ${WORKSPACE}/spark-${BUILD_VERSION}/bin/spark-submit \
+if ! ${WORKSPACE}/spark-${BUILD_VERSION}/bin/spark-submit \
     --master yarn \
     --extra-properties-file ${HADOOP_CONF_DIR}/spark-cluster.properties \
     --extra-properties-file ${HADOOP_CONF_DIR}/spark-vault.properties \
