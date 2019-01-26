@@ -1,0 +1,343 @@
+<configuration>
+
+  <property>
+    <name>yarn.web-proxy.address</name>
+    <value>h2query.historyserver.spin.dataeng.netflix.net:20888</value>
+  </property> 
+
+  <property>
+    <name>yarn.resourcemanager.resource-tracker.address</name>
+    <value>h2query.resourcemanager.spin.dataeng.netflix.net:8025</value>
+  </property>
+
+  <property>
+    <name>yarn.resourcemanager.address</name>
+    <value>h2query.resourcemanager.spin.dataeng.netflix.net:8032</value>
+  </property>
+
+  <property>
+    <name>yarn.resourcemanager.admin.address</name>
+    <value>h2query.resourcemanager.spin.dataeng.netflix.net:8033</value>
+  </property>
+
+  <property>
+    <name>yarn.resourcemanager.webapp.address</name>
+    <value>h2query.resourcemanager.spin.dataeng.netflix.net:8088</value>
+  </property>
+
+  <property>
+    <name>yarn.resourcemanager.scheduler.address</name>
+    <value>h2query.resourcemanager.spin.dataeng.netflix.net:8030</value>
+  </property>
+
+  <property>
+    <name>yarn.nodemanager.aux-services</name>
+    <value>spark_shuffle,mapreduce_shuffle</value>
+  </property>
+
+  <property>
+    <name>yarn.nodemanager.aux-services.mapreduce_shuffle.class</name>
+    <value>org.apache.hadoop.mapred.ShuffleHandler</value>
+  </property>
+
+  <property>
+    <name>yarn.resourcemanager.nodes.exclude-path</name>
+    <value>${hadoop.home.dir}/etc/hadoop/nodes.exclude</value>
+  </property>
+
+  <property>
+    <name>yarn.log-aggregation-enable</name>
+    <value>true</value>
+  </property>
+
+  <property>
+    <name>yarn.log.server.url</name>
+    <value>http://h2query.historyserver.spin.dataeng.netflix.net:19888/jobhistory/logs</value>
+  </property>
+
+  <property>
+    <name>yarn.dispatcher.exit-on-error</name>
+    <value>true</value>
+  </property>
+
+  <property>
+    <name>yarn.nodemanager.local-dirs</name>
+    <value>/mnt/yarn</value>
+    <final>true</final>
+  </property>
+
+  <property>
+    <description>Where to store container logs.</description>
+    <name>yarn.nodemanager.log-dirs</name>
+    <value>/mnt/yarn/containers</value>
+  </property>
+
+  <property>
+    <description>Where to aggregate logs to.</description>
+    <name>yarn.nodemanager.remote-app-log-dir</name>
+    <value>s3://netflix-bdp-job-logs/hadoop_h2query_v031/task-logs/</value>
+  </property>
+
+ 
+  <property>
+    <description>Classpath for typical applications.</description>
+     <name>yarn.application.classpath</name>
+     <value>
+       $HADOOP_CONF_DIR,
+       $HADOOP_COMMON_HOME/share/hadoop/common/*,
+       $HADOOP_COMMON_HOME/share/hadoop/common/lib/*,
+       $HADOOP_HDFS_HOME/share/hadoop/hdfs/*,
+       $HADOOP_HDFS_HOME/share/hadoop/hdfs/lib/*,
+       $HADOOP_YARN_HOME/share/hadoop/yarn/*,
+       $HADOOP_YARN_HOME/share/hadoop/yarn/lib/*,
+       $HADOOP_YARN_HOME/share/hadoop/mapreduce/*,
+       $HADOOP_YARN_HOME/share/hadoop/mapreduce/lib/*,
+       $HADOOP_COMMON_HOME/share/hadoop/netflix/*
+     </value>
+  </property>
+
+  
+    
+    
+  
+
+  <property>
+    <name>yarn.nodemanager.bind-host</name>
+    <value>100.74.42.128</value>
+  </property>
+
+  <property>
+    <name>yarn.nodemanager.address</name>
+    <value>100.74.42.128:8041</value>
+  </property>
+
+  <property>
+    <name>yarn.nodemanager.container-metrics.enable</name>
+    <value>false</value>
+  </property>
+
+  <property>
+    <name>yarn.scheduler.increment-allocation-mb</name>
+    <value>128</value>
+  </property>
+
+  <property>
+    <name>yarn.nodemanager.container-monitor.procfs-tree.smaps-based-rss.enabled</name>
+    <value>true</value>
+  </property>
+
+  <property>
+    <name>yarn.resourcemanager.resource-tracker.client.thread-count</name>
+    <value>64</value>
+  </property>
+
+  <property>
+    <name>yarn.resourcemanager.scheduler.client.thread-count</name>
+    <value>64</value>
+  </property>
+
+  <property>
+    <name>yarn.log-aggregation.retain-seconds</name>
+    <value>-1</value>
+  </property>
+
+  <property>
+    <name>yarn.nodemanager.resource.memory-mb</name>
+    <value>221184</value>
+  </property>
+
+  <property>
+    <name>yarn.scheduler.maximum-allocation-vcores</name>
+    <value>128</value>
+  </property>
+
+  <property>
+    <name>yarn.scheduler.fair.user-as-default-queue</name>
+    <value>false</value>
+  </property>
+
+  <property>
+    <name>yarn.resourcemanager.hostname</name>
+    <value>100.74.45.16</value>
+  </property>
+
+  <property>
+    <name>yarn.scheduler.fair.preemption</name>
+    <value>true</value>
+  </property>
+
+  <property>
+    <name>yarn.scheduler.minimum-allocation-mb</name>
+    <value>1024</value>
+  </property>
+
+  <property>
+    <name>yarn.app.mapreduce.am.job.reduce.rampup.limit</name>
+    <value>0.0</value>
+  </property>
+
+  <property>
+    <name>yarn.resourcemanager.scheduler.class</name>
+    <value>org.apache.hadoop.yarn.server.resourcemanager.scheduler.fair.FairScheduler</value>
+  </property>
+
+  
+
+  
+  <property>
+    <name>yarn.nodemanager.disk-health-checker.min-free-space-per-disk-mb</name>
+    <value>102400</value>
+  </property>
+
+  <property>
+    <name>yarn.resourcemanager.client.thread-count</name>
+    <value>64</value>
+  </property>
+
+  <property>
+    <name>yarn.nodemanager.resource.cpu-vcores</name>
+    <value>32</value>
+  </property>
+
+  <property>
+    <name>tez.queue.name</name>
+    <value>root.adhoc</value>
+  </property>
+
+  <property>
+    <name>yarn.nodemanager.pmem-check-enabled</name>
+    <value>true</value>
+  </property>
+
+  <property>
+    <name>yarn.scheduler.fair.allocation.file</name>
+    <value>/apps/hadoop/etc/hadoop/fairsched.xml</value>
+  </property>
+
+  <property>
+    <name>yarn.nodemanager.container-manager.thread-count</name>
+    <value>64</value>
+  </property>
+
+  <property>
+    <name>yarn.scheduler.maximum-allocation-mb</name>
+    <value>20480</value>
+  </property>
+
+  <property>
+    <name>yarn.resourcemanager.am.max-attempts</name>
+    <value>4</value>
+  </property>
+
+  <property>
+    <name>yarn.resourcemanager.max-completed-applications</name>
+    <value>40000</value>
+  </property>
+
+  <property>
+    <name>yarn.nodemanager.vmem-check-enabled</name>
+    <value>false</value>
+  </property>
+
+  <property>
+    <name>spark.queue.name</name>
+    <value>root.adhoc</value>
+  </property>
+
+  
+    
+    
+  
+
+  <property>
+    <name>yarn.nodemanager.aux-services.spark_shuffle.class</name>
+    <value>org.apache.spark.network.yarn.YarnShuffleService</value>
+  </property>
+
+  <property>
+    <name>yarn.nodemanager.localizer.client.thread-count</name>
+    <value>20</value>
+  </property>
+
+  <property>
+    <name>yarn.nodemanager.localizer.fetch.thread-count</name>
+    <value>20</value>
+  </property>
+
+  <property>
+    <name>bdp.cluster.id</name>
+    <value>hadoop_h2query_v031</value>
+  </property>
+
+  <property>
+    <name>yarn.nodemanager.vmem-pmem-ratio</name>
+    <value>5</value>
+  </property>
+
+  <property>
+    <name>yarn.resourcemanager.decommissioning.timeout</name>
+    <value>2592000</value>
+  </property>
+
+  <property>
+    <name>yarn.node-labels.enabled</name>
+    <value>true</value>
+  </property>
+
+  <property>
+    <name>yarn.node-labels.fs-store.root-dir</name>
+    <value>file:///mnt/yarn</value>
+  </property>
+
+  <property>
+    <name>mapreduce.job.node-label-expression</name>
+    <value>datanode||nodemanager</value>
+  </property>
+
+  <property>
+    <name>mapreduce.job.am.node-label-expression</name>
+    <value>datanode</value>
+  </property>
+
+  <property>
+    <name>yarn.nodemanager.recovery.enabled</name>
+    <value>True</value>
+  </property>
+
+  
+
+  <property>
+    <name>yarn.nodemanager.container-executor.class</name>
+    <value>org.apache.hadoop.yarn.server.nodemanager.LinuxContainerExecutor</value>
+  </property>
+
+  <property>
+    <name>yarn.nodemanager.linux-container-executor.cgroups.strict-resource-usage</name>
+    <value>false</value>
+  </property>
+
+  <property>
+    <name>yarn.nodemanager.linux-container-executor.group</name>
+    <value>yarn</value>
+  </property>
+
+  <property>
+    <name>yarn.nodemanager.linux-container-executor.nonsecure-mode.local-user</name>
+    <value>yarn</value>
+  </property>
+
+  <property>
+    <name>yarn.nodemanager.linux-container-executor.resources-handler.class</name>
+    <value>org.apache.hadoop.yarn.server.nodemanager.util.CgroupsLCEResourcesHandler</value>
+  </property>
+
+  <property>
+    <name>yarn.nodemanager.resource.percentage-physical-cpu-limit</name>
+    <value>100</value>
+  </property>
+
+  <property>
+    <name>yarn.shuffle.verboselog</name>
+    <value>True</value>
+  </property>
+<property><name>yarn.resourcemanager.store.class</name><value>org.apache.hadoop.yarn.server.resourcemanager.recovery.LeveldbRMStateStore</value></property><property><name>yarn.resourcemanager.nodemanagers.heartbeat-interval-ms</name><value>3000</value></property><property><name>yarn.resourcemanager.recovery.enabled</name><value>True</value></property><property><name>yarn.nodemanager.log-dirs</name><value>/mnt/yarn/containers</value></property></configuration>

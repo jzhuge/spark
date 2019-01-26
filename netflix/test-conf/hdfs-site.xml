@@ -1,0 +1,157 @@
+<configuration>
+
+  <property>
+    <name>dfs.namenode.rpc-bind-host</name>
+    <value>0.0.0.0</value>
+  </property>
+
+  <property>
+    <name>dfs.namenode.servicerpc-bind-host</name>
+    <value>0.0.0.0</value>
+  </property>
+
+  <property>
+    <name>dfs.namenode.http-bind-host</name>
+    <value>0.0.0.0</value>
+  </property>
+
+  <property>
+    <name>dfs.namenode.https-bind-host</name>
+    <value>0.0.0.0</value>
+  </property>
+
+  <property>
+    <name>dfs.datanode.data.dir</name>
+    <value>file:///mnt/hdfs</value>
+  </property>
+
+  <property>
+    <name>dfs.namenode.name.dir</name>
+    <value>file:///mnt/namenode</value>
+  </property>
+
+  <property>
+    <name>dfs.permissions.superusergroup</name>
+    <value>hadoop</value>
+    <description>The name of the group of super-users.</description>
+  </property>
+
+  
+  <property>
+    <name>dfs.namenode.plugins</name>
+    <value />
+    <description>Comma-separated list of namenode plug-ins to be activated.
+    </description>
+  </property>
+
+  <property>
+    <name>dfs.datanode.plugins</name>
+    <value />
+    <description>Comma-separated list of datanode plug-ins to be activated.
+    </description>
+  </property>
+
+  
+  <property>
+    <name>dfs.datanode.max.xcievers</name>
+    <value>4096</value>
+  </property>
+
+  
+  <property>
+    <name>dfs.webhdfs.enabled</name>
+    <value>true</value>
+  </property>
+
+  <property>
+    <name>dfs.namenode.safemode.extension</name>
+    <value>5000</value>
+  </property>
+
+  <property>
+    <name>dfs.namenode.randomize-block-locations-per-block</name>
+    <value>true</value>
+  </property>
+
+  <property>
+    <name>dfs.replication</name>
+    <value>3</value>
+  </property>
+
+  <property>
+    <name>dfs.datanode.available-space-volume-choosing-policy.balanced-space-threshold</name>
+    <value>10737418240</value>
+  </property>
+
+  <property>
+    <name>dfs.datanode.du.reserved</name>
+    <value>536870912</value>
+  </property>
+
+  <property>
+    <name>dfs.namenode.handler.count</name>
+    <value>1536</value>
+  </property>
+
+  <property>
+    <name>dfs.namenode.service.handler.count</name>
+    <value>820</value>
+  </property>
+
+  <property>
+    <name>dfs.namenode.servicerpc-address</name>
+    <value>hadoop-h2query-namenode-v031.dynprod.netflix.net:8040</value>
+  </property>
+
+  <property>
+    <name>dfs.hosts.exclude</name>
+    <value>${hadoop.home.dir}/etc/hadoop/dfs.exclude</value>
+  </property>
+
+  <property>
+    <name>dfs.datanode.socket.write.timeout</name>
+    <value>20000</value>
+  </property>
+
+  <property>
+    <name>dfs.encryption.key.provider.uri</name>
+    <value>kms://http@hadoop-h2query-namenode-v031.dynprod.netflix.net:9700/kms</value>
+  </property>
+
+  <property>
+    <name>dfs.datanode.handler.count</name>
+    <value>64</value>
+  </property>
+
+  <property>
+    <name>dfs.datanode.available-space-volume-choosing-policy.balanced-space-preference-fraction</name>
+    <value>1.0</value>
+  </property>
+
+  <property>
+    <name>hadoop.security.group.mapping</name>
+    <value>org.apache.hadoop.security.DummyUnixGroupsMapping</value>
+  </property>
+
+  <property>
+    <name>dfs.datanode.fsdataset.volume.choosing.policy</name>
+    <value>org.apache.hadoop.hdfs.server.datanode.fsdataset.AvailableSpaceVolumeChoosingPolicy</value>
+  </property>
+
+  <property>
+    <name>dfs.name.dir</name>
+    <value>/mnt/namenode</value>
+  </property>
+
+  <property>
+    <name>dfs.data.dir</name>
+    <value>/mnt/hdfs</value>
+  </property>
+
+  <property>
+    <name>dfs.namenode.datanode.registration.ip-hostname-check</name>
+    <value>false</value>
+  </property>
+
+
+<property><name>dfs.datanode.failed.volumes.tolerated</name><value>0</value></property></configuration>

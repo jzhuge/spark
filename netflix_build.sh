@@ -99,14 +99,19 @@ fi
 export HADOOP_CONF_DIR=${WORKSPACE}/netflix/test-conf
 export HADOOP_HOME=${WORKSPACE}/tmp/hadoop
 
-if ${WORKSPACE}/spark-${BUILD_VERSION}/bin/spark-submit netflix/integration_tests.py; then
+if ! ${WORKSPACE}/spark-${BUILD_VERSION}/bin/spark-submit \
+    --master yarn \
+    --deploy-mode cluster \
+    --extra-properties-file ${HADOOP_CONF_DIR}/spark-cluster.properties \
+    --extra-properties-file ${HADOOP_CONF_DIR}/spark-vault.properties \
+    netflix/integration_tests.py; then
   echo
-  echo 'Integration tests PASSED. Deploying tarball to app location.'
-  echo
-  netflix/assume_role.sh aws s3 cp --no-progress spark-${BUILD_VERSION}.tgz s3://netflix-bigdataplatform/spark-builds/${BUILD_VERSION}/
-else
-  echo
-  echo 'Integration tests FAILED. Aborting tarball deploy to app location.'
+  echo 'Integration tests FAILED.'
   echo
   exit 1
 fi
+
+echo
+echo 'Integration tests PASSED. Deploying tarball to app location.'
+echo
+netflix/assume_role.sh aws s3 cp --no-progress spark-${BUILD_VERSION}.tgz s3://netflix-bigdataplatform/spark-builds/${BUILD_VERSION}/
