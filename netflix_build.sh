@@ -93,11 +93,11 @@ cp bin/dsespark-* spark-${BUILD_VERSION}/bin/
 # Update tarball and deploy the build, but not the application tarball
 tar -czf spark-${BUILD_VERSION}.tgz spark-${BUILD_VERSION}
 
-bash assume_role.sh aws s3 cp spark-${BUILD_VERSION}.tgz s3://netflix-bigdataplatform/spark-builds/${BUILD_VERSION}/spark-${BUILD_VERSION}-${BUILD_NUMBER}.tgz
+netflix/assume_role.sh aws s3 cp spark-${BUILD_VERSION}.tgz s3://netflix-bigdataplatform/spark-builds/${BUILD_VERSION}/spark-${BUILD_VERSION}-${BUILD_NUMBER}.tgz
 
 # run integration tests
 if [ ! -f hadoop.tar.gz ]; then
-  bash assume_role.sh aws s3 cp s3://netflix-bigdataplatform/apps/hadoop-spinnaker/2.7.3/hadoop.tar.gz hadoop.tar.gz
+  netflix/assume_role.sh aws s3 cp s3://netflix-bigdataplatform/apps/hadoop-spinnaker/2.7.3/hadoop.tar.gz hadoop.tar.gz
   mkdir -p tmp
   tar xzf hadoop.tar.gz -C tmp/
 fi
@@ -130,4 +130,4 @@ fi
 echo
 echo 'Integration tests PASSED. Deploying tarball to app location.'
 echo
-bash assume_role.sh aws s3 cp spark-${BUILD_VERSION}.tgz s3://netflix-bigdataplatform/spark-builds/${BUILD_VERSION}/
+netflix/assume_role.sh aws s3 cp spark-${BUILD_VERSION}.tgz s3://netflix-bigdataplatform/spark-builds/${BUILD_VERSION}/
