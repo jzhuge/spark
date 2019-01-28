@@ -56,7 +56,7 @@ case class IcebergSnapshotTableExec(
     // use the default table catalog
     val source = spark.catalog(None).asTableCatalog.loadTable(sourceTable)
     val sourceName = s"${sourceTable.database.get}.${sourceTable.table}"
-    val partitions: DataFrame = SparkTableUtil.partitionDF(spark, sourceName)
+    val partitions: DataFrame = IcebergUtils.partitionDF(spark, sourceName)
 
     val nonParquetPartitions = partitions.filter(not($"format".contains("parquet"))).count()
     if (nonParquetPartitions > 0) {

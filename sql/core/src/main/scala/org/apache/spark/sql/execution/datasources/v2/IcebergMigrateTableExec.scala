@@ -71,7 +71,7 @@ case class IcebergMigrateTableExec(
       case _ =>
     }
 
-    val partitions: DataFrame = SparkTableUtil.partitionDF(spark, sourceName)
+    val partitions: DataFrame = IcebergUtils.partitionDF(spark, sourceName)
 
     if (spark.sessionState.catalog.tableExists(hiveIdent)) {
       throw new SparkException(s"Cannot create backup table $hiveIdent: already exists")

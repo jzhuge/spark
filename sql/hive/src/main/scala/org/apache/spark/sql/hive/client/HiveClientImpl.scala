@@ -637,13 +637,13 @@ private[hive] class HiveClientImpl(
       table: CatalogTable,
       spec: Option[TablePartitionSpec]): Seq[CatalogTablePartition] = withHiveState {
     val hiveTable = toHiveTable(table, Some(userName))
-    val partSpec = spec match {
-      case None => CatalogTypes.emptyTablePartitionSpec
+    val parts = spec match {
+      case None =>
+        shim.getAllPartitions(client, hiveTable).map(fromHivePartition)
       case Some(s) =>
         assert(s.values.forall(_.nonEmpty), s"partition spec '$s' is invalid")
-        s
+        client.getPartitions(hiveTable, s.asJava).asScala.map(fromHivePartition)
     }
-    val parts = client.getPartitions(hiveTable, partSpec.asJava).asScala.map(fromHivePartition)
     HiveCatalogMetrics.incrementFetchedPartitions(parts.length)
     parts
   }

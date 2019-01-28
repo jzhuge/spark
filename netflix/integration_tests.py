@@ -168,8 +168,8 @@ class IcebergMigrationTest(unittest.TestCase):
 
                 # source should still be a parquet table
                 describe = sql("DESCRIBE FORMATTED {0}", source)
-                formats = list(filter(lambda r: r['col_name'].strip() == 'InputFormat:', collect(describe)))
-                self.assertEqual(len(formats), 1, "Should produce an InputFormat: property entry")
+                formats = list(filter(lambda r: r['col_name'].strip() == 'InputFormat', collect(describe)))
+                self.assertEqual(len(formats), 1, "Should produce an InputFormat property entry")
                 self.assertEqual(
                         formats[0]['data_type'].strip(),
                         'org.apache.hadoop.hive.ql.io.parquet.MapredParquetInputFormat',
@@ -206,8 +206,8 @@ class IcebergMigrationTest(unittest.TestCase):
 
                 # source should still be a parquet table
                 describe = sql("DESCRIBE FORMATTED {0}", source)
-                formats = list(filter(lambda r: r['col_name'].strip() == 'InputFormat:', collect(describe)))
-                self.assertEqual(len(formats), 1, "Should produce an InputFormat: property entry")
+                formats = list(filter(lambda r: r['col_name'].strip() == 'InputFormat', collect(describe)))
+                self.assertEqual(len(formats), 1, "Should produce an InputFormat property entry")
                 self.assertEqual(
                         formats[0]['data_type'].strip(),
                         'org.apache.hadoop.hive.ql.io.parquet.MapredParquetInputFormat',
@@ -247,8 +247,8 @@ class IcebergMigrationTest(unittest.TestCase):
 
                 # backup should still be a parquet table
                 describe = sql("DESCRIBE FORMATTED {0}", backup)
-                formats = list(filter(lambda r: r['col_name'].strip() == 'InputFormat:', collect(describe)))
-                self.assertEqual(len(formats), 1, "Should produce an InputFormat: property entry")
+                formats = list(filter(lambda r: r['col_name'].strip() == 'InputFormat', collect(describe)))
+                self.assertEqual(len(formats), 1, "Should produce an InputFormat property entry")
                 self.assertEqual(
                         formats[0]['data_type'].strip(),
                         'org.apache.hadoop.hive.ql.io.parquet.MapredParquetInputFormat',
@@ -290,8 +290,8 @@ class IcebergMigrationTest(unittest.TestCase):
 
                 # backup should still be a parquet table
                 describe = sql("DESCRIBE FORMATTED {0}", backup)
-                formats = list(filter(lambda r: r['col_name'].strip() == 'InputFormat:', collect(describe)))
-                self.assertEqual(len(formats), 1, "Should produce an InputFormat: property entry")
+                formats = list(filter(lambda r: r['col_name'].strip() == 'InputFormat', collect(describe)))
+                self.assertEqual(len(formats), 1, "Should produce an InputFormat property entry")
                 self.assertEqual(
                         formats[0]['data_type'].strip(),
                         'org.apache.hadoop.hive.ql.io.parquet.MapredParquetInputFormat',
