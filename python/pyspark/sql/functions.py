@@ -1998,6 +1998,10 @@ def nf_quarter(input):
     sc = SparkContext._active_spark_context
     return Column(sc._jvm.functions.nf_quarter(_to_java_column(input)))
 
+def nf_json_extract(col, path):
+    sc = SparkContext._active_spark_context
+    return Column(sc._jvm.functions.nf_json_extract(_to_java_column(col), path))
+
 def _test():
     import doctest
     from pyspark.sql import Row, SparkSession
