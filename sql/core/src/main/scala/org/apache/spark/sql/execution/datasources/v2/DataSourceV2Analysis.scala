@@ -23,7 +23,7 @@ import scala.util.Try
 import org.apache.spark.sql.{AnalysisException, SaveMode, SparkSession, SQLContext}
 import org.apache.spark.sql.catalog.v2.{PartitionUtil, Table, TableChange, V1MetadataTable}
 import org.apache.spark.sql.catalyst.TableIdentifier
-import org.apache.spark.sql.catalyst.analysis.{NamedRelation, UnresolvedRelation}
+import org.apache.spark.sql.catalyst.analysis.{NamedRelation, NoSuchTableException, UnresolvedRelation}
 import org.apache.spark.sql.catalyst.catalog.CatalogTable
 import org.apache.spark.sql.catalyst.expressions.{Alias, Cast, Literal}
 import org.apache.spark.sql.catalyst.plans.logical.{AlterTable, AppendData, CreateTable, CreateTableAsSelect, DropTable, InsertIntoTable, LogicalPlan, OverwritePartitionsDynamic, Project, RefreshTable, ReplaceTableAsSelect, SubqueryAlias}
@@ -56,24 +56,36 @@ class DataSourceV2Analysis(spark: SparkSession) extends Rule[LogicalPlan] {
   override def apply(plan: LogicalPlan): LogicalPlan = plan resolveOperators {
     case insert @ InsertIntoTable(unresolved: UnresolvedRelation, _, child, _, _, _)
         if child.resolved =>
-      Option(catalog.loadTable(unresolved.tableIdentifier)) match {
-        case Some(table) =>
-          insert.copy(table = v2relation(unresolved.tableIdentifier, table))
-        case _ =>
+      try {
+        val table = catalog.loadTable(unresolved.tableIdentifier)
+        table match {
+          case v1: V1MetadataTable if v1.v2Source.isDefined =>
+            insert.copy(table = v2relation(unresolved.tableIdentifier, table))
+          case _ =>
+            insert
+        }
+      } catch {
+        case _: NoSuchTableException =>
           insert
       }
 
     case unresolved: UnresolvedRelation =>
-      Option(catalog.loadTable(unresolved.tableIdentifier)) match {
-        case Some(table) =>
-          val relation = v2relation(unresolved.tableIdentifier, table)
-          unresolved.alias match {
-            case Some(relAlias) =>
-              SubqueryAlias(relAlias, relation, Some(unresolved.tableIdentifier))
-            case _ =>
-              relation
-          }
-        case _ =>
+      try {
+        val table = catalog.loadTable(unresolved.tableIdentifier)
+        val relation = v2relation(unresolved.tableIdentifier, table)
+        table match {
+          case v1: V1MetadataTable if v1.v2Source.isDefined =>
+            unresolved.alias match {
+              case Some(relAlias) =>
+                SubqueryAlias(relAlias, relation, Some(unresolved.tableIdentifier))
+              case _ =>
+                relation
+            }
+          case _ =>
+            unresolved
+        }
+      } catch {
+        case _: NoSuchTableException =>
           unresolved
       }
 
