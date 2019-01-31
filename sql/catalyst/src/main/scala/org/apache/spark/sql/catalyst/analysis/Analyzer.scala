@@ -589,102 +589,58 @@ class Analyzer(
    */
   object ResolveRelations extends Rule[LogicalPlan] {
 
-    // If the unresolved relation is running directly on files, we just return the original
-    // UnresolvedRelation, the plan will get resolved later. Else we look up the table from catalog
-    // and change the default database name(in AnalysisContext) if it is a view.
-    // We usually look up a table from the default database if the table identifier has an empty
-    // database part, for a view the default database should be the currentDb when the view was
-    // created. When the case comes to resolving a nested view, the view may have different default
-    // database with that the referenced view has, so we need to use
-    // `AnalysisContext.defaultDatabase` to track the current default database.
-    // When the relation we resolve is a view, we fetch the view.desc(which is a CatalogTable), and
-    // then set the value of `CatalogTable.viewDefaultDatabase` to
-    // `AnalysisContext.defaultDatabase`, we look up the relations that the view references using
-    // the default database.
-    // For example:
-    // |- view1 (defaultDatabase = db1)
-    //   |- operator
-    //     |- table2 (defaultDatabase = db1)
-    //     |- view2 (defaultDatabase = db2)
-    //        |- view3 (defaultDatabase = db3)
-    //   |- view4 (defaultDatabase = db4)
-    // In this case, the view `view1` is a nested view, it directly references `table2`, `view2`
-    // and `view4`, the view `view2` references `view3`. On resolving the table, we look up the
-    // relations `table2`, `view2`, `view4` using the default database `db1`, and look up the
-    // relation `view3` using the default database `db2`.
-    //
-    // Note this is compatible with the views defined by older versions of Spark(before 2.2), which
-    // have empty defaultDatabase and all the relations in viewText have database part defined.
-    def resolveRelation(plan: LogicalPlan): LogicalPlan = plan match {
-      case u: UnresolvedRelation if !isRunningDirectlyOnFiles(u.tableIdentifier) =>
-        val defaultDatabase = AnalysisContext.get.defaultDatabase
-        val foundRelation = lookupTableFromCatalog(u, defaultDatabase)
-        resolveRelation(foundRelation)
-      // The view's child should be a logical plan parsed from the `desc.viewText`, the variable
-      // `viewText` should be defined, or else we throw an error on the generation of the View
-      // operator.
-      case view @ View(desc, _, child) if !child.resolved =>
-        // Resolve all the UnresolvedRelations and Views in the child.
-        val newChild = AnalysisContext.withAnalysisContext(desc.viewDefaultDatabase) {
-          if (AnalysisContext.get.nestedViewDepth > conf.maxNestedViewDepth) {
-            view.failAnalysis(s"The depth of view ${view.desc.identifier} exceeds the maximum " +
-              s"view resolution depth (${conf.maxNestedViewDepth}). Analysis is aborted to " +
-              s"avoid errors. Increase the value of ${SQLConf.MAX_NESTED_VIEW_DEPTH.key} to work " +
-              "around this.")
-          }
-          executeSameContext(child)
-        }
-        view.copy(child = newChild)
-      case p @ SubqueryAlias(_, view: View) =>
-        val newChild = resolveRelation(view)
-        p.copy(child = newChild)
-      case _ => plan
-    }
-
     def apply(plan: LogicalPlan): LogicalPlan = plan.transformUp {
-      case i @ InsertIntoTable(u: UnresolvedRelation, parts, child, overwrite, ifNotExists, _)
+      case i @ InsertIntoTable(u: UnresolvedRelation, _, child, _, _, _)
           if child.resolved =>
-        val table = EliminateSubqueryAliases(lookupTableFromCatalog(u))
-        table match {
-          case maybe: MaybeCatalogRelation =>
-            maybe.asCatalogRelation match {
-              case Some(catalogRelation) =>
-                updateWithTablePartitions(i, table, catalogRelation)
-              case None =>
+        lookupTableFromCatalog(u) match {
+          case Some(relation) =>
+            val table = EliminateSubqueryAliases(relation)
+            // adding the table's partitions or validate the query's partition info
+            table match {
+              case maybe: MaybeCatalogRelation =>
+                maybe.asCatalogRelation match {
+                  case Some(catalogRelation) =>
+                    updateWithTablePartitions(i, table, catalogRelation)
+                  case None =>
+                    i.copy(table = table)
+                }
+
+              case relation: CatalogRelation
+                  if relation.catalogTable.partitionColumnNames.nonEmpty =>
+                updateWithTablePartitions(i, table, relation)
+
+              case _ =>
                 i.copy(table = table)
             }
-
-          case relation: CatalogRelation if relation.catalogTable.partitionColumnNames.nonEmpty =>
-            updateWithTablePartitions(i, table, relation)
-
-          case v: View =>
-            u.failAnalysis(s"Inserting into a view is not allowed. View: ${v.desc.identifier}.")
-          case other => i.copy(table = other)
+          case _ =>
+            i
         }
-      case u: UnresolvedRelation => resolveRelation(u)
+
+      case u: UnresolvedRelation =>
+        val table = u.tableIdentifier
+        if (table.database.isDefined && conf.runSQLonFile && !catalog.isTemporaryTable(table) &&
+            (!catalog.databaseExists(table.database.get) || !catalog.tableExists(table))) {
+          // If the database part is specified, and we support running SQL directly on files, and
+          // it's not a temporary view, and the table does not exist, then let's just return the
+          // original UnresolvedRelation. It is possible we are matching a query like "select *
+          // from parquet.`/path/to/query`". The plan will get resolved later.
+          // Note that we are testing (!db_exists || !table_exists) because the catalog throws
+          // an exception from tableExists if the database does not exist.
+          u
+        } else {
+          lookupTableFromCatalog(u) match {
+            case Some(relation) => relation
+            case _ => u
+          }
+        }
     }
 
-    // Look up the table with the given name from catalog. The database we used is decided by the
-    // precedence:
-    // 1. Use the database part of the table identifier, if it is defined;
-    // 2. Use defaultDatabase, if it is defined(In this case, no temporary objects can be used,
-    //    and the default database is only used to look up a view);
-    // 3. Use the currentDb of the SessionCatalog.
-    private def lookupTableFromCatalog(
-        u: UnresolvedRelation,
-        defaultDatabase: Option[String] = None): LogicalPlan = {
-      val tableIdentWithDb = u.tableIdentifier.copy(
-        database = u.tableIdentifier.database.orElse(defaultDatabase))
+    private def lookupTableFromCatalog(u: UnresolvedRelation): Option[LogicalPlan] = {
       try {
-        catalog.lookupRelation(tableIdentWithDb)
+        Some(catalog.lookupRelation(u.tableIdentifier))
       } catch {
-        case e: NoSuchTableException =>
-          u.failAnalysis(s"Table or view not found: ${tableIdentWithDb.unquotedString}", e)
-        // If the database is defined and that database is not found, throw an AnalysisException.
-        // Note that if the database is not defined, it is possible we are looking up a temp view.
-        case e: NoSuchDatabaseException =>
-          u.failAnalysis(s"Table or view not found: ${tableIdentWithDb.unquotedString}, the " +
-            s"database ${e.db} doesn't exist.", e)
+        case _: NoSuchTableException =>
+          None // AnalysisException will be thrown in CheckAnalysis.checkAnalysis
       }
     }
 
