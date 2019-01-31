@@ -114,6 +114,7 @@ private[sql] object IcebergSnapshotTableExec {
       files.foreach { file =>
         append.appendFile(file.toDataFile(table.spec))
       }
+      append.retry(10)
       append.commit()
   }
 }
