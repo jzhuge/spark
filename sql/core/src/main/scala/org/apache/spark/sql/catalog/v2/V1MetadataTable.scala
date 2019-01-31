@@ -32,7 +32,7 @@ import org.apache.spark.sql.types.StructType
 /**
  * An implementation of catalog v2 [[Table]] to expose v1 table metadata.
  */
-private[sql] class V1MetadataTable(
+private[sql] case class V1MetadataTable(
     v1Table: CatalogTable,
     v2Source: Option[Any]) extends Table {
 
