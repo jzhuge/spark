@@ -23,10 +23,10 @@ import scala.util.Try
 import org.apache.spark.sql.{AnalysisException, SaveMode, SparkSession, SQLContext}
 import org.apache.spark.sql.catalog.v2.{PartitionUtil, Table, TableChange, V1MetadataTable}
 import org.apache.spark.sql.catalyst.TableIdentifier
-import org.apache.spark.sql.catalyst.analysis.NamedRelation
+import org.apache.spark.sql.catalyst.analysis.{NamedRelation, UnresolvedRelation}
 import org.apache.spark.sql.catalyst.catalog.CatalogTable
 import org.apache.spark.sql.catalyst.expressions.{Alias, Cast, Literal}
-import org.apache.spark.sql.catalyst.plans.logical.{AlterTable, AppendData, CreateTable, CreateTableAsSelect, DropTable, InsertIntoTable, LogicalPlan, OverwritePartitionsDynamic, Project, RefreshTable, ReplaceTableAsSelect}
+import org.apache.spark.sql.catalyst.plans.logical.{AlterTable, AppendData, CreateTable, CreateTableAsSelect, DropTable, InsertIntoTable, LogicalPlan, OverwritePartitionsDynamic, Project, RefreshTable, ReplaceTableAsSelect, SubqueryAlias}
 import org.apache.spark.sql.catalyst.plans.logical.sql
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution.command.{AlterTableAddColumnsCommand, AlterTableDropColumnsCommand, AlterTableRenameColumnCommand, AlterTableSetPropertiesCommand, AlterTableUnsetPropertiesCommand, AlterTableUpdateColumnCommand, CreateTableLikeCommand, DescribeTableCommand, DropTableCommand, ShowCreateTableCommand, ShowTablePropertiesCommand}
@@ -54,6 +54,29 @@ class DataSourceV2Analysis(spark: SparkSession) extends Rule[LogicalPlan] {
   private val catalog = spark.catalog(None).asTableCatalog
 
   override def apply(plan: LogicalPlan): LogicalPlan = plan resolveOperators {
+    case insert @ InsertIntoTable(unresolved: UnresolvedRelation, _, child, _, _, _)
+        if child.resolved =>
+      Option(catalog.loadTable(unresolved.tableIdentifier)) match {
+        case Some(table) =>
+          insert.copy(table = v2relation(unresolved.tableIdentifier, table))
+        case _ =>
+          insert
+      }
+
+    case unresolved: UnresolvedRelation =>
+      Option(catalog.loadTable(unresolved.tableIdentifier)) match {
+        case Some(table) =>
+          val relation = v2relation(unresolved.tableIdentifier, table)
+          unresolved.alias match {
+            case Some(relAlias) =>
+              SubqueryAlias(relAlias, relation, Some(unresolved.tableIdentifier))
+            case _ =>
+              relation
+          }
+        case _ =>
+          unresolved
+      }
+
     case datasources.RefreshTable(V2TableReference(identifier, _)) =>
       RefreshTable(catalog, identifier)
 

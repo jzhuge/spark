@@ -455,35 +455,42 @@ class Analyzer(
    * Replaces [[UnresolvedRelation]]s with concrete relations from the catalog.
    */
   object ResolveRelations extends Rule[LogicalPlan] {
-    private def lookupTableFromCatalog(u: UnresolvedRelation): LogicalPlan = {
+    private def lookupTableFromCatalog(u: UnresolvedRelation): Option[LogicalPlan] = {
       try {
-        catalog.lookupRelation(u.tableIdentifier, u.alias)
+        Some(catalog.lookupRelation(u.tableIdentifier, u.alias))
       } catch {
         case _: NoSuchTableException =>
-          u.failAnalysis(s"Table or view not found: ${u.tableName}")
+          None // AnalysisException will be thrown in CheckAnalysis.checkAnalysis
       }
     }
 
     def apply(plan: LogicalPlan): LogicalPlan = plan resolveOperators {
       case i @ InsertIntoTable(u: UnresolvedRelation, parts, child, overwrite, ifNotExists, _)
           if child.resolved =>
-        val table = EliminateSubqueryAliases(lookupTableFromCatalog(u))
-        // adding the table's partitions or validate the query's partition info
-        table match {
-          case maybe: MaybeCatalogRelation =>
-            maybe.asCatalogRelation match {
-              case Some(catalogRelation) =>
-                updateWithTablePartitions(i, table, catalogRelation)
-              case None =>
+        lookupTableFromCatalog(u) match {
+          case Some(relation) =>
+            val table = EliminateSubqueryAliases(relation)
+            // adding the table's partitions or validate the query's partition info
+            table match {
+              case maybe: MaybeCatalogRelation =>
+                maybe.asCatalogRelation match {
+                  case Some(catalogRelation) =>
+                    updateWithTablePartitions(i, table, catalogRelation)
+                  case None =>
+                    i.copy(table = table)
+                }
+
+              case relation: CatalogRelation
+                  if relation.catalogTable.partitionColumnNames.nonEmpty =>
+                updateWithTablePartitions(i, table, relation)
+
+              case _ =>
                 i.copy(table = table)
             }
-
-          case relation: CatalogRelation if relation.catalogTable.partitionColumnNames.nonEmpty =>
-            updateWithTablePartitions(i, table, relation)
-
           case _ =>
-            i.copy(table = table)
+            i
         }
+
       case u: UnresolvedRelation =>
         val table = u.tableIdentifier
         if (table.database.isDefined && conf.runSQLonFile && !catalog.isTemporaryTable(table) &&
@@ -496,7 +503,10 @@ class Analyzer(
           // an exception from tableExists if the database does not exist.
           u
         } else {
-          lookupTableFromCatalog(u)
+          lookupTableFromCatalog(u) match {
+            case Some(relation) => relation
+            case _ => u
+          }
         }
     }
 
