@@ -3929,4 +3929,8 @@ object functions {
   def nf_quarter(input: Column): Column = withExpr {
     NfQuarter(input.expr)
   }
+
+  def nf_json_extract(e: Column, path: String): Column = withExpr {
+    NfJsonExtract(e.expr, lit(path).expr)
+  }
 }
