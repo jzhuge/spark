@@ -86,11 +86,11 @@ class NetflixDateTimeFunctionsSuite extends QueryTest with SharedSQLContext with
     }
 
     val df = spark.range(1)
-    checkAnswer(df.select(nf_dateadd(lit(20180531), lit(2))), Seq(Row(20180602)))
+    checkAnswer(df.select(nf_dateadd(lit(20180531), 2)), Seq(Row(20180602)))
     checkAnswer(
-      df.select(nf_dateadd(lit("week"), lit(-10), lit("2018-05-31 12:20:21.010"))),
+      df.select(nf_dateadd("week", -10, lit("2018-05-31 12:20:21.010"))),
       Seq(Row("2018-03-22 12:20:21.01")))
-    intercept[TypeException](df.select(nf_dateadd(lit(1.0f), lit(3))).collect())
+    intercept[TypeException](df.select(nf_dateadd(lit(1.0f), 3)).collect())
   }
 
   test("nf_datediff") {
