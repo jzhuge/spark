@@ -344,7 +344,7 @@ class DataSourceV2Suite extends QueryTest with SharedSQLContext {
           val format = classOf[SimpleWritableDataSource].getName
 
           val df = Seq((1L, 2L)).toDF("i", "j")
-          df.write.format(format).option("path", optionPath).save()
+          df.write.format(format).option("path", optionPath).mode("append").save()
           assert(!new File(sessionPath).exists)
           checkAnswer(spark.read.format(format).option("path", optionPath).load(), df)
         }
