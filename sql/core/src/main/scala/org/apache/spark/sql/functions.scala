@@ -3870,12 +3870,16 @@ object functions {
 
   def nf_timestamp_now(): Column = withExpr { NfTimestampNow() }
 
-  def nf_dateadd(input1: Column, input2: Column): Column = withExpr {
-    NfDateAdd(input1.expr, input2.expr)
+  def nf_dateadd(input1: Column, days: Long): Column = withExpr {
+    NfDateAdd(input1.expr, Literal(days))
   }
 
-  def nf_dateadd(input1: Column, input2: Column, input3: Column): Column = withExpr {
-    NfDateAdd(input1.expr, input2.expr, input3.expr)
+  def nf_dateadd(input1: Column, offsetExpr: String): Column = withExpr {
+    NfDateAdd(input1.expr, Literal(offsetExpr))
+  }
+
+  def nf_dateadd(unit: String, value: Long, input3: Column): Column = withExpr {
+    NfDateAdd(Literal(unit), Literal(value), input3.expr)
   }
 
   def nf_datediff(input1: Column, input2: Column): Column = withExpr {
