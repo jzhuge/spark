@@ -1940,10 +1940,10 @@ def nf_timestamp_now():
     sc = SparkContext._active_spark_context
     return Column(sc._jvm.functions.nf_timestamp_now())
 
-def nf_dateadd(input1, input2, input3="-"):
+def nf_dateadd(input1, input2, input3=None):
     sc = SparkContext._active_spark_context
-    if input3 == "-":
-        return Column(sc._jvm.functions.nf_dateadd(_to_java_column(input1), input2, input3))
+    if input3 is None:
+        return Column(sc._jvm.functions.nf_dateadd(_to_java_column(input1), input2, _to_java_column("-")))
     else:
         return Column(sc._jvm.functions.nf_dateadd(input1, input2, _to_java_column(input3)))
 
