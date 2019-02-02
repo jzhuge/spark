@@ -3850,6 +3850,14 @@ object functions {
     NfFromUnixTimeMsTz(input.expr, Literal(timezone))
   }
 
+  def nf_from_unixtime_tz(input: Column, timezone: Column): Column = withExpr {
+    NfFromUnixTimeTz(input.expr, timezone.expr)
+  }
+
+  def nf_from_unixtime_ms_tz(input: Column, timezone: Column): Column = withExpr {
+    NfFromUnixTimeMsTz(input.expr, timezone.expr)
+  }
+
   def nf_date(input: Column): Column = withExpr {
     NfDate(input.expr, Literal(DEFAULT_DUMMY_ARGUMENT))
   }
