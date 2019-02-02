@@ -850,7 +850,7 @@ case class NfDateAdd(param1: Expression, param2: Expression, param3: Expression,
         val offsetPattern = Pattern.compile("([+-]?\\d+)(['yMd'])")
         val matcher = offsetPattern.matcher(offsetExpression)
         if (!matcher.matches) {
-          throw new IllegalArgumentException("Invalid offset expression " + offsetExpression)
+          throw new TypeException("Invalid offset expression " + offsetExpression)
         }
         val v = matcher.group(1).toLong
         matcher.group(2) match {
