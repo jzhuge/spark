@@ -2385,6 +2385,14 @@ class Dataset[T] private[sql](
     }
   }
 
+  private[sql] def collectAsIterator(): Iterator[T] = {
+    withCallback("collectAsIterator", toDF()) { _ =>
+      withNewExecutionId {
+        queryExecution.executedPlan.executeCollectIterator()._2.map(boundEnc.fromRow)
+      }
+    }
+  }
+
   private def collect(needCallback: Boolean): Array[T] = {
     def execute(): Array[T] = withNewExecutionId {
       queryExecution.executedPlan.executeCollect().map(boundEnc.fromRow)
