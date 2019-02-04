@@ -1138,6 +1138,329 @@ def window(timeColumn, windowDuration, slideDuration=None, startTime=None):
         res = sc._jvm.functions.window(time_col, windowDuration)
     return Column(res)
 
+@since(2.1)
+def nf_dateint(input, format="-"):
+    """
+    Returns the date as an integer in the format yyyyMMdd
+    >>> datestr_df = spark.createDataFrame([('2018-01-01',)], ['date_str'])
+    >>> datestr_df.select(nf_dateint('date_str').alias('dateint')).collect()
+    [Row(dateint=20180101)]
+    """
+    sc = SparkContext._active_spark_context
+    return Column(sc._jvm.functions.nf_dateint(_to_java_column(input), format))
+
+@since(2.1)
+def nf_dateint_today():
+    """
+    Returns the dateint value at the start of the query session
+    >>> spark.range(0,1).select(nf_dateint_today()).collect()
+    [Row(nf_dateint_today()=20190205)]
+    """
+    sc = SparkContext._active_spark_context
+    return Column(sc._jvm.functions.nf_dateint_today())
+
+@since(2.1)
+def nf_datestr(input, format="-"):
+    """
+    Returns the date as a string in the format ‘yyyy-MM-dd’
+    >>> dateint_df = spark.createDataFrame([(20180101,)], ['date_int'])
+    >>> dateint_df.select(nf_datestr('date_int').alias('datestr')).collect()
+    [Row(datestr=u'2018-01-01')]
+    """
+    sc = SparkContext._active_spark_context
+    return Column(sc._jvm.functions.nf_datestr(_to_java_column(input), format))
+
+@since(2.1)
+def nf_datestr_today():
+    """
+    Returns the dateint value at the start of the query session
+    >>> spark.range(0,1).select(nf_datestr_today()).collect()
+    [Row(nf_datestr_today()=u'2019-02-05')]
+    """
+    sc = SparkContext._active_spark_context
+    return Column(sc._jvm.functions.nf_datestring_today())
+
+@since(2.1)
+def nf_unixtime_now():
+    """
+    Returns epoch seconds at the start of the session.
+    >>> spark.range(0,1).select(nf_unixtime_now()).collect()
+    [Row(nf_unixtime_now()=1549332381)]
+    """
+    sc = SparkContext._active_spark_context
+    return Column(sc._jvm.functions.nf_unixtime_now())
+
+@since(2.1)
+def nf_unixtime_now_ms():
+    """
+    Returns epoch seconds at the start of the session.
+    >>> spark.range(0,1).select(nf_unixtime_now()).collect()
+    [Row(nf_unixtime_now_ms()=1549332405321)]
+    """
+    sc = SparkContext._active_spark_context
+    return Column(sc._jvm.functions.nf_unixtime_now_ms())
+
+@since(2.1)
+def nf_to_unixtime(input, format="-"):
+    """
+    Converts the input to epoch seconds.
+    >>> dateint_df = spark.createDataFrame([(20180101,)], ['date_int'])
+    >>> dateint_df.select(nf_to_unixtime('date_int').alias('unixtime')).collect()
+    [Row(unixtime=1514764800)]
+    """
+    sc = SparkContext._active_spark_context
+    return Column(sc._jvm.functions.nf_to_unixtime(_to_java_column(input), format))
+
+@since(2.1)
+def nf_to_unixtime_ms(input, format="-"):
+    """
+    Converts the input to epoch milliseconds.
+    >>> dateint_df = spark.createDataFrame([(20180101,)], ['date_int'])
+    >>> dateint_df.select(nf_to_unixtime('date_int').alias('unixtimems')).collect()
+    [Row(unixtimems=1514764800000)]
+    """
+    sc = SparkContext._active_spark_context
+    return Column(sc._jvm.functions.nf_to_unixtime_ms(_to_java_column(input), format))
+
+@since(2.1)
+def nf_from_unixtime(input, format="-"):
+    """
+    Converts epoch seconds or milliseconds to timestamp. There's an optional second parameter to specify the timestamp format.
+    >>> unixtime_df = spark.createDataFrame([(1514764800,)], ['unixtime'])
+    >>> unixtime_df.select(nf_from_unixtime('date_int').alias('ts')).collect()
+    [Row(ts=datetime.datetime(2018, 1, 1, 0, 0))]
+    """
+    sc = SparkContext._active_spark_context
+    return Column(sc._jvm.functions.nf_from_unixtime(_to_java_column(input), format))
+
+@since(2.1)
+def nf_from_unixtime_ms(input, format="-"):
+    """
+    Converts epoch milliseconds to timestamp. There's an optional second parameter to specify the timestamp format.
+    >>> unixtime_df = spark.createDataFrame([(1514764800000,)], ['unixtime'])
+    >>> unixtime_df.select(nf_from_unixtime_ms('date_int').alias('ts')).collect()
+    [Row(ts=datetime.datetime(2018, 1, 1, 0, 0))]
+    """
+    sc = SparkContext._active_spark_context
+    return Column(sc._jvm.functions.nf_from_unixtime_ms(_to_java_column(input), format))
+
+@since(2.1)
+def nf_from_unixtime_tz(input, timezone):
+    """
+    Converts epoch seconds or milliseconds to timestamp in a given timezone.
+    >>> unixtime_df = spark.createDataFrame([(1527745543, 'GMT+05:00')], ['unixtime', 'tz'])
+    >>> unixtime_df.select(nf_from_unixtime_tz('unixtime', 'tz').alias('ts')).collect()
+    [Row(ts=datetime.datetime(2018, 5, 31, 5, 45, 43))]
+    """
+    sc = SparkContext._active_spark_context
+    return Column(sc._jvm.functions.nf_from_unixtime_tz(_to_java_column(input), timezone))
+
+@since(2.1)
+def nf_from_unixtime_ms_tz(input, timezone):
+    """
+    Converts epoch milliseconds to timestamp in a given timezone.
+    >>> unixtime_ms_df = spark.createDataFrame([(1527745543000, 'GMT+05:00')], ['unixtime', 'tz'])
+    >>> unixtime_ms_df.select(nf_from_unixtime_ms_tz('unixtime', 'tz').alias('ts')).collect()
+    [Row(ts=datetime.datetime(2018, 5, 31, 5, 45, 43))]
+    """
+    sc = SparkContext._active_spark_context
+    return Column(sc._jvm.functions.nf_from_unixtime_ms_tz(_to_java_column(input), timezone))
+
+@since(2.1)
+def nf_date(input, format="-"):
+    """
+    Converts the input to Spark date type in the format 'yyyy-MM-dd'
+    >>> dateint_df = spark.createDataFrame([(20180101,)], ['date_int'])
+    >>> dateint_df.select(nf_date('date_int').alias('dt')).collect()
+    [Row(dt=datetime.date(2018, 1, 1))]
+    """
+    sc = SparkContext._active_spark_context
+    return Column(sc._jvm.functions.nf_date(_to_java_column(input), format))
+
+@since(2.1)
+def nf_date_today():
+    """
+    Returns the date value at the start of the query session
+    >>> spark.range(0,1).select(nf_date_today()).collect()
+    [Row(nf_date_today()=datetime.date(2019, 2, 5))]
+    """
+    sc = SparkContext._active_spark_context
+    return Column(sc._jvm.functions.nf_date_today())
+
+@since(2.1)
+def nf_timestamp(input, format="-"):
+    """
+    Converts the input to Spark timestamp type in the format 'yyyy-MM-dd HH:mm:ss.SSSSSS'
+    >>> dateint_df = spark.createDataFrame([(20180101,)], ['date_int'])
+    >>> dateint_df.select(nf_timestamp('date_int').alias('ts')).collect()
+    [Row(ts=datetime.datetime(2018, 1, 1, 0, 0))]
+    """
+    sc = SparkContext._active_spark_context
+    return Column(sc._jvm.functions.nf_timestamp(_to_java_column(input), format))
+
+@since(2.1)
+def nf_timestamp_now():
+    """
+    Returns the timestamp value at the start of the query session
+    >>> spark.range(0,1).select(nf_date_today()).collect()
+    [Row(nf_timestamp_now()=datetime.datetime(2019, 2, 5, 2, 25, 25, 52000))]
+    """
+    sc = SparkContext._active_spark_context
+    return Column(sc._jvm.functions.nf_timestamp_now())
+
+@since(2.1)
+def nf_dateadd(input1, input2, input3=None):
+    """
+    nf_dateadd(input, long numDays)
+    nf_dateadd(input, String offsetExpression): Offset expression is in the format (+/-)(0-9)(y/M/d). Eg: 3y, -2M, 5d
+    nf_dateadd(unit, value, input)
+    The result returned is of the same type as input.
+
+    Supported units for dates: Year, month, day, week, quarter Supported units for timestamps: Year, month, day, week, quarter, hour, minute, second, millisecond
+    >>> dateint_df = spark.createDataFrame([(20180101,)], ['date_int'])
+    >>> dateint_df.select(nf_dateadd('date_int', 1).alias('dt')).collect()
+    [Row(dt=20180102')]
+    """
+    sc = SparkContext._active_spark_context
+    if input3 is None:
+        return Column(sc._jvm.functions.nf_dateadd(_to_java_column(input1), input2))
+    else:
+        return Column(sc._jvm.functions.nf_dateadd(input1, input2, _to_java_column(input3)))
+
+@since(2.1)
+def nf_datediff(input1, input2, input3="-"):
+    """
+    nf_datediff(input1, input2): Returns the number of days (input2-input1). Input1 and Input2 must be of the same type.
+    nf_datediff(unit, input1, input2): Returns the difference between the input dates in terms of the specified unit
+    Supported intervals: year, quarter,month, week, day, hour, minute, second, millisecond
+    >>> df = spark.createDataFrame([('2015-04-08','2015-05-10')], ['d1', 'd2'])
+    >>> df.select(datediff(df.d2, df.d1).alias('diff')).collect()
+    [Row(diff=32)]
+    """
+    sc = SparkContext._active_spark_context
+    if input3 == "-":
+        return Column(sc._jvm.functions.nf_datediff(_to_java_column(input1), input2, input3))
+    else:
+        return Column(sc._jvm.functions.nf_datediff(input1, input2, _to_java_column(input3)))
+
+@since(2.1)
+def nf_datetrunc(input1, input2):
+    """
+    nf_datetrunc(unit, input): Returns the input truncated to the given unit
+    """
+    sc = SparkContext._active_spark_context
+    return Column(sc._jvm.functions.nf_datetrunc(_to_java_column(input1), _to_java_column(input2)))
+
+@since(2.1)
+def nf_dateformat(input1, input2):
+    """
+    Returns a string representing the input in the given Joda format
+    >>> dateint_df = spark.createDataFrame([(20180121, 'yyyyddMM')], ['date_int', 'format'])
+    >>> dateint_df.select(nf_datetrunc('date_int', 'format').alias('dt')).collect()
+    [Row(dt='20182101')]
+    """
+    sc = SparkContext._active_spark_context
+    return Column(sc._jvm.functions.nf_dateformat(_to_java_column(input1), _to_java_column(input2)))
+
+@since(2.1)
+def nf_year(input):
+    """
+    Extracts year as an integer from the input
+    >>> ts_df = spark.createDataFrame([('2018-01-21 05:02:11',)], ['ts'])
+    >>> ts_df.select(nf_year('ts').alias('year')).collect()
+    [Row(year=2018)]
+    """
+    sc = SparkContext._active_spark_context
+    return Column(sc._jvm.functions.nf_year(_to_java_column(input)))
+
+@since(2.1)
+def nf_month(input):
+    """
+    Extracts month of year as an integer from the input (1 to 12)
+    >>> ts_df = spark.createDataFrame([('2018-01-21 05:02:11',)], ['ts'])
+    >>> ts_df.select(nf_month('ts').alias('month')).collect()
+    [Row(month=1)]
+    """
+    sc = SparkContext._active_spark_context
+    return Column(sc._jvm.functions.nf_month(_to_java_column(input)))
+
+@since(2.1)
+def nf_day(input):
+    """
+    Extracts day of month as an integer from the input (1 to 31)
+    >>> ts_df = spark.createDataFrame([('2018-01-21 05:02:11',)], ['ts'])
+    >>> ts_df.select(nf_day('ts').alias('day')).collect()
+    [Row(day=21)]
+    """
+    sc = SparkContext._active_spark_context
+    return Column(sc._jvm.functions.nf_day(_to_java_column(input)))
+
+@since(2.1)
+def nf_hour(input):
+    """
+    Extracts hour of day as an integer from the input (0 to 23)
+    >>> ts_df = spark.createDataFrame([('2018-01-21 05:02:11',)], ['ts'])
+    >>> ts_df.select(nf_hour('ts').alias('hour')).collect()
+    [Row(hour=5)]
+    """
+    sc = SparkContext._active_spark_context
+    return Column(sc._jvm.functions.nf_hour(_to_java_column(input)))
+
+@since(2.1)
+def nf_minute(input):
+    """
+    Extracts minute of hour as an integer from the input (0 to 59)
+    >>> ts_df = spark.createDataFrame([('2018-01-21 05:02:11',)], ['ts'])
+    >>> ts_df.select(nf_minute('ts').alias('minute')).collect()
+    [Row(minute=2)]
+    """
+    sc = SparkContext._active_spark_context
+    return Column(sc._jvm.functions.nf_minute(_to_java_column(input)))
+
+@since(2.1)
+def nf_second(input):
+    """
+    Extracts second of minute as an integer from the input (0 to 59)
+    >>> ts_df = spark.createDataFrame([('2018-01-21 05:02:11',)], ['ts'])
+    >>> ts_df.select(nf_second('ts').alias('second')).collect()
+    [Row(second=11)]
+    """
+    sc = SparkContext._active_spark_context
+    return Column(sc._jvm.functions.nf_second(_to_java_column(input)))
+
+@since(2.1)
+def nf_milliseond(input):
+    """
+    Extracts millisecond of second as an integer from the input (0 to 999)
+    >>> ts_df = spark.createDataFrame([('2018-01-21 05:02:11',)], ['ts'])
+    >>> ts_df.select(nf_milliseond('ts').alias('ms')).collect()
+    [Row(ms=0)]
+    """
+    sc = SparkContext._active_spark_context
+    return Column(sc._jvm.functions.nf_millisecond(_to_java_column(input)))
+
+@since(2.1)
+def nf_week(input):
+    """
+    Extracts week of year as an integer from the input (1 to 53). The value is incremented every Monday.
+    >>> ts_df = spark.createDataFrame([('2018-01-21 05:02:11',)], ['ts'])
+    >>> ts_df.select(nf_week('ts').alias('week')).collect()
+    [Row(week=3)]
+    """
+    sc = SparkContext._active_spark_context
+    return Column(sc._jvm.functions.nf_week(_to_java_column(input)))
+
+@since(2.1)
+def nf_quarter(input):
+    """
+    Extracts quarter of year as an integer from the input (1 to 4)
+    >>> ts_df = spark.createDataFrame([('2018-01-21 05:02:11',)], ['ts'])
+    >>> ts_df.select(nf_quarter('ts').alias('quarter')).collect()
+    [Row(quarter=1)]
+    """
+    sc = SparkContext._active_spark_context
+    return Column(sc._jvm.functions.nf_quarter(_to_java_column(input)))
+
 
 # ---------------------------- misc functions ----------------------------------
 
@@ -1775,6 +2098,15 @@ def to_json(col, options={}):
     return Column(jc)
 
 
+@since(2.1)
+def nf_json_extract(col, path):
+    """
+     Extracts json object from a json string based on json path specified, and returns json string
+    of the extracted json object. It will return null if the input json string is invalid.
+    """
+    sc = SparkContext._active_spark_context
+    return Column(sc._jvm.functions.nf_json_extract(_to_java_column(col), path))
+
 @since(1.5)
 def size(col):
     """
@@ -1875,132 +2207,6 @@ blacklist = ['map', 'since', 'ignore_unicode_prefix']
 __all__ = [k for k, v in globals().items()
            if not k.startswith('_') and k[0].islower() and callable(v) and k not in blacklist]
 __all__.sort()
-
-def nf_dateint(input, format="-"):
-    sc = SparkContext._active_spark_context
-    return Column(sc._jvm.functions.nf_dateint(_to_java_column(input), format))
-
-def nf_dateint_today():
-    sc = SparkContext._active_spark_context
-    return Column(sc._jvm.functions.nf_dateint_today())
-
-def nf_datestr(input, format="-"):
-    sc = SparkContext._active_spark_context
-    return Column(sc._jvm.functions.nf_datestring(_to_java_column(input), format))
-
-def nf_datestr_today():
-    sc = SparkContext._active_spark_context
-    return Column(sc._jvm.functions.nf_datestring_today())
-
-def nf_unixtime_now():
-    sc = SparkContext._active_spark_context
-    return Column(sc._jvm.functions.nf_unixtime_now())
-
-def nf_unixtime_now_ms():
-    sc = SparkContext._active_spark_context
-    return Column(sc._jvm.functions.nf_unixtime_now_ms())
-
-def nf_to_unixtime(input, format="-"):
-    sc = SparkContext._active_spark_context
-    return Column(sc._jvm.functions.nf_to_unixtime(_to_java_column(input), format))
-
-def nf_to_unixtime_ms(input, format="-"):
-    sc = SparkContext._active_spark_context
-    return Column(sc._jvm.functions.nf_to_unixtime_ms(_to_java_column(input), format))
-
-def nf_from_unixtime(input, format="-"):
-    sc = SparkContext._active_spark_context
-    return Column(sc._jvm.functions.nf_from_unixtime(_to_java_column(input), format))
-
-def nf_from_unixtime_ms(input, format="-"):
-    sc = SparkContext._active_spark_context
-    return Column(sc._jvm.functions.nf_from_unixtime_ms(_to_java_column(input), format))
-
-def nf_from_unixtime_tz(input, timezone):
-    sc = SparkContext._active_spark_context
-    return Column(sc._jvm.functions.nf_from_unixtime_tz(_to_java_column(input), timezone))
-
-def nf_from_unixtime_ms_tz(input, timezone):
-    sc = SparkContext._active_spark_context
-    return Column(sc._jvm.functions.nf_from_unixtime_ms_tz(_to_java_column(input), timezone))
-
-def nf_date(input, format="-"):
-    sc = SparkContext._active_spark_context
-    return Column(sc._jvm.functions.nf_date(_to_java_column(input), format))
-
-def nf_date_today():
-    sc = SparkContext._active_spark_context
-    return Column(sc._jvm.functions.nf_date_today())
-
-def nf_timestamp(input, format="-"):
-    sc = SparkContext._active_spark_context
-    return Column(sc._jvm.functions.nf_timestamp(_to_java_column(input), format))
-
-def nf_timestamp_now():
-    sc = SparkContext._active_spark_context
-    return Column(sc._jvm.functions.nf_timestamp_now())
-
-def nf_dateadd(input1, input2, input3=None):
-    sc = SparkContext._active_spark_context
-    if input3 is None:
-        return Column(sc._jvm.functions.nf_dateadd(_to_java_column(input1), input2, _to_java_column("-")))
-    else:
-        return Column(sc._jvm.functions.nf_dateadd(input1, input2, _to_java_column(input3)))
-
-def nf_datediff(input1, input2, input3="-"):
-    sc = SparkContext._active_spark_context
-    if input3 == "-":
-        return Column(sc._jvm.functions.nf_datediff(_to_java_column(input1), input2, input3))
-    else:
-        return Column(sc._jvm.functions.nf_datediff(input1, input2, _to_java_column(input3)))
-
-def nf_datetrunc(input1, input2):
-    sc = SparkContext._active_spark_context
-    return Column(sc._jvm.functions.nf_datetrunc(_to_java_column(input1), _to_java_column(input2)))
-
-def nf_dateformat(input1, input2):
-    sc = SparkContext._active_spark_context
-    return Column(sc._jvm.functions.nf_dateformat(_to_java_column(input1), _to_java_column(input2)))
-
-def nf_year(input):
-    sc = SparkContext._active_spark_context
-    return Column(sc._jvm.functions.nf_year(_to_java_column(input)))
-
-def nf_month(input):
-    sc = SparkContext._active_spark_context
-    return Column(sc._jvm.functions.nf_month(_to_java_column(input)))
-
-def nf_day(input):
-    sc = SparkContext._active_spark_context
-    return Column(sc._jvm.functions.nf_day(_to_java_column(input)))
-
-def nf_hour(input):
-    sc = SparkContext._active_spark_context
-    return Column(sc._jvm.functions.nf_hour(_to_java_column(input)))
-
-def nf_minute(input):
-    sc = SparkContext._active_spark_context
-    return Column(sc._jvm.functions.nf_minute(_to_java_column(input)))
-
-def nf_second(input):
-    sc = SparkContext._active_spark_context
-    return Column(sc._jvm.functions.nf_second(_to_java_column(input)))
-
-def nf_milliseond(input):
-    sc = SparkContext._active_spark_context
-    return Column(sc._jvm.functions.nf_millisecond(_to_java_column(input)))
-
-def nf_week(input):
-    sc = SparkContext._active_spark_context
-    return Column(sc._jvm.functions.nf_week(_to_java_column(input)))
-
-def nf_quarter(input):
-    sc = SparkContext._active_spark_context
-    return Column(sc._jvm.functions.nf_quarter(_to_java_column(input)))
-
-def nf_json_extract(col, path):
-    sc = SparkContext._active_spark_context
-    return Column(sc._jvm.functions.nf_json_extract(_to_java_column(col), path))
 
 def _test():
     import doctest
