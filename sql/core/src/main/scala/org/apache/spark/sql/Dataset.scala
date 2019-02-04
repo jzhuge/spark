@@ -2750,6 +2750,12 @@ class Dataset[T] private[sql](
     java.util.Arrays.asList(values : _*)
   }
 
+  private[sql] def collectAsIterator(): Iterator[T] = {
+    withAction("collectAsIterator", queryExecution) { plan =>
+      plan.executeCollectIterator()._2.map(boundEnc.fromRow)
+    }
+  }
+
   /**
    * Returns an iterator that contains all rows in this Dataset.
    *
