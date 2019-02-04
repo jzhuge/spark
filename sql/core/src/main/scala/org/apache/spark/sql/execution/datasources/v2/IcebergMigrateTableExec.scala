@@ -20,6 +20,7 @@ package org.apache.spark.sql.execution.datasources.v2
 import scala.collection.JavaConverters._
 
 import com.netflix.iceberg.spark.SparkTableUtil
+import com.netflix.iceberg.spark.SparkTableUtil.SparkDataFile
 
 import org.apache.spark.SparkException
 import org.apache.spark.rdd.RDD
@@ -29,7 +30,7 @@ import org.apache.spark.sql.catalyst.{InternalRow, TableIdentifier}
 import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.execution.LeafExecNode
 import org.apache.spark.sql.functions.not
-import org.apache.spark.util.{SerializableConfiguration, Utils}
+import org.apache.spark.util.Utils
 
 case class IcebergMigrateTableExec(
     catalog: TableCatalog,
@@ -46,7 +47,8 @@ case class IcebergMigrateTableExec(
   override protected def doExecute(): RDD[InternalRow] = {
     import spark.implicits._
 
-    val serializableConf = new SerializableConfiguration(spark.sparkContext.hadoopConfiguration)
+    val conf = spark.sparkContext.hadoopConfiguration
+    val version = spark.version
     val applicationId = spark.sparkContext.applicationId
     val hiveEnv = spark.sparkContext.hadoopConfiguration.get("spark.sql.hive.env", "prod")
     val mcCatalog = spark.sparkContext.conf.get("spark.sql.metacat.write.catalog", hiveEnv + "hive")
@@ -106,9 +108,9 @@ case class IcebergMigrateTableExec(
 
       Utils.tryWithSafeFinallyAndFailureCallbacks(block = {
         logInfo(s"Creating Iceberg table metadata for data files in $sourceName")
-        files.orderBy($"path")
-            .coalesce(10)
-            .foreachPartition(addFiles(serializableConf, applicationId, mcCatalog, db, tempName))
+        val addBatch = addFiles(conf, version, applicationId, mcCatalog, db, tempName)
+        val iterator: Iterator[SparkDataFile] = files.orderBy($"path").collectAsIterator()
+        iterator.grouped(500000).foreach(addBatch)
 
         logInfo(s"Finished loading data into $tempIdent")
         logInfo(s"Updating location of table $tempIdent to $location")

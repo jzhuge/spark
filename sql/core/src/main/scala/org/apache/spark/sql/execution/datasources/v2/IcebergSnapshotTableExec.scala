@@ -22,6 +22,7 @@ import scala.collection.JavaConverters._
 import com.netflix.iceberg.metacat.MetacatTables
 import com.netflix.iceberg.spark.SparkTableUtil
 import com.netflix.iceberg.spark.SparkTableUtil.SparkDataFile
+import org.apache.hadoop.conf.Configuration
 
 import org.apache.spark.SparkException
 import org.apache.spark.rdd.RDD
@@ -31,7 +32,7 @@ import org.apache.spark.sql.catalyst.{InternalRow, TableIdentifier}
 import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.execution.LeafExecNode
 import org.apache.spark.sql.functions._
-import org.apache.spark.util.{SerializableConfiguration, Utils}
+import org.apache.spark.util.Utils
 
 case class IcebergSnapshotTableExec(
     catalog: TableCatalog,
@@ -46,7 +47,8 @@ case class IcebergSnapshotTableExec(
   override protected def doExecute(): RDD[InternalRow] = {
     import spark.implicits._
 
-    val serializableConf = new SerializableConfiguration(spark.sparkContext.hadoopConfiguration)
+    val conf = spark.sparkContext.hadoopConfiguration
+    val version = spark.version
     val applicationId = spark.sparkContext.applicationId
     val hiveEnv = spark.sparkContext.hadoopConfiguration.get("spark.sql.hive.env", "prod")
     val mcCatalog = spark.sparkContext.conf.get("spark.sql.metacat.write.catalog", hiveEnv + "hive")
@@ -77,9 +79,9 @@ case class IcebergSnapshotTableExec(
 
     Utils.tryWithSafeFinallyAndFailureCallbacks(block = {
       logInfo(s"Creating Iceberg table metadata for data files in $sourceTable")
-      files.orderBy($"path")
-          .coalesce(10)
-          .foreachPartition(addFiles(serializableConf, applicationId, mcCatalog, db, name))
+      val addBatch = addFiles(conf, version, applicationId, mcCatalog, db, name)
+      val iterator: Iterator[SparkDataFile] = files.orderBy($"path").collectAsIterator()
+      iterator.grouped(500000).foreach(addBatch)
     })(catchBlock = {
       catalog.dropTable(targetTable)
     })
@@ -99,14 +101,15 @@ private[sql] case class TablePartition(
 
 private[sql] object IcebergSnapshotTableExec {
   def addFiles(
-      conf: SerializableConfiguration,
+      conf: Configuration,
+      version: String,
       appId: String,
       catalog: String,
       dbName: String,
-      tableName: String): Iterator[SparkDataFile] => Unit = {
+      tableName: String): Seq[SparkDataFile] => Unit = {
     files =>
       // open the table and append the files from this partition
-      val tables = new MetacatTables(conf.value, appId, catalog)
+      val tables = new MetacatTables(conf, "spark-" + version, appId, catalog)
       val table = tables.load(dbName, tableName)
 
       // fast appends will create a manifest for the new files
@@ -114,7 +117,6 @@ private[sql] object IcebergSnapshotTableExec {
       files.foreach { file =>
         append.appendFile(file.toDataFile(table.spec))
       }
-      append.retry(10)
       append.commit()
   }
 }
