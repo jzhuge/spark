@@ -75,7 +75,7 @@
   <property>
     <description>Where to aggregate logs to.</description>
     <name>yarn.nodemanager.remote-app-log-dir</name>
-    <value>s3://netflix-bdp-job-logs/hadoop_h2query_v031/task-logs/</value>
+    <value>s3://netflix-bdp-job-logs/hadoop_h2query/task-logs/</value>
   </property>
 
  
@@ -266,7 +266,7 @@
 
   <property>
     <name>bdp.cluster.id</name>
-    <value>hadoop_h2query_v031</value>
+    <value>hadoop_h2query</value>
   </property>
 
   <property>
