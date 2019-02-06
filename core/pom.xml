@@ -391,6 +391,19 @@
         <directory>${project.build.directory}/extra-resources</directory>
         <filtering>true</filtering>
       </resource>
+      <resource>
+        <directory>../netflix</directory>
+        <includes>
+          <include>metrics-site.xml</include>
+        </includes>
+      </resource>
+      <resource>
+        <directory>../netflix</directory>
+        <targetPath>org/apache/spark</targetPath>
+        <includes>
+          <include>log4j-defaults*.properties</include>
+        </includes>
+      </resource>
     </resources>
     <plugins>
       <plugin>
