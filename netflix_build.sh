@@ -42,11 +42,6 @@ tar -xf apache-maven-3.3.9-bin.tar.gz
 export M2_HOME=${WORKSPACE}/apache-maven-3.3.9
 export PATH=${M2_HOME}/bin:${PATH}
 
-# copy log4j configurations so they are included in the assembly
-cp netflix/log4j-defaults.properties core/src/main/resources/org/apache/spark/
-cp netflix/log4j-defaults-repl.properties core/src/main/resources/org/apache/spark/
-cp netflix/metrics-site.xml core/src/main/resources/
-
 # avoid stale compile servers causing problems
 export ZINC_PORT=3232
 
