@@ -1162,7 +1162,7 @@ def nf_dateint_today():
 @since(2.1)
 def nf_datestr(input, format="-"):
     """
-    Returns the date as a string in the format ‘yyyy-MM-dd’
+    Returns the date as a string in the format yyyy-MM-dd
     >>> dateint_df = spark.createDataFrame([(20180101,)], ['date_int'])
     >>> dateint_df.select(nf_datestr('date_int').alias('datestr')).collect()
     [Row(datestr=u'2018-01-01')]
@@ -1269,7 +1269,7 @@ def nf_from_unixtime_ms_tz(input, timezone):
 @since(2.1)
 def nf_date(input, format="-"):
     """
-    Converts the input to Spark date type in the format 'yyyy-MM-dd'
+    Converts the input to Spark date type in the format yyyy-MM-dd
     >>> dateint_df = spark.createDataFrame([(20180101,)], ['date_int'])
     >>> dateint_df.select(nf_date('date_int').alias('dt')).collect()
     [Row(dt=datetime.date(2018, 1, 1))]
@@ -1290,7 +1290,7 @@ def nf_date_today():
 @since(2.1)
 def nf_timestamp(input, format="-"):
     """
-    Converts the input to Spark timestamp type in the format 'yyyy-MM-dd HH:mm:ss.SSSSSS'
+    Converts the input to Spark timestamp type in the format yyyy-MM-dd HH:mm:ss.SSSSSS
     >>> dateint_df = spark.createDataFrame([(20180101,)], ['date_int'])
     >>> dateint_df.select(nf_timestamp('date_int').alias('ts')).collect()
     [Row(ts=datetime.datetime(2018, 1, 1, 0, 0))]
