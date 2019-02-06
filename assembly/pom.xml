@@ -121,6 +121,8 @@
               <zip destfile="${basedir}/../python/lib/pyspark.zip">
                 <fileset dir="${basedir}/../python/" includes="pyspark/**/*"/>
               </zip>
+              <copy file="../netflix/spark-defaults.conf" tofile="../conf/spark-defaults.conf"/>
+              <copy file="../netflix/spark-env.sh" tofile="../conf/spark-env.sh"/>
             </target>
           </configuration>
       </plugin>
