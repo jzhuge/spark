@@ -2110,6 +2110,16 @@ def nf_json_extract(col, path):
     sc = SparkContext._active_spark_context
     return Column(sc._jvm.functions.nf_json_extract(_to_java_column(col), path))
 
+@since(2.1)
+def nf_json_extract_array(col, path):
+    """
+     Extracts json object from a json string based on json path specified, and returns
+     array of json strings of the extracted json object. It will return null if the
+     input json string is invalid.
+    """
+    sc = SparkContext._active_spark_context
+    return Column(sc._jvm.functions.nf_json_extract_array(_to_java_column(col), path))
+
 @since(1.5)
 def size(col):
     """
