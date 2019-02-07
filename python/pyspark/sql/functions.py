@@ -1323,7 +1323,10 @@ def nf_dateadd(input1, input2, input3=None):
     """
     sc = SparkContext._active_spark_context
     if input3 is None:
-        return Column(sc._jvm.functions.nf_dateadd(_to_java_column(input1), input2))
+        if isinstance(input2, Column):
+            return Column(sc._jvm.functions.nf_dateadd(_to_java_column(input1), _to_java_column(input2)))
+        else:
+            return Column(sc._jvm.functions.nf_dateadd(_to_java_column(input1), input2))
     else:
         return Column(sc._jvm.functions.nf_dateadd(input1, input2, _to_java_column(input3)))
 
