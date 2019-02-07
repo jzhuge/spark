@@ -3949,4 +3949,8 @@ object functions {
   def nf_json_extract(e: Column, path: String): Column = withExpr {
     NfJsonExtract(e.expr, lit(path).expr)
   }
+
+  def nf_json_extract_array(e: Column, path: String): Column = withExpr {
+    NfJsonExtractArray(e.expr, lit(path).expr)
+  }
 }

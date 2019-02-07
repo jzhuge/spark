@@ -38,8 +38,14 @@ class NetflixJsonFunctionsSuite extends QueryTest with SharedSQLContext {
     checkAnswer(df.selectExpr("nf_json_extract(a, '$.store.book[*].category')"),
       Row("[\"reference\",\"fiction\",\"fiction\",\"fiction\"]"))
     checkAnswer(df.selectExpr("nf_json_extract(a, '$.store.bicycle.price')"), Row(null))
-    checkAnswer(df.selectExpr("nf_json_extract(a, '$.store.bicycle.price')"), Row(null))
     val df1: DataFrame = Seq("""{s:}""").toDF("b")
     checkAnswer(df1.selectExpr("nf_json_extract(b, '$')"), Row(null))
+  }
+
+  test("function nf_get_as_json_extract") {
+    val df: DataFrame = Seq(
+      """
+        ["a", "b", "c"]""".stripMargin).toDF("a");
+    checkAnswer(df.selectExpr("size(nf_json_extract_array(a, '$'))"), Row(3))
   }
 }
