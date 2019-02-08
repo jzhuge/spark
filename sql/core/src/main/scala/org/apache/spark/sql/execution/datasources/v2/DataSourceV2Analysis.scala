@@ -72,12 +72,12 @@ class DataSourceV2Analysis(spark: SparkSession) extends Rule[LogicalPlan] {
     case unresolved: UnresolvedRelation =>
       try {
         val table = catalog.loadTable(unresolved.tableIdentifier)
-        val relation = v2relation(unresolved.tableIdentifier, table)
         table match {
           case v1: V1MetadataTable if v1.v2Source.isDefined =>
+            val relation = v2relation(unresolved.tableIdentifier, table)
             unresolved.alias match {
-              case Some(relAlias) =>
-                SubqueryAlias(relAlias, relation, Some(unresolved.tableIdentifier))
+              case Some(alias) =>
+                SubqueryAlias(alias, relation, Some(unresolved.tableIdentifier))
               case _ =>
                 relation
             }

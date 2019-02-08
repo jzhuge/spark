@@ -24,8 +24,9 @@ import com.netflix.iceberg.spark.source.IcebergMetacatSource
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalog.v2.{CatalogV2Implicits, TableCatalog}
 import org.apache.spark.sql.catalyst.TableIdentifier
+import org.apache.spark.sql.catalyst.analysis.{NoSuchTableException, UnresolvedRelation}
 import org.apache.spark.sql.catalyst.catalog.CatalogTable
-import org.apache.spark.sql.catalyst.plans.logical.{AlterTable, CreateTable, CreateTableAsSelect, DropTable, LogicalPlan, MigrateTable, RefreshTable, SnapshotTable}
+import org.apache.spark.sql.catalyst.plans.logical.{AlterTable, CreateTable, CreateTableAsSelect, DropTable, LogicalPlan, MigrateTable, RefreshTable, SnapshotTable, SubqueryAlias}
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution.datasources.LogicalRelation
 import org.apache.spark.sql.execution.datasources.v2.{DataSourceV2Relation, TableV2Relation, V2AsBaseRelation}
@@ -43,6 +44,25 @@ class NetflixAnalysis(spark: SparkSession) extends Rule[LogicalPlan] {
   private lazy val icebergTables: DataSourceV2 = new IcebergMetacatSource()
 
   override def apply(plan: LogicalPlan): LogicalPlan = plan resolveOperators {
+    case unresolved: UnresolvedRelation =>
+      try {
+        val table = icebergCatalog.loadTable(unresolved.tableIdentifier)
+        val relation = DataSourceV2Relation.create(
+          icebergCatalog.name, unresolved.tableIdentifier, table,
+          Map(
+            "database" -> unresolved.tableIdentifier.database.get,
+            "table" -> unresolved.tableIdentifier.table))
+        unresolved.alias match {
+          case Some(alias) =>
+            SubqueryAlias(alias, relation, Some(unresolved.tableIdentifier))
+          case _ =>
+            relation
+        }
+      } catch {
+        case _: NoSuchTableException =>
+          unresolved
+      }
+
     case migrate @ MigrateTable(identifier, _) =>
       val newIdent = ensureDatabaseIsSet(identifier)
       if (newIdent != identifier) {
