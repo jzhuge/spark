@@ -158,11 +158,11 @@ object FileFormatWriter extends Logging {
           child = plan).execute()
       }
 
-      val instant = new Date().getTime
+      val jobInstant = new Date().getTime
       val ret = sparkSession.sparkContext.runJob(rdd,
         (taskContext: TaskContext, iter: Iterator[InternalRow]) => {
           executeTask(
-            instant,
+            jobInstant,
             description = description,
             taskContext,
             committer,
@@ -187,13 +187,13 @@ object FileFormatWriter extends Logging {
 
   /** Writes data out in a single Spark task. */
   private def executeTask(
-      timestamp: Long,
+      jobInstant: Long,
       description: WriteJobDescription,
       context: TaskContext,
       committer: FileCommitProtocol,
       iterator: Iterator[InternalRow]): (TaskCommitMessage, Set[String]) = {
 
-    val jobId = SparkHadoopWriter.createJobID(new Date(timestamp), context.stageId())
+    val jobId = SparkHadoopWriter.createJobID(new Date(jobInstant), context.stageId())
     val taskId = new TaskID(jobId, TaskType.MAP, context.partitionId())
     val taskAttemptId = new TaskAttemptID(taskId, context.taskAttemptId().toInt)
 
