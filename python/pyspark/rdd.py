@@ -257,7 +257,7 @@ class RDD(object):
         """
         Action to force materialization of this RDD. Returns a new RDD.
         """
-        return RDD(self._jrdd.materialize(), self.ctx,
+        return RDD(self._jrdd.rdd().materialize(), self.ctx,
             self._jrdd_deserializer)
 
     def checkpoint(self):
