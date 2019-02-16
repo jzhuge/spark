@@ -45,16 +45,14 @@ class NetflixAnalysis(spark: SparkSession) extends Rule[LogicalPlan] {
 
   override def apply(plan: LogicalPlan): LogicalPlan = plan resolveOperators {
     case unresolved: UnresolvedRelation =>
+      val identifier = ensureDatabaseIsSet(unresolved.tableIdentifier)
       try {
-        val table = icebergCatalog.loadTable(unresolved.tableIdentifier)
-        val relation = DataSourceV2Relation.create(
-          icebergCatalog.name, unresolved.tableIdentifier, table,
-          Map(
-            "database" -> unresolved.tableIdentifier.database.get,
-            "table" -> unresolved.tableIdentifier.table))
+        val table = icebergCatalog.loadTable(identifier)
+        val relation = DataSourceV2Relation.create(icebergCatalog.name, identifier, table,
+          Map("database" -> identifier.database.get, "table" -> identifier.table))
         unresolved.alias match {
           case Some(alias) =>
-            SubqueryAlias(alias, relation, Some(unresolved.tableIdentifier))
+            SubqueryAlias(alias, relation, Some(identifier))
           case _ =>
             relation
         }
