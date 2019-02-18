@@ -138,6 +138,8 @@ case class TableV2Relation(
 
   def newReader(): DataSourceReader = table.createReader(options, None)
 
+  override def statistics: Statistics = computeStats(output, Seq.empty)
+
   /**
    * Used to return statistics when filters and projection are available.
    */
