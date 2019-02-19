@@ -27,6 +27,7 @@ import org.antlr.v4.runtime.tree.TerminalNode
 import org.apache.spark.sql.SaveMode
 import org.apache.spark.sql.catalog.v2.PartitionTransform
 import org.apache.spark.sql.catalyst.{FunctionIdentifier, TableIdentifier}
+import org.apache.spark.sql.catalyst.analysis.UnresolvedIdentifier
 import org.apache.spark.sql.catalyst.catalog._
 import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.parser._
@@ -734,10 +735,11 @@ class SparkSqlAstBuilder(conf: SQLConf) extends AstBuilder(conf) {
    */
   override def visitDropTable(ctx: DropTableContext): LogicalPlan = withOrigin(ctx) {
     DropTableCommand(
-      visitTableIdentifier(ctx.tableIdentifier),
+      null,
       ctx.EXISTS != null,
       ctx.VIEW != null,
-      ctx.PURGE != null)
+      ctx.PURGE != null,
+      UnresolvedIdentifier(visitMultiPartIdentifier(ctx.multiPartIdentifier())))
   }
 
   /**

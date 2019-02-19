@@ -17,6 +17,7 @@
 package org.apache.spark.sql
 
 import org.apache.spark.SparkFunSuite
+import org.apache.spark.sql.catalyst.analysis.UnresolvedIdentifier
 import org.apache.spark.sql.catalyst.{CatalogTableIdentifier, FunctionIdentifier, TableIdentifier}
 import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.parser.{CatalystSqlParser, ParserInterface}
@@ -126,8 +127,8 @@ case class MyParser(spark: SparkSession, delegate: ParserInterface) extends Pars
   override def parseTableIdentifier(sqlText: String): TableIdentifier =
     delegate.parseTableIdentifier(sqlText)
 
-  override def parseCatalogTableIdentifier(sqlText: String): CatalogTableIdentifier =
-    delegate.parseCatalogTableIdentifier(sqlText)
+  override def parseMultiPartIdentifier(sqlText: String): Seq[String] =
+    delegate.parseMultiPartIdentifier(sqlText)
 
   override def parseFunctionIdentifier(sqlText: String): FunctionIdentifier =
     delegate.parseFunctionIdentifier(sqlText)

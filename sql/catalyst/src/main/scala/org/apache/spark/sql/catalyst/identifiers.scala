@@ -17,6 +17,9 @@
 
 package org.apache.spark.sql.catalyst
 
+import org.apache.spark.sql.AnalysisException
+import org.apache.spark.sql.catalog.v2.CatalogIdentifier
+
 /**
  * An identifier that optionally specifies a database and catalog.
  *
@@ -48,7 +51,6 @@ sealed trait IdentifierWithOptionalDatabaseAndCatalog {
 
   override def toString: String = quotedString
 }
-
 
 object CatalogTableIdentifier {
   def apply(table: String): CatalogTableIdentifier =
@@ -131,6 +133,18 @@ object TableIdentifier {
 
   def apply(table: String, database: Option[String]): TableIdentifier =
     new TableIdentifier(table, database)
+
+  def unapply(catalogIdentifier: CatalogIdentifier): Option[TableIdentifier] = {
+    catalogIdentifier.space match {
+      case Nil =>
+        Some(apply(catalogIdentifier.name))
+      case Seq(database) =>
+        Some(apply(catalogIdentifier.name, Some(database)))
+      case space @ _ =>
+        throw new AnalysisException(
+          s"Invalid namespace '${space.mkString(".")}' for Hive")
+    }
+  }
 }
 
 

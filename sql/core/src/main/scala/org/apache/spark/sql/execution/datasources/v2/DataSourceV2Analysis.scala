@@ -23,7 +23,7 @@ import scala.util.Try
 import org.apache.spark.sql.{AnalysisException, SaveMode, SparkSession, SQLContext}
 import org.apache.spark.sql.catalog.v2.{PartitionUtil, Table, TableChange, V1MetadataTable}
 import org.apache.spark.sql.catalyst.TableIdentifier
-import org.apache.spark.sql.catalyst.analysis.NamedRelation
+import org.apache.spark.sql.catalyst.analysis.{NamedRelation, UnresolvedRelation}
 import org.apache.spark.sql.catalyst.catalog.{CatalogTable, CatalogUtils}
 import org.apache.spark.sql.catalyst.expressions.{Alias, Cast, Literal}
 import org.apache.spark.sql.catalyst.plans.logical.{AlterTable, AppendData, CreateTable, CreateTableAsSelect, DropTable, InsertIntoTable, LogicalPlan, OverwritePartitionsDynamic, Project, RefreshTable, ReplaceTableAsSelect}
@@ -54,6 +54,31 @@ class DataSourceV2Analysis(spark: SparkSession) extends Rule[LogicalPlan] {
   private val catalog = spark.catalog(None).asTableCatalog
 
   override def apply(plan: LogicalPlan): LogicalPlan = plan transformUp {
+    case spark.CatalogTableRef(maybeCatalog, ident) =>
+      maybeCatalog match {
+        case Some(catalog) =>
+          v2relation(ident, catalog.loadTable(ident))
+        case None =>
+          UnresolvedRelation(ident)
+      }
+
+    case i @ InsertIntoTable(spark.CatalogTableRef(maybeCatalog, ident), _, child, _, _, _)
+        if child.resolved =>
+      maybeCatalog match {
+        case Some(catalog) =>
+          i.copy(table = v2relation(ident, catalog.loadTable(ident)))
+        case None =>
+          i.copy(table = UnresolvedRelation(ident))
+      }
+
+    case d @ DropTableCommand(_, ifExists, false, _, spark.CatalogTableRef(maybeCatalog, ident)) =>
+      maybeCatalog match {
+        case Some(catalog) =>
+          DropTable(catalog, ident, ifExists)
+        case None =>
+          d.copy(tableName = ident)
+      }
+
     case datasources.RefreshTable(V2TableReference(identifier, _)) =>
       RefreshTable(catalog, identifier)
 
@@ -61,11 +86,11 @@ class DataSourceV2Analysis(spark: SparkSession) extends Rule[LogicalPlan] {
       AlterTable(catalog, v2relation(identifier, table), toChangeSet(alter))
 
     case alter @ AlterTableSetPropertiesCommand(
-        V2TableReference(identifier, table), _, false /* isView */ ) =>
+        V2TableReference(identifier, table), _, false /* isView */) =>
       AlterTable(catalog, v2relation(identifier, table), toChangeSet(alter))
 
     case alter @ AlterTableUnsetPropertiesCommand(
-        V2TableReference(identifier, table), _, _, false /* isView */ ) =>
+        V2TableReference(identifier, table), _, _, false /* isView */) =>
       AlterTable(catalog, v2relation(identifier, table), toChangeSet(alter))
 
     case alter @ AlterTableDropColumnsCommand(V2TableReference(identifier, table), _) =>
@@ -86,7 +111,7 @@ class DataSourceV2Analysis(spark: SparkSession) extends Rule[LogicalPlan] {
     case DescribeTableCommand(V2TableReference(_, table), _, isExtended) =>
       DescribeTable(table, isExtended)
 
-    case DropTableCommand(V2TableReference(identifier, _), ifExists, false, _) =>
+    case DropTableCommand(V2TableReference(identifier, _), ifExists, false, _, _) =>
       DropTable(catalog, identifier, ifExists)
 
     case CreateTableLikeCommand(targetIdent, V2TableReference(_, source), _, ifNotExists) =>
@@ -160,13 +185,18 @@ class DataSourceV2Analysis(spark: SparkSession) extends Rule[LogicalPlan] {
       }
 
     case insert @ InsertIntoTable(LogicalRelation(v2: V2AsBaseRelation, _, _, _), _, _, _, _, _) =>
+      insert.copy(table = v2.v2relation)
+
+    case insert @ InsertIntoTable(v2relation: NamedRelation, _, child, _, _, _)
+      if child.resolved =>
       // the DataFrame API doesn't create INSERT INTO plans for v2 tables, so this must be
       // SQL and should match columns by position, not by name.
       assert(!insert.isFromDataFrame)
 
       // ifNotExists is append with validation, but validation is not supported
       if (insert.ifPartitionNotExists) {
-        throw new AnalysisException(s"Cannot write, IF NOT EXISTS is not supported for table: $v2")
+        throw new AnalysisException(s"Cannot write, IF NOT EXISTS is not supported for table: " +
+          v2relation)
       }
 
       val staticPartitionValues: Map[String, String] =
@@ -177,7 +207,7 @@ class DataSourceV2Analysis(spark: SparkSession) extends Rule[LogicalPlan] {
 
       } else {
         // add any static value as a literal column
-        val output = v2.v2relation.output
+        val output = v2relation.output
 
         // check that the data column counts match
         val numColumns = output.size
@@ -214,17 +244,17 @@ class DataSourceV2Analysis(spark: SparkSession) extends Rule[LogicalPlan] {
         Project(projectExprs, insert.query)
       }
 
-      v2.v2relation match {
+      v2relation match {
         case TableV2Relation(_, _, table, _, _) if useCompatBehavior(table) =>
           // NETFLIX: use batch pattern behavior for compat tables
-          OverwritePartitionsDynamic.byPosition(v2.v2relation, query)
+          OverwritePartitionsDynamic.byPosition(v2relation, query)
 
         case _ if insert.overwrite =>
           // always use dynamic overwrite to match Hive's behavior
-          OverwritePartitionsDynamic.byPosition(v2.v2relation, query)
+          OverwritePartitionsDynamic.byPosition(v2relation, query)
 
         case _ =>
-          AppendData.byPosition(v2.v2relation, query)
+          AppendData.byPosition(v2relation, query)
       }
 
     case LogicalRelation(v2: V2AsBaseRelation, _, _, _) =>
@@ -282,6 +312,7 @@ class DataSourceV2Analysis(spark: SparkSession) extends Rule[LogicalPlan] {
       }
     }
   }
+
 }
 
 object DataSourceV2Analysis {
@@ -296,8 +327,8 @@ object DataSourceV2Analysis {
   private def isV2Source(catalogTable: CatalogTable, spark: SparkSession): Boolean = {
     catalogTable.provider.exists(provider =>
       !"hive".equalsIgnoreCase(provider) &&
-          classOf[DataSourceV2].isAssignableFrom(
-            DataSource.lookupDataSource(provider, spark.sqlContext.conf)))
+        classOf[DataSourceV2].isAssignableFrom(
+          DataSource.lookupDataSource(provider, spark.sqlContext.conf)))
   }
 
   private def toChangeSet(alter: LogicalPlan): Seq[TableChange] = {
@@ -335,7 +366,7 @@ object DataSourceV2Analysis {
       case AlterTableDropColumnsCommand(_, columns) =>
         columns.map(TableChange.deleteColumn)
 
-      case AlterTableSetPropertiesCommand(_, properties, false /* isView */ ) =>
+      case AlterTableSetPropertiesCommand(_, properties, false /* isView */) =>
         properties.map {
           case (property, null) =>
             TableChange.removeProperty(property)
@@ -343,7 +374,7 @@ object DataSourceV2Analysis {
             TableChange.setProperty(property, value)
         }.toSeq
 
-      case AlterTableUnsetPropertiesCommand(_, properties, _, false /* isView */ ) =>
+      case AlterTableUnsetPropertiesCommand(_, properties, _, false /* isView */) =>
         properties.map(TableChange.removeProperty)
     }
   }

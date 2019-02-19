@@ -32,9 +32,9 @@ import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
 import org.apache.spark.scheduler.{SparkListener, SparkListenerApplicationEnd}
 import org.apache.spark.sql.catalog.Catalog
-import org.apache.spark.sql.catalog.v2.{CaseInsensitiveStringMap, CatalogProvider, Catalogs, V1TableCatalog}
+import org.apache.spark.sql.catalog.v2.{CaseInsensitiveStringMap, CatalogIdentifier, CatalogProvider, Catalogs, TableCatalog, V1TableCatalog}
 import org.apache.spark.sql.catalyst._
-import org.apache.spark.sql.catalyst.analysis.UnresolvedRelation
+import org.apache.spark.sql.catalyst.analysis.{UnresolvedIdentifier, UnresolvedRelation}
 import org.apache.spark.sql.catalyst.encoders._
 import org.apache.spark.sql.catalyst.expressions.AttributeReference
 import org.apache.spark.sql.catalyst.plans.logical.{LocalRelation, Range}
@@ -82,6 +82,8 @@ class SparkSession private(
     @transient private val parentSessionState: Option[SessionState],
     @transient private[sql] val extensions: SparkSessionExtensions)
   extends Serializable with Closeable with Logging { self =>
+
+  import org.apache.spark.sql.catalog.v2.CatalogV2Implicits._
 
   // The call site where this SparkSession was constructed.
   private val creationSite: CallSite = Utils.getCallSite()
@@ -629,6 +631,30 @@ class SparkSession private(
     }
   }
 
+  object CatalogRef {
+    def unapply(u: UnresolvedIdentifier): Option[(Option[String], TableIdentifier)] = {
+      val (catalogName, TableIdentifier(ident)) = u.parts.init match {
+        case Seq(catalog, space @ _*) if Catalogs.exists(catalog, sessionState.conf) =>
+          (Some(catalog), CatalogIdentifier(space, u.parts.last))
+        case space: Seq[String] =>
+          (None, CatalogIdentifier(space, u.parts.last))
+      }
+      Some((catalogName, ident))
+    }
+  }
+
+  object CatalogTableRef {
+    def unapply(u: UnresolvedIdentifier): Option[(Option[TableCatalog], TableIdentifier)] = {
+      val CatalogRef(catalogName, ident) = u
+      catalogName match {
+        case Some(_) =>
+          Some((Some(catalog(catalogName).asTableCatalog), ident))
+        case _ =>
+          Some((None, ident))
+      }
+    }
+  }
+
   /**
    * Returns the specified table/view as a `DataFrame`.
    *
@@ -640,7 +666,8 @@ class SparkSession private(
    * @since 2.0.0
    */
   def table(tableName: String): DataFrame = {
-    table(sessionState.sqlParser.parseTableIdentifier(tableName))
+    Dataset.ofRows(self,
+      UnresolvedIdentifier(sessionState.sqlParser.parseMultiPartIdentifier(tableName)))
   }
 
   private[sql] def table(tableIdent: TableIdentifier): DataFrame = {

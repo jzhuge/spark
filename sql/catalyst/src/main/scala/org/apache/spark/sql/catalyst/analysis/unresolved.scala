@@ -36,6 +36,17 @@ class UnresolvedException[TreeType <: TreeNode[_]](tree: TreeType, function: Str
   extends TreeNodeException(tree, s"Invalid call to $function on unresolved object", null)
 
 /**
+ * TODO:
+ */
+case class UnresolvedIdentifier(parts: Seq[String])
+  extends LeafNode {
+
+  override def output: Seq[Attribute] = Nil
+
+  override lazy val resolved = false
+}
+
+/**
  * Holds the name of a relation that has yet to be looked up in a catalog.
  *
  * @param table a [[CatalogTableIdentifier]]

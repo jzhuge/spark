@@ -30,7 +30,7 @@ import org.antlr.v4.runtime.tree.{ParseTree, RuleNode, TerminalNode}
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.AnalysisException
 import org.apache.spark.sql.catalog.v2.{PartitionTransform, PartitionTransforms}
-import org.apache.spark.sql.catalyst.{CatalogTableIdentifier, FunctionIdentifier, TableIdentifier}
+import org.apache.spark.sql.catalyst.{FunctionIdentifier, TableIdentifier}
 import org.apache.spark.sql.catalyst.analysis._
 import org.apache.spark.sql.catalyst.catalog.CatalogStorageFormat
 import org.apache.spark.sql.catalyst.expressions._
@@ -82,9 +82,9 @@ class AstBuilder(conf: SQLConf) extends SqlBaseBaseVisitor[AnyRef] with Logging 
     visitTableIdentifier(ctx.tableIdentifier)
   }
 
-  override def visitSingleCatalogTableIdentifier(
-      ctx: SingleCatalogTableIdentifierContext): CatalogTableIdentifier = withOrigin(ctx) {
-    visitCatalogTableIdentifier(ctx.catalogTableIdentifier)
+  override def visitSingleMultiPartIdentifier(
+      ctx: SingleMultiPartIdentifierContext): Seq[String] = withOrigin(ctx) {
+    visitMultiPartIdentifier(ctx.multiPartIdentifier)
   }
 
   override def visitSingleFunctionIdentifier(
@@ -188,7 +188,7 @@ class AstBuilder(conf: SQLConf) extends SqlBaseBaseVisitor[AnyRef] with Logging 
    * Parameters used for writing query to a table:
    *   (tableIdentifier, partitionKeys, exists).
    */
-  type InsertTableParams = (TableIdentifier, Map[String, Option[String]], Boolean)
+  type InsertTableParams = (UnresolvedIdentifier, Map[String, Option[String]], Boolean)
 
   /**
    * Parameters used for writing query to a directory: (isLocal, CatalogStorageFormat, provider).
@@ -210,12 +210,12 @@ class AstBuilder(conf: SQLConf) extends SqlBaseBaseVisitor[AnyRef] with Logging 
       query: LogicalPlan): LogicalPlan = withOrigin(ctx) {
     ctx match {
       case table: InsertIntoTableContext =>
-        val (tableIdent, partitionKeys, exists) = visitInsertIntoTable(table)
-        InsertIntoTable(UnresolvedRelation(tableIdent), partitionKeys, query, false, exists,
+        val (unresolved, partitionKeys, exists) = visitInsertIntoTable(table)
+        InsertIntoTable(unresolved, partitionKeys, query, false, exists,
           Map.empty /* SQL always matches by position */)
       case table: InsertOverwriteTableContext =>
-        val (tableIdent, partitionKeys, exists) = visitInsertOverwriteTable(table)
-        InsertIntoTable(UnresolvedRelation(tableIdent), partitionKeys, query, true, exists,
+        val (unresolved, partitionKeys, exists) = visitInsertOverwriteTable(table)
+        InsertIntoTable(unresolved, partitionKeys, query, true, exists,
           Map.empty /* SQL always matches by position */)
       case dir: InsertOverwriteDirContext =>
         val (isLocal, storage, provider) = visitInsertOverwriteDir(dir)
@@ -233,10 +233,10 @@ class AstBuilder(conf: SQLConf) extends SqlBaseBaseVisitor[AnyRef] with Logging 
    */
   override def visitInsertIntoTable(
       ctx: InsertIntoTableContext): InsertTableParams = withOrigin(ctx) {
-    val tableIdent = visitTableIdentifier(ctx.tableIdentifier)
+    val tableIdent = visitMultiPartIdentifier(ctx.multiPartIdentifier)
     val partitionKeys = Option(ctx.partitionSpec).map(visitPartitionSpec).getOrElse(Map.empty)
 
-    (tableIdent, partitionKeys, false)
+    (UnresolvedIdentifier(tableIdent), partitionKeys, false)
   }
 
   /**
@@ -245,7 +245,7 @@ class AstBuilder(conf: SQLConf) extends SqlBaseBaseVisitor[AnyRef] with Logging 
   override def visitInsertOverwriteTable(
       ctx: InsertOverwriteTableContext): InsertTableParams = withOrigin(ctx) {
     assert(ctx.OVERWRITE() != null)
-    val tableIdent = visitTableIdentifier(ctx.tableIdentifier)
+    val tableIdent = visitMultiPartIdentifier(ctx.multiPartIdentifier)
     val partitionKeys = Option(ctx.partitionSpec).map(visitPartitionSpec).getOrElse(Map.empty)
 
     val dynamicPartitionKeys: Map[String, Option[String]] = partitionKeys.filter(_._2.isEmpty)
@@ -254,7 +254,7 @@ class AstBuilder(conf: SQLConf) extends SqlBaseBaseVisitor[AnyRef] with Logging 
         "partitions with value: " + dynamicPartitionKeys.keys.mkString("[", ",", "]"), ctx)
     }
 
-    (tableIdent, partitionKeys, ctx.EXISTS() != null)
+    (UnresolvedIdentifier(tableIdent), partitionKeys, ctx.EXISTS() != null)
   }
 
   /**
@@ -768,15 +768,15 @@ class AstBuilder(conf: SQLConf) extends SqlBaseBaseVisitor[AnyRef] with Logging 
    * }}}
    */
   override def visitTable(ctx: TableContext): LogicalPlan = withOrigin(ctx) {
-    UnresolvedRelation(visitTableIdentifier(ctx.tableIdentifier))
+    UnresolvedIdentifier(visitMultiPartIdentifier(ctx.multiPartIdentifier))
   }
 
   /**
    * Create an aliased table reference. This is typically used in FROM clauses.
    */
   override def visitTableName(ctx: TableNameContext): LogicalPlan = withOrigin(ctx) {
-    val tableId = visitTableIdentifier(ctx.tableIdentifier)
-    val table = mayApplyAliasPlan(ctx.tableAlias, UnresolvedRelation(tableId))
+    val tableId = visitMultiPartIdentifier(ctx.multiPartIdentifier())
+    val table = mayApplyAliasPlan(ctx.tableAlias, UnresolvedIdentifier(tableId))
     table.optionalMap(ctx.sample)(withSample)
   }
 
@@ -907,14 +907,11 @@ class AstBuilder(conf: SQLConf) extends SqlBaseBaseVisitor[AnyRef] with Logging 
   }
 
   /**
-   * Create a [[CatalogTableIdentifier]] from a 'tableName' or 'databaseName'.'tableName' pattern.
+   * Create a multi-part identifier.
    */
-  override def visitCatalogTableIdentifier(
-      ctx: CatalogTableIdentifierContext): CatalogTableIdentifier = withOrigin(ctx) {
-    CatalogTableIdentifier(
-      ctx.table.getText,
-      Option(ctx.db).map(_.getText),
-      Option(ctx.catalog).map(_.getText))
+  override def visitMultiPartIdentifier(
+      ctx: MultiPartIdentifierContext): Seq[String] = withOrigin(ctx) {
+    ctx.parts.asScala.map(_.getText)
   }
 
   /**

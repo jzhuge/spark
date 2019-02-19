@@ -52,8 +52,8 @@ singleTableIdentifier
     : tableIdentifier EOF
     ;
 
-singleCatalogTableIdentifier
-    : catalogTableIdentifier EOF
+singleMultiPartIdentifier
+    : multiPartIdentifier EOF
     ;
 
 singleFunctionIdentifier
@@ -135,8 +135,8 @@ statement
         DROP (IF EXISTS)? partitionSpec (',' partitionSpec)*           #dropTablePartitions
     | ALTER TABLE tableIdentifier partitionSpec? SET locationSpec      #setTableLocation
     | ALTER TABLE tableIdentifier RECOVER PARTITIONS                   #recoverPartitions
-    | DROP TABLE (IF EXISTS)? tableIdentifier PURGE?                   #dropTable
-    | DROP VIEW (IF EXISTS)? tableIdentifier                           #dropTable
+    | DROP TABLE (IF EXISTS)? multiPartIdentifier PURGE?               #dropTable
+    | DROP VIEW (IF EXISTS)? multiPartIdentifier                       #dropTable
     | CREATE (OR REPLACE)? (GLOBAL? TEMPORARY)?
         VIEW (IF NOT EXISTS)? tableIdentifier
         identifierCommentList? (COMMENT STRING)?
@@ -258,8 +258,8 @@ query
     ;
 
 insertInto
-    : INSERT OVERWRITE TABLE tableIdentifier (partitionSpec (IF NOT EXISTS)?)?                              #insertOverwriteTable
-    | INSERT INTO TABLE? tableIdentifier partitionSpec?                                                     #insertIntoTable
+    : INSERT OVERWRITE TABLE multiPartIdentifier (partitionSpec (IF NOT EXISTS)?)?                          #insertOverwriteTable
+    | INSERT INTO TABLE? multiPartIdentifier partitionSpec?                                                 #insertIntoTable
     | INSERT OVERWRITE LOCAL? DIRECTORY path=STRING rowFormat? createFileFormat?                            #insertOverwriteHiveDir
     | INSERT OVERWRITE LOCAL? DIRECTORY (path=STRING)? tableProvider (OPTIONS options=tablePropertyList)?   #insertOverwriteDir
     ;
@@ -373,7 +373,7 @@ queryTerm
 
 queryPrimary
     : querySpecification                                                    #queryPrimaryDefault
-    | TABLE tableIdentifier                                                 #table
+    | TABLE multiPartIdentifier                                             #table
     | inlineTable                                                           #inlineTableDefault1
     | '(' queryNoWith  ')'                                                  #subquery
     ;
@@ -498,11 +498,11 @@ identifierComment
     ;
 
 relationPrimary
-    : tableIdentifier sample? tableAlias      #tableName
-    | '(' queryNoWith ')' sample? tableAlias  #aliasedQuery
-    | '(' relation ')' sample? tableAlias     #aliasedRelation
-    | inlineTable                             #inlineTableDefault2
-    | functionTable                           #tableValuedFunction
+    : multiPartIdentifier sample? tableAlias     #tableName
+    | '(' queryNoWith ')' sample? tableAlias     #aliasedQuery
+    | '(' relation ')' sample? tableAlias        #aliasedRelation
+    | inlineTable                                #inlineTableDefault2
+    | functionTable                              #tableValuedFunction
     ;
 
 inlineTable
@@ -527,8 +527,8 @@ rowFormat
       (NULL DEFINED AS nullDefinedAs=STRING)?                                       #rowFormatDelimited
     ;
 
-catalogTableIdentifier
-    : ((catalog=identifier '.')? db=identifier '.')? table=identifier
+multiPartIdentifier
+    : (parts+=identifier '.')* parts+=identifier
     ;
 
 tableIdentifier

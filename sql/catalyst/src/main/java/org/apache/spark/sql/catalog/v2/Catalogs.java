@@ -31,6 +31,10 @@ public class Catalogs {
   private Catalogs() {
   }
 
+  public static Boolean exists(String name, SQLConf conf) {
+    return conf.contains("spark.sql.catalog." + name);
+  }
+
   /**
    * Load and configure a catalog by name.
    * <p>

@@ -42,6 +42,20 @@ class NetflixAnalysis(spark: SparkSession) extends Rule[LogicalPlan] {
     Try(spark.catalog(Some("iceberg"))).getOrElse(spark.catalog(None)).asTableCatalog
   private lazy val icebergTables: DataSourceV2 = new IcebergMetacatSource()
 
+  private lazy val testIcebergCatalog: TableCatalog =
+    Try(spark.catalog(Some("testiceberg"))).getOrElse(spark.catalog(None)).asTableCatalog
+
+  private def isIcebergCatalog(catalog: TableCatalog): Boolean = {
+    Seq("iceberg", "testiceberg").exists(catalog.name().equalsIgnoreCase)
+  }
+
+  private def getIcebergCatalog(catalog: TableCatalog): TableCatalog =
+    if ("testhive".equalsIgnoreCase(catalog.name())) {
+      testIcebergCatalog
+    } else {
+      icebergCatalog
+    }
+
   override def apply(plan: LogicalPlan): LogicalPlan = plan transformUp {
     case migrate @ MigrateTable(identifier, _) =>
       val newIdent = ensureDatabaseIsSet(identifier)
@@ -81,7 +95,7 @@ class NetflixAnalysis(spark: SparkSession) extends Rule[LogicalPlan] {
     case drop @ DropTable(catalog, identifier, _)
         if shouldReplaceCatalog(catalog,
           Option(catalog.loadTable(identifier).properties.get("provider"))) =>
-      drop.copy(catalog = icebergCatalog)
+      drop.copy(catalog = getIcebergCatalog(catalog))
 
     // this case is only used for older iceberg tables that don't have the provider set
     case rel: LogicalRelation if rel.catalogTable.map(isIcebergTable).getOrElse(false) =>
@@ -97,7 +111,7 @@ class NetflixAnalysis(spark: SparkSession) extends Rule[LogicalPlan] {
   }
 
   def shouldReplaceCatalog(catalog: TableCatalog, provider: Option[String]): Boolean = {
-    catalog != icebergCatalog && provider.exists("iceberg".equalsIgnoreCase)
+    !isIcebergCatalog(catalog) && provider.exists("iceberg".equalsIgnoreCase)
   }
 
   private def ensureDatabaseIsSet(identifier: TableIdentifier): TableIdentifier = {

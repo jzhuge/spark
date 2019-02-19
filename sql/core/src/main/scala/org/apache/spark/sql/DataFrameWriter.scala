@@ -28,7 +28,7 @@ import org.apache.spark.SparkException
 import org.apache.spark.annotation.InterfaceStability
 import org.apache.spark.sql.catalog.v2.{Table, TableCatalog}
 import org.apache.spark.sql.catalyst.TableIdentifier
-import org.apache.spark.sql.catalyst.analysis.{EliminateSubqueryAliases, NoSuchTableException, UnresolvedRelation}
+import org.apache.spark.sql.catalyst.analysis.{EliminateSubqueryAliases, NoSuchTableException, UnresolvedIdentifier, UnresolvedRelation}
 import org.apache.spark.sql.catalyst.catalog.{BucketSpec, CatalogTable, CatalogTableType, HiveTableRelation}
 import org.apache.spark.sql.catalyst.plans.logical._
 import org.apache.spark.sql.execution.SQLExecution
@@ -389,15 +389,17 @@ final class DataFrameWriter[T] private[sql](ds: Dataset[T]) {
    */
   def insertInto(tableName: String): Unit = {
     import org.apache.spark.sql.sources.v2.DataSourceV2Implicits._
-    val catalog = df.sparkSession.catalog(extraOptions.get("catalog")).asTableCatalog
-    val identifier = df.sparkSession.sessionState.sqlParser.parseTableIdentifier(tableName)
+    val parts = df.sparkSession.sessionState.sqlParser.parseMultiPartIdentifier(tableName)
+    val df.sparkSession.CatalogRef(catalogFromTableName, identifier) = UnresolvedIdentifier(parts)
+    val catalogName = catalogFromTableName.orElse(extraOptions.get("catalog"))
+    val catalog = df.sparkSession.catalog(catalogName).asTableCatalog
     lazy val table = loadV2Table(catalog, identifier).get
 
     // use the new logical plans if:
     // * the catalog is defined
     // * the source is a v2 source
     // * the table exists and is writable with v2
-    if (isCatalogDefined || isV2Source || table.isInstanceOf[WriteSupport]) {
+    if (catalogName.isDefined || isV2Source || table.isInstanceOf[WriteSupport]) {
       appendData(catalog, identifier, table)
     } else {
       insertInto(identifier)
