@@ -92,7 +92,7 @@ class temp_table:
 
 class temp_vault_table(temp_table):
     def __init__(self, base_name, sql=None, *args):
-        self.table_name = temp_table_name('bdp_itests_' + base_name, 'vault')
+        self.table_name = temp_table_name('bdp_itests_' + base_name, db='vault')
         self.sql = sql
         self.args = args
 
