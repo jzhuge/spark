@@ -59,6 +59,8 @@ class NetflixAnalysis(spark: SparkSession) extends Rule[LogicalPlan] {
       } catch {
         case _: NoSuchTableException =>
           unresolved
+        case e: IllegalArgumentException if e.getMessage.contains("not Iceberg") =>
+          unresolved
       }
 
     case migrate @ MigrateTable(identifier, _) =>
