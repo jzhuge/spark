@@ -593,12 +593,7 @@ final class DataFrameWriter[T] private[sql](ds: Dataset[T]) {
   }
 
   private def loadV2Table(catalog: TableCatalog, ident: TableIdentifier): Option[Table] = {
-    try {
-      Option(catalog.loadTable(ident))
-    } catch {
-      case _: NoSuchTableException =>
-        None
-    }
+    Option(catalog.loadTable(ident))
   }
 
 
