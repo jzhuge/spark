@@ -34,10 +34,6 @@ import org.apache.spark.sql.types.{
 }
 import org.apache.spark.unsafe.types.UTF8String
 
-/**
-  * Extracts values from a cl snapshot based on clType, extractCriteria, and filterCriteria
-  * and returns array of strings. It will return null if the input parameters are invalid.
-  */
 @ExpressionDescription(
   usage =
     "_FUNC_(json, clType, filterCriteria, extractCriteria) - " +
