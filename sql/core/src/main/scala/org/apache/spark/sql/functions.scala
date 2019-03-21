@@ -3957,4 +3957,14 @@ object functions {
   def nf_json_extract_array(e: Column, path: String): Column = withExpr {
     NfJsonExtractArray(e.expr, lit(path).expr)
   }
+
+  def cl_snapshot_extract(e: Column,
+                          clType: String,
+                          extractCriteria: String,
+                          filterCriteria: String): Column = withExpr {
+    ClSnapshotExtract(e.expr,
+      lit(clType).expr,
+      lit(extractCriteria).expr,
+      lit(filterCriteria).expr)
+  }
 }
