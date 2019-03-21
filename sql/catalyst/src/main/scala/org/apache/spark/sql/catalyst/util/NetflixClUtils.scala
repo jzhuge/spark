@@ -35,7 +35,7 @@ object NetflixClUtils {
     val jsonPathifiedExtractCriteria =
       Option(extractCriteria).getOrElse("") match {
         case x if x.nonEmpty => s".$x"
-        case _               => ""
+        case _ => ""
       }
 
     val jsonPathifiedFilterCriteria =
