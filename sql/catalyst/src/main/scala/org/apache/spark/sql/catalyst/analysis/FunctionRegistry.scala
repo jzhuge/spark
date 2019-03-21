@@ -386,6 +386,9 @@ object FunctionRegistry {
     expression[NfJsonExtract]("nf_json_extract"),
     expression[NfJsonExtractArray]("nf_json_extract_array"),
 
+    // Cl functions
+    expression[ClSnapshotExtract]("cl_snapshot_extract"),
+
     // collection functions
     expression[CreateArray]("array"),
     expression[ArrayContains]("array_contains"),

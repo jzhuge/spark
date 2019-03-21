@@ -1464,6 +1464,14 @@ def nf_quarter(input):
     sc = SparkContext._active_spark_context
     return Column(sc._jvm.functions.nf_quarter(_to_java_column(input)))
 
+@since(2.1)
+def cl_snapshot_extract(input1, input2, input3, input4):
+    """
+    Extracts desired values from cl snapshot based on clType, extractCriteria and filterCriteria.
+    Refer http://go/cludfs
+    """
+    sc = SparkContext._active_spark_context
+    return Column(sc._jvm.functions.cl_snapshot_extract(_to_java_column(input1), input2, input3, input4))
 
 # ---------------------------- misc functions ----------------------------------
 
