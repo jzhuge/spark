@@ -191,6 +191,14 @@ abstract class V2TableWriteExec(
 }
 
 object DataWritingSparkTask extends Logging {
+  private lazy val outputMetricsAndBytesWrittenCallback: Option[(OutputMetrics, () => Long)] =
+    SparkHadoopWriterUtils.initHadoopOutputMetrics(TaskContext.get())
+
+  private def maybeUpdateMetrics(recordsWritten: Long, force: Boolean = false): Unit = {
+    SparkHadoopWriterUtils.maybeUpdateOutputMetrics(
+      outputMetricsAndBytesWrittenCallback, recordsWritten, force = force)
+  }
+
   def run(
       writeTask: DataWriterFactory[InternalRow],
       context: TaskContext,
@@ -201,14 +209,6 @@ object DataWritingSparkTask extends Logging {
     val attemptId = context.attemptNumber()
     val dataWriter = writeTask.createDataWriter(
       context.partitionId(), context.taskAttemptId().toInt) // see SPARK-24552
-
-    val outputMetricsAndBytesWrittenCallback: Option[(OutputMetrics, () => Long)] =
-      SparkHadoopWriterUtils.initHadoopOutputMetrics(context)
-
-    def maybeUpdateMetrics(recordsWritten: Long, force: Boolean = false): Unit = {
-      SparkHadoopWriterUtils.maybeUpdateOutputMetrics(
-        outputMetricsAndBytesWrittenCallback, recordsWritten, force = force)
-    }
 
     // write the data and commit this writer.
     Utils.tryWithSafeFinallyAndFailureCallbacks(block = {
