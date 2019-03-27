@@ -19,12 +19,13 @@ package org.apache.spark.sql.execution.datasources.v2
 
 import scala.collection.JavaConverters._
 
+import org.apache.spark.TaskContext
+import org.apache.spark.deploy.SparkHadoopUtil
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.execution.LeafExecNode
 import org.apache.spark.sql.execution.metric.SQLMetrics
-import org.apache.spark.sql.sources.v2.DataSourceV2
 import org.apache.spark.sql.sources.v2.reader._
 
 /**
@@ -65,8 +66,24 @@ case class DataSourceV2ScanExec(
 
   override protected def doExecute(): RDD[InternalRow] = {
     val numOutputRows = longMetric("numOutputRows")
-    inputRDD.map { r =>
+    val inputMetrics = TaskContext.get().taskMetrics().inputMetrics
+    val startingBytesRead = inputMetrics.bytesRead
+    val maybeGetBytesRead: Option[() => Long] = SparkHadoopUtil.get.getFSBytesReadOnThreadCallback()
+
+    def updateMetrics(): Unit = {
       numOutputRows += 1
+      inputMetrics.incRecordsRead(1)
+      lazy val shouldUpdateBytesRead =
+        inputMetrics.recordsRead % SparkHadoopUtil.UPDATE_INPUT_METRICS_INTERVAL_RECORDS == 0
+      maybeGetBytesRead match {
+        case Some(getBytesRead) if shouldUpdateBytesRead =>
+          inputMetrics.setBytesRead(startingBytesRead + getBytesRead())
+        case _ =>
+      }
+    }
+
+    inputRDD.map { r =>
+      updateMetrics()
       r
     }
   }
