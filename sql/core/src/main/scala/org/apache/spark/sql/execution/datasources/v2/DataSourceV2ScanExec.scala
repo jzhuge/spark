@@ -81,7 +81,7 @@ case class DataSourceV2ScanExec(
     }
   }
 
-  class MetricsHandler(numOutputRows: SQLMetric) extends Logging {
+  class MetricsHandler(numOutputRows: SQLMetric) extends Logging with Serializable {
     private lazy val inputMetrics = TaskContext.get().taskMetrics().inputMetrics
     private lazy val startingBytesRead = inputMetrics.bytesRead
     private lazy val maybeGetBytesRead: Option[() => Long] =
