@@ -19,11 +19,15 @@ package org.apache.spark.sql.execution.datasources.v2
 
 import scala.collection.JavaConverters._
 
+import org.apache.spark.TaskContext
+import org.apache.spark.deploy.SparkHadoopUtil
+import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.plans.physical
 import org.apache.spark.sql.execution.{ColumnarBatchScan, LeafExecNode, WholeStageCodegenExec}
+import org.apache.spark.sql.execution.metric.SQLMetric
 import org.apache.spark.sql.execution.streaming.continuous._
 import org.apache.spark.sql.sources.v2.reader._
 import org.apache.spark.sql.sources.v2.reader.streaming.ContinuousReader
@@ -73,8 +77,8 @@ case class DataSourceV2ScanExec(
 
     case _: ContinuousReader =>
       EpochCoordinatorRef.get(
-          sparkContext.getLocalProperty(ContinuousExecution.EPOCH_COORDINATOR_ID_KEY),
-          sparkContext.env)
+        sparkContext.getLocalProperty(ContinuousExecution.EPOCH_COORDINATOR_ID_KEY),
+        sparkContext.env)
         .askSync[Unit](SetReaderPartitions(partitions.size))
       new ContinuousDataSourceRDD(sparkContext, sqlContext, partitions)
         .asInstanceOf[RDD[InternalRow]]
@@ -96,10 +100,34 @@ case class DataSourceV2ScanExec(
     if (supportsBatch) {
       WholeStageCodegenExec(this)(codegenStageId = 0).execute()
     } else {
-      val numOutputRows = longMetric("numOutputRows")
-      inputRDD.map { r =>
+      val metricsHandler = new MetricsHandler(longMetric("numOutputRows"))
+
+      inputRDD.mapPartitions { iter =>
+        try {
+          iter.map { r =>
+            metricsHandler.updateMetrics()
+            r
+          }
+
+        } finally {
+          metricsHandler.updateMetrics(force = true)
+        }
+      }
+    }
+  }
+
+  class MetricsHandler(numOutputRows: SQLMetric) extends Logging with Serializable {
+    private lazy val inputMetrics = TaskContext.get().taskMetrics().inputMetrics
+    private lazy val startingBytesRead = inputMetrics.bytesRead
+    private lazy val getBytesRead = SparkHadoopUtil.get.getFSBytesReadOnThreadCallback()
+
+    def updateMetrics(force: Boolean = false): Unit = {
+      val shouldUpdateBytesRead =
+        inputMetrics.recordsRead % SparkHadoopUtil.UPDATE_INPUT_METRICS_INTERVAL_RECORDS == 0
+      if (shouldUpdateBytesRead || force) {
+        inputMetrics.setBytesRead(startingBytesRead + getBytesRead())
+        inputMetrics.incRecordsRead(1)
         numOutputRows += 1
-        r
       }
     }
   }
