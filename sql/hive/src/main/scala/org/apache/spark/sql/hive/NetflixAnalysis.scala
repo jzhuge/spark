@@ -41,13 +41,22 @@ class NetflixAnalysis(spark: SparkSession) extends Rule[LogicalPlan] {
 
   private lazy val icebergCatalog: TableCatalog =
     Try(spark.catalog(Some("iceberg"))).getOrElse(spark.catalog(None)).asTableCatalog
+
+  private lazy val cinderCatalog: Option[TableCatalog] =
+    Try(spark.catalog(Some("cinder"))).toOption.map(_.asTableCatalog)
+
   private lazy val icebergTables: DataSourceV2 = new IcebergMetacatSource()
 
   override def apply(plan: LogicalPlan): LogicalPlan = plan resolveOperators {
     case unresolved: UnresolvedRelation =>
       val identifier = ensureDatabaseIsSet(unresolved.tableIdentifier)
       try {
-        val table = icebergCatalog.loadTable(identifier)
+        val table = identifier.database match {
+          case Some("cinder") if cinderCatalog.isDefined =>
+            cinderCatalog.get.loadTable(identifier)
+          case _ =>
+            icebergCatalog.loadTable(identifier)
+        }
         val relation = DataSourceV2Relation.create(icebergCatalog.name, identifier, table,
           Map("database" -> identifier.database.get, "table" -> identifier.table))
         unresolved.alias match {
