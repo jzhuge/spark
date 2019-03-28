@@ -35,6 +35,12 @@ class NetflixJsonFunctionsSuite extends QueryTest with SharedSQLContext {
     checkAnswer(df.selectExpr("nf_json_extract(a, '$..book.length()')"), Row("[4]"))
     checkAnswer(df.selectExpr("nf_json_extract(a, " +
       "'$.store.object.inner_object.array[0].inner_array[0].x')"), Row("\"y\""))
+    checkAnswer(df.selectExpr("nf_json_extract_scalar(a, " +
+      "'$.store.object.inner_object.array[0].inner_array[0].x')"), Row("y"))
+    checkAnswer(df.selectExpr("nf_json_extract_scalar(a, " +
+      "'$.store.object.inner_object.array[0].inner_array')"), Row(null))
+    checkAnswer(df.selectExpr("nf_json_extract_scalar(a, " +
+      "'$.store.book[0].price')"), Row("8.95"))
     checkAnswer(df.selectExpr("nf_json_extract(a, '$.store.book[*].category')"),
       Row("[\"reference\",\"fiction\",\"fiction\",\"fiction\"]"))
     checkAnswer(df.selectExpr("nf_json_extract(a, '$.store.bicycle.price')"), Row(null))

@@ -25,6 +25,8 @@ import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.unsafe.types.UTF8String
 
+
+
 object NetflixJsonUtils {
 
   @throws(classOf[JsonPathException])
@@ -34,7 +36,6 @@ object NetflixJsonUtils {
     if (jsonStr == null) {
       return null
     }
-    val utf8JsonPath = jsonPath.eval().asInstanceOf[UTF8String]
     val parsedData = JsonPath.parse(jsonStr.toString)
     parsedData.read(jsonPath.toString)
   }

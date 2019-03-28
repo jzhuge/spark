@@ -3950,6 +3950,10 @@ object functions {
     NfJsonExtract(e.expr, lit(path).expr)
   }
 
+  def nf_json_extract_scalar(e: Column, path: String): Column = withExpr {
+    NfJsonExtractScalar(e.expr, lit(path).expr)
+  }
+
   def nf_json_extract_array(e: Column, path: String): Column = withExpr {
     NfJsonExtractArray(e.expr, lit(path).expr)
   }
