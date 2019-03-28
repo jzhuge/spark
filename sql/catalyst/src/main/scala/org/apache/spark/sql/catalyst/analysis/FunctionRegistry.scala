@@ -430,6 +430,7 @@ object FunctionRegistry {
     expression[NfWeek]("nf_week"),
     expression[NfQuarter]("nf_quarter"),
     expression[NfJsonExtract]("nf_json_extract"),
+    expression[NfJsonExtractScalar]("nf_json_extract_scalar"),
     expression[NfJsonExtractArray]("nf_json_extract_array"),
 
     // collection functions
