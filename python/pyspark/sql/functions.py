@@ -2119,6 +2119,16 @@ def nf_json_extract(col, path):
     return Column(sc._jvm.functions.nf_json_extract(_to_java_column(col), path))
 
 @since(2.1)
+def nf_json_extract_scalar(col, path):
+    """
+     Evaluates the json path expression on the input col and returns the result as a string as
+     opposed to a json encoded string. The value referenced by json path must be a scalar.
+     Returns null if there the value referenced is not a scalar or there is a json parse exception
+    """
+    sc = SparkContext._active_spark_context
+    return Column(sc._jvm.functions.nf_json_extract_scalar(_to_java_column(col), path))
+
+@since(2.1)
 def nf_json_extract_array(col, path):
     """
      Extracts json object from a json string based on json path specified, and returns

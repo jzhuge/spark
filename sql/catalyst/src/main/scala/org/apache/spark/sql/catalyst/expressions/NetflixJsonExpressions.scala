@@ -31,8 +31,6 @@ import org.apache.spark.sql.catalyst.util.NetflixJsonUtils._
 import org.apache.spark.sql.types.{ArrayType, DataType, StringType}
 import org.apache.spark.unsafe.types.UTF8String
 
-
-
 /**
  * Extracts json object from a json string based on json path specified, and returns json string
  * of the extracted json object. It will return null if the input json string is invalid.
@@ -53,6 +51,40 @@ case class NfJsonExtract(json: Expression, jsonPath: Expression)
     try {
       val extractedValue = extractJsonFromInternalRow(input, json, jsonPath)
       getJsonAsString(extractedValue)
+    } catch {
+      case _: JsonPathException => null
+    }
+  }
+}
+
+/**
+ * Evaluates the json path expression on the input col and returns the result as a string as
+ * opposed to a json encoded string. The value referenced by json path must be a scalar.
+ * Returns null if there the value referenced is not a scalar or there is a json parse exception
+ */
+@ExpressionDescription(
+  usage = "_FUNC_(json, jsonPath) - Extracts a json object from `jsonPath`."
+)
+case class NfJsonExtractScalar(json: Expression, jsonPath: Expression)
+  extends BinaryExpression with ExpectsInputTypes with CodegenFallback {
+  override def left: Expression = json
+  override def right: Expression = jsonPath
+  override def inputTypes: Seq[DataType] = Seq(StringType, StringType)
+  override def dataType: DataType = StringType
+  override def nullable: Boolean = true
+  override def prettyName: String = "nf_json_extract_scalar"
+
+  override def eval(input: InternalRow): Any = {
+    try {
+      val extractedValue = extractJsonFromInternalRow(input, json, jsonPath)
+      if (extractedValue != null) {
+        if (extractedValue.isInstanceOf[java.lang.Number] ||
+          extractedValue.isInstanceOf[java.lang.String] ||
+          extractedValue.isInstanceOf[java.lang.Boolean]) {
+          return UTF8String.fromString(extractedValue.toString)
+        }
+      }
+      null
     } catch {
       case _: JsonPathException => null
     }
