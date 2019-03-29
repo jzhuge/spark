@@ -72,6 +72,19 @@
       <artifactId>slf4j-api</artifactId>
       <scope>provided</scope>
     </dependency>
+
+    <!-- Report to Hadoop metrics2 -->
+    <dependency>
+      <groupId>com.github.joshelser</groupId>
+      <artifactId>dropwizard-metrics-hadoop-metrics2-reporter</artifactId>
+      <version>0.1.2</version>
+      <exclusions>
+        <exclusion>
+          <groupId>org.apache.hadoop</groupId>
+          <artifactId>hadoop-common</artifactId>
+        </exclusion>
+      </exclusions>
+    </dependency>
   </dependencies>
 
   <build>

@@ -23,10 +23,14 @@ import java.nio.charset.StandardCharsets;
 import java.nio.ByteBuffer;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
+import com.codahale.metrics.MetricRegistry;
+import com.codahale.metrics.ScheduledReporter;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.github.joshelser.dropwizard.metrics.hadoop.HadoopMetrics2Reporter;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Objects;
 import com.google.common.base.Preconditions;
@@ -35,6 +39,7 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.permission.FsPermission;
+import org.apache.hadoop.metrics2.lib.DefaultMetricsSystem;
 import org.apache.hadoop.yarn.api.records.ContainerId;
 import org.apache.hadoop.yarn.server.api.*;
 import org.apache.spark.network.util.LevelDBProvider;
@@ -131,6 +136,8 @@ public class YarnShuffleService extends AuxiliaryService {
 
   private DB db;
 
+  private ScheduledReporter metricReporter;
+
   public YarnShuffleService() {
     super("spark_shuffle");
     logger.info("Initializing YARN shuffle service for Spark");
@@ -191,6 +198,16 @@ public class YarnShuffleService extends AuxiliaryService {
       logger.info("Started YARN shuffle service for Spark on port {}. " +
         "Authentication is {}.  Registered executor file is {}", port, authEnabledString,
         registeredExecutorFile);
+
+      logger.info("Start reporter for Hadoop metrics");
+      MetricRegistry metricRegistry = new MetricRegistry();
+      metricRegistry.registerAll(blockHandler.getAllMetrics());
+      metricReporter = HadoopMetrics2Reporter.forRegistry(metricRegistry)
+          .build(DefaultMetricsSystem.instance(),
+              "SparkShuffleMetrics",
+              "Spark external shuffle service metrics",
+              "General");
+      metricReporter.start(60, TimeUnit.SECONDS);
     } catch (Exception e) {
       if (stopOnFailure) {
         throw e;
@@ -301,6 +318,9 @@ public class YarnShuffleService extends AuxiliaryService {
   @Override
   protected void serviceStop() {
     try {
+      if (metricReporter != null) {
+        metricReporter.stop();
+      }
       if (shuffleServer != null) {
         shuffleServer.close();
       }
