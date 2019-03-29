@@ -19,9 +19,6 @@ package org.apache.spark.sql.execution.datasources.v2
 
 import scala.collection.JavaConverters._
 
-import com.netflix.iceberg.spark.SparkTableUtil
-import com.netflix.iceberg.spark.SparkTableUtil.SparkDataFile
-
 import org.apache.spark.SparkException
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.DataFrame
@@ -29,8 +26,9 @@ import org.apache.spark.sql.catalog.v2.{CatalogV2Implicits, TableCatalog, TableC
 import org.apache.spark.sql.catalyst.{InternalRow, TableIdentifier}
 import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.execution.LeafExecNode
+import org.apache.spark.sql.execution.datasources.v2.IcebergUtil.SparkDataFile
 import org.apache.spark.sql.functions.not
-import org.apache.spark.util.Utils
+import org.apache.spark.util.{SerializableConfiguration, Utils}
 
 case class IcebergMigrateTableExec(
     catalog: TableCatalog,
@@ -47,7 +45,7 @@ case class IcebergMigrateTableExec(
   override protected def doExecute(): RDD[InternalRow] = {
     import spark.implicits._
 
-    val conf = spark.sparkContext.hadoopConfiguration
+    val conf = new SerializableConfiguration(spark.sparkContext.hadoopConfiguration)
     val version = spark.version
     val applicationId = spark.sparkContext.applicationId
     val hiveEnv = spark.sparkContext.hadoopConfiguration.get("spark.sql.hive.env", "prod")
@@ -73,7 +71,7 @@ case class IcebergMigrateTableExec(
       case _ =>
     }
 
-    val partitions: DataFrame = IcebergUtils.partitionDF(spark, sourceName)
+    val partitions: DataFrame = IcebergUtil.partitionDF(spark, sourceName)
 
     if (spark.sessionState.catalog.tableExists(hiveIdent)) {
       throw new SparkException(s"Cannot create backup table $hiveIdent: already exists")
@@ -90,7 +88,7 @@ case class IcebergMigrateTableExec(
 
     val files = partitions.repartition(1000).as[TablePartition].flatMap { p =>
       // list the partition and read Parquet footers to get metrics
-      SparkTableUtil.listPartition(p.partition, p.uri, p.format)
+      IcebergUtil.listPartition(conf.value, p.partition, p.uri, p.format)
     }
 
     logInfo(s"Renaming $ident to $hiveIdent")
@@ -108,7 +106,7 @@ case class IcebergMigrateTableExec(
 
       Utils.tryWithSafeFinallyAndFailureCallbacks(block = {
         logInfo(s"Creating Iceberg table metadata for data files in $sourceName")
-        val addBatch = addFiles(conf, version, applicationId, mcCatalog, db, tempName)
+        val addBatch = addFiles(conf.value, version, applicationId, mcCatalog, db, tempName)
         val iterator: Iterator[SparkDataFile] = files.orderBy($"path").collectAsIterator()
         iterator.grouped(500000).foreach(addBatch)
 
