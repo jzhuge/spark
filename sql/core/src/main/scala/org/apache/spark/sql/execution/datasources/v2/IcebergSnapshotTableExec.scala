@@ -20,8 +20,6 @@ package org.apache.spark.sql.execution.datasources.v2
 import scala.collection.JavaConverters._
 
 import com.netflix.iceberg.metacat.MetacatTables
-import com.netflix.iceberg.spark.SparkTableUtil
-import com.netflix.iceberg.spark.SparkTableUtil.SparkDataFile
 import org.apache.hadoop.conf.Configuration
 
 import org.apache.spark.SparkException
@@ -31,8 +29,9 @@ import org.apache.spark.sql.catalog.v2.{CatalogV2Implicits, TableCatalog}
 import org.apache.spark.sql.catalyst.{InternalRow, TableIdentifier}
 import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.execution.LeafExecNode
+import org.apache.spark.sql.execution.datasources.v2.IcebergUtil.SparkDataFile
 import org.apache.spark.sql.functions._
-import org.apache.spark.util.Utils
+import org.apache.spark.util.{SerializableConfiguration, Utils}
 
 case class IcebergSnapshotTableExec(
     catalog: TableCatalog,
@@ -47,7 +46,7 @@ case class IcebergSnapshotTableExec(
   override protected def doExecute(): RDD[InternalRow] = {
     import spark.implicits._
 
-    val conf = spark.sparkContext.hadoopConfiguration
+    val conf = new SerializableConfiguration(spark.sparkContext.hadoopConfiguration)
     val version = spark.version
     val applicationId = spark.sparkContext.applicationId
     val hiveEnv = spark.sparkContext.hadoopConfiguration.get("spark.sql.hive.env", "prod")
@@ -58,7 +57,7 @@ case class IcebergSnapshotTableExec(
     // use the default table catalog
     val source = spark.catalog(None).asTableCatalog.loadTable(sourceTable)
     val sourceName = s"${sourceTable.database.get}.${sourceTable.table}"
-    val partitions: DataFrame = SparkTableUtil.partitionDF(spark, sourceName)
+    val partitions: DataFrame = IcebergUtil.partitionDF(spark, sourceName)
 
     val nonParquetPartitions = partitions.filter(not($"format".contains("parquet"))).count()
     if (nonParquetPartitions > 0) {
@@ -67,7 +66,7 @@ case class IcebergSnapshotTableExec(
 
     val files = partitions.repartition(1000).as[TablePartition].flatMap { p =>
       // list the partition and read Parquet footers to get metrics
-      SparkTableUtil.listPartition(p.partition, p.uri, p.format)
+      IcebergUtil.listPartition(conf.value, p.partition, p.uri, p.format)
     }
 
     logInfo(s"Creating new snapshot Iceberg table $targetTable from $sourceTable")
@@ -79,7 +78,7 @@ case class IcebergSnapshotTableExec(
 
     Utils.tryWithSafeFinallyAndFailureCallbacks(block = {
       logInfo(s"Creating Iceberg table metadata for data files in $sourceTable")
-      val addBatch = addFiles(conf, version, applicationId, mcCatalog, db, name)
+      val addBatch = addFiles(conf.value, version, applicationId, mcCatalog, db, name)
       val iterator: Iterator[SparkDataFile] = files.orderBy($"path").collectAsIterator()
       iterator.grouped(500000).foreach(addBatch)
     })(catchBlock = {
