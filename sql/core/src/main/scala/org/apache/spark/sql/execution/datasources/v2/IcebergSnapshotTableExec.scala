@@ -79,7 +79,10 @@ case class IcebergSnapshotTableExec(
     Utils.tryWithSafeFinallyAndFailureCallbacks(block = {
       logInfo(s"Creating Iceberg table metadata for data files in $sourceTable")
       val addBatch = addFiles(conf.value, version, applicationId, mcCatalog, db, name)
-      val iterator: Iterator[SparkDataFile] = files.orderBy($"path").collectAsIterator()
+      val iterator: Iterator[SparkDataFile] = files
+          .repartition(1000)
+          .orderBy($"path")
+          .collectAsIterator()
       iterator.grouped(500000).foreach(addBatch)
     })(catchBlock = {
       catalog.dropTable(targetTable)
