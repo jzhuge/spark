@@ -51,7 +51,16 @@ build/mvn --quiet versions:set -DnewVersion=$SPARK_VERSION -DgenerateBackupPoms=
 dev/make-distribution.sh --tgz -P${HADOOP_VERSION_PROFILE} -Pmesos -Pyarn -Phive-thriftserver -Psparkr -Pkinesis-asl -Phadoop-provided
 
 # deploy yarn shuffle jar
-build/mvn deploy -pl common/network-yarn -Pyarn
+scala_binary_version=$(build/mvn help:evaluate -Dexpression=scala.binary.version -q -DforceStdout)
+shuffle_jar=$(build/mvn help:evaluate -Dexpression=shuffle.jar -q -DforceStdout -pl common/network-yarn/ -Pyarn)
+mvn deploy:deploy-file \
+  -DgroupId=org.apache.spark \
+  -DartifactId=spark-yarn-shuffle_${scala_binary_version} \
+  -Dversion=${SPARK_VERSION} \
+  -Dpackaging=jar \
+  -Dfile=${shuffle_jar} \
+  -DrepositoryId=central \
+  -Durl=http://artifacts.netflix.com/libs-releases-local-pom
 
 rm -rf spark-*-bin-${HADOOP_VERSION}
 tar -xf spark-${SPARK_VERSION}-bin-${HADOOP_VERSION}.tgz

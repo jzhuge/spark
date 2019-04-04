@@ -177,28 +177,6 @@
           </execution>
         </executions>
       </plugin>
-
-      <!-- Deploy yarn shuffle jar -->
-      <plugin>
-        <artifactId>maven-deploy-plugin</artifactId>
-        <executions>
-          <execution>
-            <id>deploy-file</id>
-            <phase>deploy</phase>
-            <goals>
-              <goal>deploy-file</goal>
-            </goals>
-            <configuration>
-              <file>${shuffle.jar}</file>
-              <url>http://artifacts.netflix.com/libs-releases-local-pom</url>
-              <groupId>org.apache.spark</groupId>
-              <artifactId>spark-yarn-shuffle_${scala.binary.version}</artifactId>
-              <version>{project.version}</version>
-              <packaging>jar</packaging>
-            </configuration>
-          </execution>
-        </executions>
-      </plugin>
     </plugins>
   </build>
 </project>
