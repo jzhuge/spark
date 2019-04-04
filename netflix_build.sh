@@ -52,7 +52,7 @@ dev/make-distribution.sh --tgz -P${HADOOP_VERSION_PROFILE} -Pmesos -Pyarn -Phive
 
 # deploy yarn shuffle jar
 scala_binary_version=$(build/mvn help:evaluate -Dexpression=scala.binary.version -q -DforceStdout)
-shuffle_jar=$(build/mvn help:evaluate -Dexpression=shuffle.jar -q -DforceStdout -Dartifact=org.apache.spark:spark-network-yarn_${scala_binary_version}:${SPARK_VERSION})
+shuffle_jar=$(build/mvn help:evaluate -Dexpression=shuffle.jar -q -DforceStdout -pl common/network-yarn/ -Pyarn)
 mvn deploy:deploy-file \
   -DgroupId=org.apache.spark \
   -DartifactId=spark-yarn-shuffle_${scala_binary_version} \
