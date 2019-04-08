@@ -21,6 +21,7 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.databind.SerializationFeature.ORDER_MAP_ENTRIES_BY_KEYS
 import com.jayway.jsonpath.{JsonPath, JsonPathException}
 
+import org.apache.spark.SparkException
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.unsafe.types.UTF8String
@@ -36,8 +37,14 @@ object NetflixJsonUtils {
     if (jsonStr == null) {
       return null
     }
-    val parsedData = JsonPath.parse(jsonStr.toString)
-    parsedData.read(jsonPath.toString)
+
+    try {
+      val parsedData = JsonPath.parse(jsonStr.toString)
+      parsedData.read(jsonPath.toString)
+    } catch {
+      case e: JsonPathException =>
+        throw new SparkException(s"Failed to process JSON for value: $jsonStr", e)
+    }
   }
 
   def getJsonAsString(input: Any): UTF8String = {
