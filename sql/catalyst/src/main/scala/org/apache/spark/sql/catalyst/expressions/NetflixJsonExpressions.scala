@@ -48,12 +48,11 @@ case class NfJsonExtract(json: Expression, jsonPath: Expression)
   override def prettyName: String = "nf_json_extract"
 
   override def eval(input: InternalRow): Any = {
-    try {
       val extractedValue = extractJsonFromInternalRow(input, json, jsonPath)
+      if (extractedValue == null) {
+        return null
+      }
       getJsonAsString(extractedValue)
-    } catch {
-      case _: JsonPathException => null
-    }
   }
 }
 
@@ -75,7 +74,6 @@ case class NfJsonExtractScalar(json: Expression, jsonPath: Expression)
   override def prettyName: String = "nf_json_extract_scalar"
 
   override def eval(input: InternalRow): Any = {
-    try {
       val extractedValue = extractJsonFromInternalRow(input, json, jsonPath)
       if (extractedValue != null) {
         if (extractedValue.isInstanceOf[java.lang.Number] ||
@@ -85,9 +83,6 @@ case class NfJsonExtractScalar(json: Expression, jsonPath: Expression)
         }
       }
       null
-    } catch {
-      case _: JsonPathException => null
-    }
   }
 }
 
@@ -111,6 +106,9 @@ case class NfJsonExtractArray(json: Expression, jsonPath: Expression)
   override def eval(input: InternalRow): Any = {
     val extractedValue = extractJsonFromInternalRow(input, json, jsonPath)
     val result = new ArrayBuffer[UTF8String]
+    if (extractedValue == null) {
+      return null
+    }
     if (extractedValue.isInstanceOf[ArrayList[Any]]) {
       val matchesArray = extractedValue.asInstanceOf[ArrayList[Any]]
       if (matchesArray.isEmpty) {
@@ -119,9 +117,10 @@ case class NfJsonExtractArray(json: Expression, jsonPath: Expression)
       for (data <- matchesArray.asScala) {
         result.append(getJsonAsString(data))
       }
-    } else {
-      result.append(getJsonAsString(extractedValue))
       }
-    ArrayData.toArrayData(result.toArray)
+    else {
+      result.append(getJsonAsString(extractedValue))
     }
+    ArrayData.toArrayData(result.toArray)
+  }
 }
