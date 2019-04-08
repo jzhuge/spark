@@ -42,8 +42,7 @@ object NetflixJsonUtils {
       val parsedData = JsonPath.parse(jsonStr.toString)
       parsedData.read(jsonPath.toString)
     } catch {
-      case e: JsonPathException =>
-        throw new SparkException(s"Failed to process JSON for value: $jsonStr", e)
+      case e: JsonPathException => null
     }
   }
 
