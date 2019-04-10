@@ -20,6 +20,8 @@
 Wrapper for run.py that sets up arguments for sql-runner.py.
 """
 
+import os, sys
+
 FLAGS_TO_REMOVE = set(['-H', '-S', '--silent', '-v', '--verbose'])
 
 def getenv(name, default=None, required=True):
