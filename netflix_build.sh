@@ -80,6 +80,8 @@ echo ${BUILD_NUMBER} > ${WORKSPACE}/spark-${BUILD_VERSION}/BUILD
 
 # Add run.py
 cp netflix/run.py ${WORKSPACE}/spark-${BUILD_VERSION}/bin/run.py
+cp netflix/run-sql.py ${WORKSPACE}/spark-${BUILD_VERSION}/bin/run-sql.py
+cp netflix/sql-runner.py ${WORKSPACE}/spark-${BUILD_VERSION}/bin/sql-runner.py
 cp netflix/run-history.py ${WORKSPACE}/spark-${BUILD_VERSION}/bin/run-history.py
 
 # Overwrite dsespark-shell and dsespark-submit
