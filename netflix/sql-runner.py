@@ -173,7 +173,7 @@ def main(args):
         io.close()
 
     # run the final statement and write its result as TSV to stdout
-    LOG.info("Running output SQL: " + statement)
+    LOG.info("Running output SQL: " + output_statement)
     output_df = spark.sql(output_statement)
     writer = csv.writer(sys.stdout, delimiter="\t", quotechar='"', escapechar='\\', lineterminator="\n")
     if print_header:
