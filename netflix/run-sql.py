@@ -67,6 +67,8 @@ def main(args):
     command = '%s/bin/run.py' % spark_home
     command_args = [command]
     command_args.extend(spark_args)
+    command_args.append('--deploy-mode')
+    command_args.append('client')
     command_args.append('%s/bin/sql-runner.py' % spark_home)
     command_args.extend(sql_args)
 
