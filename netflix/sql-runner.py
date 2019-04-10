@@ -2,6 +2,11 @@
 
 import os, sys
 import logging
+import csv
+try:
+    from StringIO import StringIO
+except ImportError:
+    from io import StringIO
 from pyspark.sql import SparkSession
 
 logging.basicConfig(
@@ -157,15 +162,24 @@ def main(args):
     output_statement = statements[-1]
 
     for statement in intermediate_statements:
-        # run the statement and print the result to stderr using pandas
+        # run the statement and log the result
         LOG.info("Running intermediate SQL: " + statement)
-        pdf = spark.sql(statement).toPandas()
-        LOG.info("Result:\n" + pdf.to_string(header=print_header, index=False))
+        df = spark.sql(statement)
+        io = StringIO()
+        writer = csv.writer(io, delimiter="\t", quotechar='"', escapechar='\\', lineterminator="\n")
+        writer.writerow(df.columns)
+        writer.writerows(df.collect())
+        LOG.info("Result:\n" + io.getvalue())
+        io.close()
 
     # run the final statement and write its result as TSV to stdout
     LOG.info("Running output SQL: " + statement)
-    output_pdf = spark.sql(output_statement).toPandas()
-    output_pdf.to_csv(sys.stdout, header=print_header, index=False)
+    output_df = spark.sql(output_statement)
+    writer = csv.writer(sys.stdout, delimiter="\t", quotechar='"', escapechar='\\', lineterminator="\n")
+    if print_header:
+        writer.writerow(output_df.columns)
+    writer.writerows(output_df.collect())
+    sys.stdout.flush()
 
 
 if __name__ == '__main__':
