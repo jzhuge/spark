@@ -18,10 +18,9 @@
 package org.apache.spark.sql.catalyst.expressions
 import java.util.ArrayList
 
-import com.jayway.jsonpath.JsonPathException
-
 import scala.collection.JavaConverters._
 import scala.collection.mutable.ArrayBuffer
+
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.codegen.CodegenFallback
 import org.apache.spark.sql.catalyst.util.ArrayData
