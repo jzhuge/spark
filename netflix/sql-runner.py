@@ -95,6 +95,9 @@ def main(args):
     # configure the SparkSession builder
     session_builder = SparkSession.builder.appName('SparkSQL Runner')
 
+    # get the current database
+    database, args = get_value(args, '--database')
+
     # translate --hiveconf, --hivevar, and -d/--define args
     hiveconfs, args = get_values(args, '--hiveconf')
     for hiveconf in hiveconfs:
@@ -134,6 +137,8 @@ def main(args):
 
     # get the sequence of statements to run
     statements = []
+    if database:
+        statements.extend('USE ' + database)
     statements.extend(parse_statements(read_code_block(setup)))
     statements.extend(parse_statements(query))
     statements.extend(parse_statements(read_code_block(script)))

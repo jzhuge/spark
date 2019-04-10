@@ -63,11 +63,11 @@ def main(args):
     args = [ arg for arg in args if arg not in FLAGS_TO_REMOVE ]
 
     # separate the run-sql arguments from the Spark arguments
-    sql_args, spark_args = get_all(args, '--hiveconf', '--hivevar', '-d', '--define')
+    sql_args, spark_args = get_all(args, '--hiveconf', '--hivevar', '-d', '--define', '-e', '--database', '-f', '-i')
 
     # build the final command args
     command = '%s/bin/run.py' % spark_home
-    command_args = [command]
+    command_args = [command, 'spark-submit']
     command_args.extend(spark_args)
     command_args.append('--deploy-mode')
     command_args.append('client')
