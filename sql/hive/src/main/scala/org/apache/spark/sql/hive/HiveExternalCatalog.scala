@@ -748,7 +748,7 @@ private[spark] class HiveExternalCatalog(conf: SparkConf, hadoopConf: Configurat
       // NFLX: Spark will overwrite the location with the "path" from serde options, but this may
       // be a batch pattern path. If it has a batchid folder, use the URI location instead.
       storage.locationUri match {
-        case HasBatchID(_) =>
+        case Some(HasBatchID(_)) =>
           storage
         case _ =>
           storage.copy(locationUri = tableLocation)
