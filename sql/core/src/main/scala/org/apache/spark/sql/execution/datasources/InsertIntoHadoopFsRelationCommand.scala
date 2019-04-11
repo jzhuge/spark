@@ -157,6 +157,12 @@ case class InsertIntoHadoopFsRelationCommand(
         bucketSpec = bucketSpec,
         refreshFunction = refreshFunction,
         options = options)
+
+      // refresh the table because its partitions and location may have changed
+      catalogTable.foreach { table =>
+        sparkSession.sessionState.catalog.refreshTable(table.identifier)
+      }
+
     } else {
       logInfo("Skipping insertion into a relation that already exists.")
     }
