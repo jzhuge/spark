@@ -17,6 +17,7 @@
 
 package org.apache.spark.sql.catalyst.plans.logical.statsEstimation
 
+import org.apache.spark.sql.catalyst.planning.PhysicalOperation
 import org.apache.spark.sql.catalyst.plans.logical._
 
 /**
@@ -39,8 +40,11 @@ object BasicStatsPlanVisitor extends LogicalPlanVisitor[Statistics] {
 
   override def visitExpand(p: Expand): Statistics = fallback(p)
 
-  override def visitFilter(p: Filter): Statistics = {
-    FilterEstimation(p).estimate.getOrElse(fallback(p))
+  override def visitFilter(p: Filter): Statistics = p match {
+    case PhysicalOperation(projection, filters, relation: SupportsPhysicalStats) =>
+      relation.computeStats(projection, filters)
+    case _ =>
+      FilterEstimation(p).estimate.getOrElse(fallback(p))
   }
 
   override def visitGenerate(p: Generate): Statistics = fallback(p)
@@ -59,8 +63,11 @@ object BasicStatsPlanVisitor extends LogicalPlanVisitor[Statistics] {
 
   override def visitPivot(p: Pivot): Statistics = fallback(p)
 
-  override def visitProject(p: Project): Statistics = {
-    ProjectEstimation.estimate(p).getOrElse(fallback(p))
+  override def visitProject(p: Project): Statistics = p match {
+    case PhysicalOperation(projection, filters, relation: SupportsPhysicalStats) =>
+      relation.computeStats(projection, filters)
+    case _ =>
+      ProjectEstimation.estimate(p).getOrElse(fallback(p))
   }
 
   override def visitRepartition(p: Repartition): Statistics = fallback(p)
