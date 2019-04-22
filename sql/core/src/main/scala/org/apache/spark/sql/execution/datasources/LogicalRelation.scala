@@ -17,7 +17,7 @@
 package org.apache.spark.sql.execution.datasources
 
 import org.apache.spark.sql.catalyst.analysis.MultiInstanceRelation
-import org.apache.spark.sql.catalyst.catalog.{CatalogRelation, CatalogTable, MaybeCatalogRelation}
+import org.apache.spark.sql.catalyst.catalog.{CatalogRelation, CatalogStatistics, CatalogTable, MaybeCatalogRelation}
 import org.apache.spark.sql.catalyst.expressions.{AttributeMap, AttributeReference}
 import org.apache.spark.sql.catalyst.plans.QueryPlan
 import org.apache.spark.sql.catalyst.plans.logical.{LeafNode, LogicalPlan, Statistics}
@@ -57,9 +57,13 @@ case class LogicalRelation(
     catalogTable = None)
 
   override def computeStats(): Statistics = {
-    catalogTable
-      .flatMap(_.stats.map(_.toPlanStats(output, conf.cboEnabled)))
-      .getOrElse(Statistics(sizeInBytes = relation.sizeInBytes))
+    // Build a CatalogStatistics from relation
+    // if catalogTable does not exist or it doesn't have stats
+    val stats = catalogTable.flatMap(_.stats)
+      .getOrElse(CatalogStatistics(relation.sizeInBytes, relation.rowCount))
+    val tableName = catalogTable.map(_.identifier).getOrElse(relation).toString
+    // Override rowCount in catalogTable stats if the relation has rowCount
+    stats.toPlanStats(output, tableName, relation.rowCount)
   }
 
   /** Used to lookup original attribute capitalization */
