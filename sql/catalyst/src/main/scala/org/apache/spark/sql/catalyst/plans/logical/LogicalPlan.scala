@@ -239,9 +239,7 @@ trait SupportsPhysicalStats extends LeafNode {
   /**
    * Used to return statistics when filters and projection are available.
    */
-  def computeStats(projection: Seq[NamedExpression], filters: Seq[Expression]): Statistics = {
-    computeStats()
-  }
+  def computeStats(projection: Seq[NamedExpression], filters: Seq[Expression]): Statistics
 }
 
 /**

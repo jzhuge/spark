@@ -17,7 +17,7 @@
 package org.apache.spark.sql.execution.datasources
 
 import org.apache.spark.sql.catalyst.analysis.MultiInstanceRelation
-import org.apache.spark.sql.catalyst.catalog.{CatalogRelation, CatalogTable, MaybeCatalogRelation}
+import org.apache.spark.sql.catalyst.catalog.{CatalogRelation, CatalogStatistics, CatalogTable, MaybeCatalogRelation}
 import org.apache.spark.sql.catalyst.expressions.{AttributeMap, AttributeReference}
 import org.apache.spark.sql.catalyst.plans.QueryPlan
 import org.apache.spark.sql.catalyst.plans.logical.{LeafNode, LogicalPlan, Statistics}
@@ -57,32 +57,13 @@ case class LogicalRelation(
     catalogTable = None)
 
   override def computeStats(): Statistics = {
-    if (conf.cboEnabled || !conf.rowCountStatsEnabled) {
-      catalogTable
-        .flatMap(_.stats.map(_.toPlanStats(output, conf.cboEnabled)))
-        .getOrElse(Statistics(sizeInBytes = relation.sizeInBytes))
-    } else {
-      val numRows = relation.rowCount
-      val tableName = catalogTable.map(_.identifier).getOrElse(relation).toString
-      val sizeInBytes: BigInt = numRows match {
-        case Some(rowEstimate) =>
-          // if the row count is present, use it to estimate size because size on disk may be
-          // columnar but the size that matters is the size in memory
-          val rowSizeEstimate = output.map(_.dataType.defaultSize).sum + 8
-          val sizeEstimate = rowEstimate * rowSizeEstimate
-          logInfo(s"Row-based size estimate for $tableName: " +
-            s"$rowEstimate rows * $rowSizeEstimate bytes = $sizeEstimate bytes")
-          sizeEstimate
-        case _ =>
-          // fall back to the size on disk
-          logInfo(s"Fallback size estimate for $tableName: ${relation.sizeInBytes}")
-          relation.sizeInBytes
-      }
-
-      catalogTable
-        .flatMap(_.stats.map(_.toPlanStats(output, conf.cboEnabled).copy(sizeInBytes, numRows)))
-        .getOrElse(Statistics(sizeInBytes = sizeInBytes, rowCount = numRows))
-    }
+    // Build a CatalogStatistics from relation
+    // if catalogTable does not exist or it doesn't have stats
+    val stats = catalogTable.flatMap(_.stats)
+      .getOrElse(CatalogStatistics(relation.sizeInBytes, relation.rowCount))
+    val tableName = catalogTable.map(_.identifier).getOrElse(relation).toString
+    // Override rowCount in catalogTable stats if the relation has rowCount
+    stats.toPlanStats(output, tableName, knownRowCount = relation.rowCount)
   }
 
   /** Used to lookup original attribute capitalization */

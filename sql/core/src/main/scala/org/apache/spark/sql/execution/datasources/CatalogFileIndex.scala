@@ -35,6 +35,7 @@ import org.apache.spark.sql.{BatchIdPathFilter, Filters, HiddenPathFilter, Spark
 import org.apache.spark.sql.catalyst.catalog.CatalogTable
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.types.StructType
+import org.apache.spark.util.Utils.HumanReadableCount
 
 
 /**
@@ -46,7 +47,7 @@ import org.apache.spark.sql.types.StructType
 class CatalogFileIndex(
     sparkSession: SparkSession,
     val table: CatalogTable,
-    val dataSize: Long) extends FileIndex {
+    val dataSize: Long) extends FileIndex with Logging {
 
   protected val hadoopConf: Configuration = sparkSession.sessionState.newHadoopConf()
 
@@ -93,13 +94,20 @@ class CatalogFileIndex(
           path.makeQualified(fs.getUri, fs.getWorkingDirectory))
       }
       val numPartitions = partitions.size
+      val tableName = table.identifier.toString
       // base size on row count if at least half of the partitions have a row count
-      val rowEstimate: Option[BigInt] = if (missingRowCount <= numPartitions / 2) {
-        val scaleFactor = numPartitions.toFloat / (numPartitions - missingRowCount)
-        Some((scaleFactor * totalRows).toLong)
-      } else {
-        None
-      }
+      val rowEstimate: Option[BigInt] =
+        if (numPartitions > 0 && missingRowCount <= numPartitions / 2) {
+          val scaleFactor = numPartitions.toFloat / (numPartitions - missingRowCount)
+          val estimate = (scaleFactor * totalRows).toLong
+          logInfo(s"Row estimate for $tableName: ${estimate.toHumanCount} = " +
+            s"${totalRows.toHumanCount} * $numPartitions / ($numPartitions - $missingRowCount)")
+          Some(estimate)
+        } else {
+          logWarning(s"No row estimate for $tableName: " +
+            s"numPartitions=$numPartitions missingRowCount=$missingRowCount")
+          None
+        }
 
       val partitionSpec = PartitionSpec(partitionSchema, partitions)
       new PrunedInMemoryFileIndex(
@@ -121,11 +129,9 @@ class CatalogFileIndex(
 
   private lazy val conf = sparkSession.sqlContext.conf
 
-  override def sizeInBytes: Long =
-    if (conf.rowCountStatsEnabled) allPartitions.sizeInBytes else dataSize
+  override def sizeInBytes: Long = allPartitions.sizeInBytes
 
-   override def rowCount: Option[BigInt] =
-     if (conf.rowCountStatsEnabled) allPartitions.rowCount else super.rowCount
+  override def rowCount: Option[BigInt] = allPartitions.rowCount
 
   // `CatalogFileIndex` may be a member of `HadoopFsRelation`, `HadoopFsRelation` may be a member
   // of `LogicalRelation`, and `LogicalRelation` may be used as the cache key. So we need to
@@ -180,7 +186,7 @@ private class PrunedInMemoryFileIndex(
     tableBasePath: Path,
     fileStatusCache: FileStatusCache,
     override val partitionSpec: PartitionSpec,
-    override val rowCount: Option[BigInt])
+    override val rowCount: Option[scala.BigInt] = None)
   extends InMemoryFileIndex(
     sparkSession,
     partitionSpec.partitions.map(_.path),

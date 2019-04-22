@@ -22,6 +22,7 @@ import java.util.Date
 
 import scala.collection.mutable
 
+import org.apache.spark.internal.Logging
 import org.apache.spark.sql.AnalysisException
 import org.apache.spark.sql.catalyst.{FunctionIdentifier, InternalRow, TableIdentifier}
 import org.apache.spark.sql.catalyst.analysis.MultiInstanceRelation
@@ -31,6 +32,7 @@ import org.apache.spark.sql.catalyst.plans.logical.statsEstimation.EstimationUti
 import org.apache.spark.sql.catalyst.util.{CaseInsensitiveMap, DateTimeUtils}
 import org.apache.spark.sql.catalyst.util.quoteIdentifier
 import org.apache.spark.sql.types.StructType
+import org.apache.spark.util.Utils.{HumanReadableBytes, HumanReadableCount}
 
 
 /**
@@ -379,22 +381,28 @@ object CatalogTable {
 case class CatalogStatistics(
     sizeInBytes: BigInt,
     rowCount: Option[BigInt] = None,
-    colStats: Map[String, ColumnStat] = Map.empty) {
+    colStats: Map[String, ColumnStat] = Map.empty) extends Logging {
 
   /**
    * Convert [[CatalogStatistics]] to [[Statistics]], and match column stats to attributes based
    * on column names.
    */
-  def toPlanStats(planOutput: Seq[Attribute], cboEnabled: Boolean): Statistics = {
-    if (cboEnabled && rowCount.isDefined) {
-      val attrStats = AttributeMap(planOutput.flatMap(a => colStats.get(a.name).map(a -> _)))
-      // Estimate size as number of rows * row size.
-      val size = EstimationUtils.getOutputSize(planOutput, rowCount.get, attrStats)
-      Statistics(sizeInBytes = size, rowCount = rowCount, attributeStats = attrStats)
-    } else {
-      // When CBO is disabled or the table doesn't have other statistics, we apply the size-only
-      // estimation strategy and only propagate sizeInBytes in statistics.
-      Statistics(sizeInBytes = sizeInBytes)
+  def toPlanStats(
+      planOutput: Seq[Attribute],
+      tableName: String,
+      knownRowCount: Option[BigInt] = None): Statistics = {
+    knownRowCount.orElse(rowCount) match {
+      case Some(numRows) =>
+        val attrStats = AttributeMap(planOutput.flatMap(a => colStats.get(a.name).map(a -> _)))
+        // Estimate size as number of rows * row size.
+        val size = EstimationUtils.getOutputSize(planOutput, numRows, attrStats)
+        logInfo(s"Row-based size estimate for $tableName: ${numRows.toHumanCount} rows " +
+          s"${size.toHumanBytes} (fallback ${sizeInBytes.toHumanBytes})")
+        Statistics(sizeInBytes = size, rowCount = Some(numRows), attributeStats = attrStats)
+      case _ =>
+        // Apply the size-only estimation strategy and only propagate sizeInBytes in statistics.
+        logInfo(s"Fallback size estimate for $tableName: ${sizeInBytes.toHumanBytes}")
+        Statistics(sizeInBytes = sizeInBytes)
     }
   }
 
@@ -483,7 +491,8 @@ case class HiveTableRelation(
   )
 
   override def computeStats(): Statistics = {
-    tableMeta.stats.map(_.toPlanStats(output, conf.cboEnabled)).getOrElse {
+    val tableName = catalogTable.identifier.toString
+    tableMeta.stats.map(_.toPlanStats(output, tableName)).getOrElse {
       throw new IllegalStateException("table stats must be specified.")
     }
   }

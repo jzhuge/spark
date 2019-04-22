@@ -18,6 +18,7 @@
 package org.apache.spark.sql.catalyst.plans.logical.statsEstimation
 
 import org.apache.spark.sql.catalyst.expressions.AttributeMap
+import org.apache.spark.sql.catalyst.planning.PhysicalOperation
 import org.apache.spark.sql.catalyst.plans.{LeftAnti, LeftSemi}
 import org.apache.spark.sql.catalyst.plans.logical._
 
@@ -76,7 +77,12 @@ object SizeInBytesOnlyStatsPlanVisitor extends LogicalPlanVisitor[Statistics] {
     Statistics(sizeInBytes = sizeInBytes)
   }
 
-  override def visitFilter(p: Filter): Statistics = visitUnaryNode(p)
+  override def visitFilter(p: Filter): Statistics = p match {
+    case PhysicalOperation(projection, filters, relation: SupportsPhysicalStats) =>
+      relation.computeStats(projection, filters)
+    case _ =>
+      visitUnaryNode(p)
+  }
 
   override def visitGenerate(p: Generate): Statistics = default(p)
 
@@ -133,7 +139,12 @@ object SizeInBytesOnlyStatsPlanVisitor extends LogicalPlanVisitor[Statistics] {
 
   override def visitPivot(p: Pivot): Statistics = default(p)
 
-  override def visitProject(p: Project): Statistics = visitUnaryNode(p)
+  override def visitProject(p: Project): Statistics = p match {
+    case PhysicalOperation(projection, filters, relation: SupportsPhysicalStats) =>
+      relation.computeStats(projection, filters)
+    case _ =>
+      visitUnaryNode(p)
+  }
 
   override def visitRepartition(p: Repartition): Statistics = default(p)
 
