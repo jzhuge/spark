@@ -32,7 +32,7 @@ import org.apache.spark.sql.catalyst.plans.logical.statsEstimation.EstimationUti
 import org.apache.spark.sql.catalyst.util.{CaseInsensitiveMap, DateTimeUtils}
 import org.apache.spark.sql.catalyst.util.quoteIdentifier
 import org.apache.spark.sql.types.StructType
-import org.apache.spark.util.Utils.bytesToString
+import org.apache.spark.util.Utils.{HumanReadableBytes, HumanReadableCount}
 
 
 /**
@@ -390,18 +390,18 @@ case class CatalogStatistics(
   def toPlanStats(
       planOutput: Seq[Attribute],
       tableName: String,
-      rowCountOverride: Option[BigInt] = None): Statistics = {
-    rowCountOverride.orElse(rowCount) match {
+      knownRowCount: Option[BigInt] = None): Statistics = {
+    knownRowCount.orElse(rowCount) match {
       case Some(numRows) =>
         val attrStats = AttributeMap(planOutput.flatMap(a => colStats.get(a.name).map(a -> _)))
         // Estimate size as number of rows * row size.
         val size = EstimationUtils.getOutputSize(planOutput, numRows, attrStats)
-        logInfo(s"Row-based size estimate for $tableName: " +
-          s"$numRows rows ${bytesToString(size)} (fallback ${bytesToString(sizeInBytes)})")
+        logInfo(s"Row-based size estimate for $tableName: ${numRows.toHumanCount} rows " +
+          s"${size.toHumanBytes} (fallback ${sizeInBytes.toHumanBytes})")
         Statistics(sizeInBytes = size, rowCount = Some(numRows), attributeStats = attrStats)
       case _ =>
         // Apply the size-only estimation strategy and only propagate sizeInBytes in statistics.
-        logInfo(s"Fallback size estimate for $tableName: ${bytesToString(sizeInBytes)}")
+        logInfo(s"Fallback size estimate for $tableName: ${sizeInBytes.toHumanBytes}")
         Statistics(sizeInBytes = sizeInBytes)
     }
   }

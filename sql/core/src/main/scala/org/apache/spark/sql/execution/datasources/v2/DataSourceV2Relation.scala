@@ -30,6 +30,7 @@ import org.apache.spark.sql.sources.v2.reader._
 import org.apache.spark.sql.sources.v2.writer.DataSourceWriter
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.util.Utils
+import org.apache.spark.util.Utils.{HumanReadableBytes, HumanReadableCount}
 
 /**
  * A logical plan representing a data source v2 scan.
@@ -97,26 +98,28 @@ case class DataSourceV2Relation(
   override def computeStats(
       projection: Seq[NamedExpression],
       filters: Seq[Expression]): Statistics = newReader() match {
-      case r: SupportsReportStatistics =>
-        DataSourceV2Strategy.pushFilters(r, filters)
-        val stats = r.getStatistics
+    case r: SupportsReportStatistics =>
+      DataSourceV2Strategy.pushFilters(r, filters)
+      val stats = r.getStatistics
+      val fallbackSizeEstimate = stats.sizeInBytes().orElse(conf.defaultSizeInBytes)
+      val ident = tableIdentifier
 
-        if (stats.numRows.isPresent) {
-          val numRows = stats.numRows.getAsLong
-          val rowSizeEstimate = projection.map(_.dataType.defaultSize).sum + 8
-          val sizeEstimate = numRows * rowSizeEstimate
-          logInfo(s"Row-based size estimate for ${catalogTable.identifier}: " +
-            s"$numRows rows * $rowSizeEstimate bytes = $sizeEstimate bytes")
-          Statistics(sizeInBytes = sizeEstimate, rowCount = Some(numRows))
-        } else {
-          logInfo(s"Fallback size estimate for ${catalogTable.identifier}: ${stats.sizeInBytes}")
-          Statistics(sizeInBytes = r.getStatistics.sizeInBytes().orElse(conf.defaultSizeInBytes))
-        }
+      if (stats.numRows.isPresent) {
+        val numRows = stats.numRows.getAsLong
+        val rowSizeEstimate = projection.map(_.dataType.defaultSize).sum + 8
+        val sizeEstimate = numRows * rowSizeEstimate
+        logInfo(s"Row-based size estimate for $ident: " +
+          s"${numRows.toHumanCount} rows * $rowSizeEstimate bytes = " +
+          s"${sizeEstimate.toHumanBytes} (fallback ${fallbackSizeEstimate.toHumanBytes})")
+        Statistics(sizeInBytes = sizeEstimate, rowCount = Some(numRows))
+      } else {
+        logInfo(s"Fallback size estimate for $ident: ${fallbackSizeEstimate.toHumanBytes}")
+        Statistics(sizeInBytes = fallbackSizeEstimate)
+      }
 
-      case _ =>
-        logInfo(s"Default size estimate for ${catalogTable.identifier}: ${conf.defaultSizeInBytes}")
-        Statistics(sizeInBytes = conf.defaultSizeInBytes)
-    }
+    case _ =>
+      Statistics(sizeInBytes = conf.defaultSizeInBytes)
+  }
 
   override def computeStats(): Statistics = newReader match {
     case r: SupportsReportStatistics =>
@@ -206,21 +209,23 @@ case class TableV2Relation(
     case r: SupportsReportStatistics =>
       DataSourceV2Strategy.pushFilters(r, filters)
       val stats = r.getStatistics
+      val fallbackSizeEstimate = stats.sizeInBytes().orElse(conf.defaultSizeInBytes)
 
       if (stats.numRows.isPresent) {
         val numRows = stats.numRows.getAsLong
         val rowSizeEstimate = projection.map(_.dataType.defaultSize).sum + 8
         val sizeEstimate = numRows * rowSizeEstimate
         logInfo(s"Row-based size estimate for $ident: " +
-            s"$numRows rows * $rowSizeEstimate bytes = $sizeEstimate bytes")
+          s"${numRows.toHumanCount} rows * $rowSizeEstimate bytes = " +
+          s"${sizeEstimate.toHumanBytes} (fallback ${fallbackSizeEstimate.toHumanBytes})")
         Statistics(sizeInBytes = sizeEstimate, rowCount = Some(numRows))
       } else {
-        logInfo(s"Fallback size estimate for $ident: ${stats.sizeInBytes}")
-        Statistics(sizeInBytes = r.getStatistics.sizeInBytes().orElse(conf.defaultSizeInBytes))
+        logInfo(s"Fallback size estimate for $ident: ${fallbackSizeEstimate.toHumanBytes}")
+        Statistics(sizeInBytes = fallbackSizeEstimate)
       }
 
     case _ =>
-      logInfo(s"Default size estimate for $ident: ${conf.defaultSizeInBytes}")
+      logInfo(s"Default size estimate for $ident: ${conf.defaultSizeInBytes.toHumanBytes}")
       Statistics(sizeInBytes = conf.defaultSizeInBytes)
   }
 

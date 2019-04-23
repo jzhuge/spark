@@ -63,7 +63,7 @@ case class LogicalRelation(
       .getOrElse(CatalogStatistics(relation.sizeInBytes, relation.rowCount))
     val tableName = catalogTable.map(_.identifier).getOrElse(relation).toString
     // Override rowCount in catalogTable stats if the relation has rowCount
-    stats.toPlanStats(output, tableName, relation.rowCount)
+    stats.toPlanStats(output, tableName, knownRowCount = relation.rowCount)
   }
 
   /** Used to lookup original attribute capitalization */
