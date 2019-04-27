@@ -1197,22 +1197,6 @@ private[spark] object Utils extends Logging {
     }
   }
 
-  implicit class HumanReadableBytes[T](size: T) {
-    def toHumanBytes: String = size match {
-      case bi: BigInt => bytesToString(bi)
-      case l: Long => bytesToString(l)
-      case _ => size.toString
-    }
-  }
-
-  implicit class HumanReadableCount[T](count: T) {
-    def toHumanCount: String = count match {
-      case bi: BigInt => f"$bi%,d"
-      case l: Long => f"$l%,d"
-      case _ => count.toString
-    }
-  }
-
   /**
    * Returns a human-readable string representing a duration such as "35ms"
    */

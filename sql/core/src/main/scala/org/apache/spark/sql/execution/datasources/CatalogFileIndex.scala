@@ -35,7 +35,6 @@ import org.apache.spark.sql.{BatchIdPathFilter, Filters, HiddenPathFilter, Spark
 import org.apache.spark.sql.catalyst.catalog.CatalogTable
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.types.StructType
-import org.apache.spark.util.Utils.HumanReadableCount
 
 
 /**
@@ -43,11 +42,12 @@ import org.apache.spark.util.Utils.HumanReadableCount
  *
  * @param sparkSession a [[SparkSession]]
  * @param table the metadata of the table
+ * @param sizeInBytes the table's data size in bytes
  */
 class CatalogFileIndex(
     sparkSession: SparkSession,
     val table: CatalogTable,
-    val dataSize: Long) extends FileIndex with Logging {
+    override val sizeInBytes: Long) extends FileIndex with Logging {
 
   protected val hadoopConf: Configuration = sparkSession.sessionState.newHadoopConf()
 
@@ -99,8 +99,8 @@ class CatalogFileIndex(
         val scaleFactor = numPartitions.toFloat / (numPartitions - missingRowCount)
         val estimate = (scaleFactor * totalRows).toLong
         val tableName = table.identifier.toString
-        logInfo(s"Row estimate for $tableName: ${estimate.toHumanCount} = " +
-          s"${totalRows.toHumanCount} * $numPartitions / ($numPartitions - $missingRowCount)")
+        logInfo(s"Row estimate for $tableName: " +
+          s"$estimate = $totalRows * $numPartitions / ($numPartitions - $missingRowCount)")
         Some(estimate)
       } else {
         None
@@ -111,25 +111,12 @@ class CatalogFileIndex(
         sparkSession, new Path(baseLocation.get), fileStatusCache, partitionSpec,
         rowCount = rowEstimate)
     } else {
-      val rowEstimate: Option[BigInt] = table.properties.get("numRows").map(_.toLong) match {
-        case Some(numRows) if numRows > 0 => Some(numRows)
-        case _ => None
-      }
       new InMemoryFileIndex(
-        sparkSession, rootPaths, table.storage.properties, partitionSchema = None,
-        rowCount = rowEstimate)
+        sparkSession, rootPaths, table.storage.properties, partitionSchema = None)
     }
   }
 
-  private lazy val allPartitions: FileIndex = filterPartitions(Nil)
-
-  override def inputFiles: Array[String] = allPartitions.inputFiles
-
-  private lazy val conf = sparkSession.sqlContext.conf
-
-  override def sizeInBytes: Long = allPartitions.sizeInBytes
-
-  override def rowCount: Option[BigInt] = allPartitions.rowCount
+  override def inputFiles: Array[String] = filterPartitions(Nil).inputFiles
 
   // `CatalogFileIndex` may be a member of `HadoopFsRelation`, `HadoopFsRelation` may be a member
   // of `LogicalRelation`, and `LogicalRelation` may be used as the cache key. So we need to
