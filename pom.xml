@@ -290,7 +290,7 @@
       <dependency>
         <groupId>com.netflix.bdp.s3</groupId>
         <artifactId>s3committer</artifactId>
-        <version>0.11.0-rc.2</version>
+        <version>0.11.0-rc.3</version>
         <scope>compile</scope>
       </dependency>
       <dependency>
