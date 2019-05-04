@@ -2,12 +2,13 @@
 
 import random
 import re
+import os
 import sys
 import traceback
 import unittest
+from py4j.protocol import Py4JJavaError
 from pyspark.sql import SparkSession
 from pyspark.sql.utils import AnalysisException
-
 
 # spark-related setup
 
@@ -95,6 +96,35 @@ class temp_vault_table(temp_table):
         self.table_name = temp_table_name('bdp_itests_' + base_name, 'vault')
         self.sql = sql
         self.args = args
+
+
+class runtime_configs:
+    def __init__(self, configs):
+        self._configs = configs
+        self._old_configs = {}
+
+    def __enter__(self):
+        for key, value in self._configs.items():
+            try:
+                self._old_configs[key] = spark.conf.get(key)
+            except Py4JJavaError:
+                # Any Py4JJavaError exception is treated as key not found
+                self._old_configs[key] = None
+            if value:
+                print("Set config {} to {}".format(key, value))
+                spark.conf.set(key, value)
+            else:
+                print("Unset config {}".format(key))
+                spark.conf.unset(key)
+
+    def __exit__(self, etype, evalue, traceback):
+        for key, old_value in self._old_configs.items():
+            if old_value:
+                print("Restore config {} to {}".format(key, old_value))
+                spark.conf.set(key, old_value)
+            else:
+                print("Restore unset config {}".format(key))
+                spark.conf.unset(key)
 
 
 def sort_by(col_name, rows):
@@ -2113,6 +2143,23 @@ class IcebergVaultTest(unittest.TestCase):
                 {'id': 2, 'data': 'b'},
                 {'id': 3, 'data': 'c'}
             ])
+
+
+class S3CommitterTest(unittest.TestCase):
+
+    @spark_only
+    def test_small_upload_size(self):
+        with runtime_configs({
+            'spark.sql.parquet.compression.codec': 'uncompressed',
+            's3.multipart.committer.upload.size': 5 * 1024 * 1024,   # Min part size by AWS
+            's3.multipart.committer.upload.min-multipart-size': '0'  # Must be string
+        }):
+            with temp_table(
+                    "small_upload_size",
+                    "CREATE TABLE {0} (id bigint, data string) STORED AS parquet") as t:
+                # Large enough so that s3committer uploads 2 parts
+                items = [(1, bytearray(os.urandom(6 * 1024 * 1024)))]
+                spark.createDataFrame(items).repartition(1).write.insertInto(t)
 
 
 if __name__ == '__main__':
