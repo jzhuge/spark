@@ -2156,10 +2156,13 @@ class S3CommitterTest(unittest.TestCase):
         }):
             with temp_table(
                     "small_upload_size",
-                    "CREATE TABLE {0} (id bigint, data string) STORED AS parquet") as t:
+                    "CREATE TABLE {0} (id bigint, data binary) STORED AS parquet") as t:
                 # Large enough so that s3committer uploads 2 parts
-                items = [(1, bytearray(os.urandom(6 * 1024 * 1024)))]
-                spark.createDataFrame(items).repartition(1).write.insertInto(t)
+                items = [{'id': 1, 'data': bytearray(os.urandom(6 * 1024 * 1024))}]
+                spark.createDataFrame(items).repartition(1).write.byName().insertInto(t)
+
+                rows = collect(sql("SELECT * FROM {0}", t))
+                self.assertEqual(rows, items)
 
 
 if __name__ == '__main__':
