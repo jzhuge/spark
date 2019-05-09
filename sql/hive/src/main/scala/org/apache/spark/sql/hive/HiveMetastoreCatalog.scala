@@ -25,7 +25,7 @@ import org.apache.hadoop.fs.Path
 
 import org.apache.spark.SparkException
 import org.apache.spark.internal.Logging
-import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.{AnalysisException, SparkSession}
 import org.apache.spark.sql.catalyst.TableIdentifier
 import org.apache.spark.sql.catalyst.catalog._
 import org.apache.spark.sql.catalyst.plans.logical._
@@ -132,10 +132,20 @@ private[hive] class HiveMetastoreCatalog(sparkSession: SparkSession) extends Log
       // Otherwise, wrap the table with a Subquery using the table name.
       alias.map(a => SubqueryAlias(a, qualifiedTable, None)).getOrElse(qualifiedTable)
     } else if (table.tableType == CatalogTableType.VIEW) {
+      val viewOriginalText = table.viewOriginalText.getOrElse(
+        sys.error("Invalid view without original text."))
       val viewText = table.viewText.getOrElse(sys.error("Invalid view without text."))
+      val viewPlan = try {
+        sparkSession.sessionState.sqlParser.parsePlan(viewText)
+      } catch {
+        case _: AnalysisException =>
+          log.warn("Invalid view expanded text. Falling back to original text.")
+          val plan = sparkSession.sessionState.sqlParser.parsePlan(viewOriginalText)
+          sparkSession.sessionState.executePlan(plan).analyzed
+      }
       SubqueryAlias(
         alias.getOrElse(table.identifier.table),
-        sparkSession.sessionState.sqlParser.parsePlan(viewText),
+        viewPlan,
         Option(table.identifier))
     } else {
       val qualifiedTable =
