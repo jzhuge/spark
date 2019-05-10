@@ -21,7 +21,6 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.databind.SerializationFeature.ORDER_MAP_ENTRIES_BY_KEYS
 import com.jayway.jsonpath.{JsonPath, JsonPathException}
 
-import org.apache.spark.SparkException
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.unsafe.types.UTF8String
@@ -32,7 +31,7 @@ object NetflixJsonUtils {
 
   @throws(classOf[JsonPathException])
   def extractJsonFromInternalRow(input: InternalRow, json: Expression,
-                                 jsonPath: Expression): Any = {
+                                 jsonPath: UTF8String): Any = {
     val jsonStr = json.eval(input).asInstanceOf[UTF8String]
     if (jsonStr == null) {
       return null
