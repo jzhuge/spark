@@ -22,8 +22,6 @@ import java.util.ArrayList
 import scala.collection.JavaConverters._
 import scala.collection.mutable.ArrayBuffer
 
-import com.jayway.jsonpath.JsonPathException
-
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.codegen.CodegenFallback
 import org.apache.spark.sql.catalyst.util.ArrayData
@@ -48,7 +46,12 @@ case class NfJsonExtract(json: Expression, jsonPath: Expression)
   override def prettyName: String = "nf_json_extract"
 
   override def eval(input: InternalRow): Any = {
-      val extractedValue = extractJsonFromInternalRow(input, json, jsonPath)
+    val path = if (jsonPath.foldable) {
+      jsonPath.eval().asInstanceOf[UTF8String]
+    } else {
+      jsonPath.eval(input).asInstanceOf[UTF8String]
+    }
+      val extractedValue = extractJsonFromInternalRow(input, json, path)
       if (extractedValue == null) {
         return null
       }
@@ -74,15 +77,20 @@ case class NfJsonExtractScalar(json: Expression, jsonPath: Expression)
   override def prettyName: String = "nf_json_extract_scalar"
 
   override def eval(input: InternalRow): Any = {
-      val extractedValue = extractJsonFromInternalRow(input, json, jsonPath)
-      if (extractedValue != null) {
-        if (extractedValue.isInstanceOf[java.lang.Number] ||
-          extractedValue.isInstanceOf[java.lang.String] ||
-          extractedValue.isInstanceOf[java.lang.Boolean]) {
-          return UTF8String.fromString(extractedValue.toString)
-        }
+    val path = if (jsonPath.foldable) {
+      jsonPath.eval().asInstanceOf[UTF8String]
+    } else {
+      jsonPath.eval(input).asInstanceOf[UTF8String]
+    }
+    val extractedValue = extractJsonFromInternalRow(input, json, path)
+    if (extractedValue != null) {
+      if (extractedValue.isInstanceOf[java.lang.Number] ||
+        extractedValue.isInstanceOf[java.lang.String] ||
+        extractedValue.isInstanceOf[java.lang.Boolean]) {
+        return UTF8String.fromString(extractedValue.toString)
       }
-      null
+    }
+    null
   }
 }
 
@@ -104,7 +112,12 @@ case class NfJsonExtractArray(json: Expression, jsonPath: Expression)
   override def prettyName: String = "nf_json_extract_array"
 
   override def eval(input: InternalRow): Any = {
-    val extractedValue = extractJsonFromInternalRow(input, json, jsonPath)
+    val path = if (jsonPath.foldable) {
+      jsonPath.eval().asInstanceOf[UTF8String]
+    } else {
+      jsonPath.eval(input).asInstanceOf[UTF8String]
+    }
+    val extractedValue = extractJsonFromInternalRow(input, json, path)
     val result = new ArrayBuffer[UTF8String]
     if (extractedValue == null) {
       return null
