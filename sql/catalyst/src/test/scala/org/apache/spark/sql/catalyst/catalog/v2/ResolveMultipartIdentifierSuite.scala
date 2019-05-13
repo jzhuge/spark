@@ -18,11 +18,10 @@ package org.apache.spark.sql.catalyst.catalog.v2
 
 import org.scalatest.Matchers._
 
-import org.apache.spark.sql.catalog.v2.{CatalogNotFoundException, CatalogPlugin}
+import org.apache.spark.SparkFunSuite
+import org.apache.spark.sql.catalog.v2.{CatalogNotFoundException, CatalogPlugin, LookupCatalog}
 import org.apache.spark.sql.catalyst.TableIdentifier
-import org.apache.spark.sql.catalyst.analysis.{AnalysisTest, Analyzer}
 import org.apache.spark.sql.catalyst.parser.CatalystSqlParser
-import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.util.CaseInsensitiveStringMap
 
 private class TestCatalogPlugin(override val name: String) extends CatalogPlugin {
@@ -30,27 +29,19 @@ private class TestCatalogPlugin(override val name: String) extends CatalogPlugin
   override def initialize(name: String, options: CaseInsensitiveStringMap): Unit = Unit
 }
 
-class ResolveMultipartIdentifierSuite extends AnalysisTest {
+class ResolveMultipartIdentifierSuite extends SparkFunSuite with LookupCatalog {
   import CatalystSqlParser._
-
-  private val analyzer = makeAnalyzer(caseSensitive = false)
 
   private val catalogs = Seq("prod", "test").map(name => name -> new TestCatalogPlugin(name)).toMap
 
-  private def lookupCatalog(catalog: String): CatalogPlugin =
+  private def findCatalog(catalog: String): CatalogPlugin =
     catalogs.getOrElse(catalog, throw new CatalogNotFoundException("Not found"))
 
-  private def makeAnalyzer(caseSensitive: Boolean) = {
-    val conf = new SQLConf().copy(SQLConf.CASE_SENSITIVE -> caseSensitive)
-    new Analyzer(Some(lookupCatalog _), null, conf)
-  }
-
-  override protected def getAnalyzer(caseSensitive: Boolean) = analyzer
+  override def lookupCatalog: Option[(String) => CatalogPlugin] = Some(findCatalog)
 
   private def checkResolution(sqlText: String, expectedCatalog: Option[CatalogPlugin],
       expectedNamespace: Array[String], expectedName: String): Unit = {
 
-    import analyzer.CatalogObjectIdentifier
     val CatalogObjectIdentifier(catalog, ident) = parseMultipartIdentifier(sqlText)
     catalog shouldEqual expectedCatalog
     ident.namespace shouldEqual expectedNamespace
@@ -60,7 +51,6 @@ class ResolveMultipartIdentifierSuite extends AnalysisTest {
   private def checkTableResolution(sqlText: String,
       expectedIdent: Option[TableIdentifier]): Unit = {
 
-    import analyzer.AsTableIdentifier
     parseMultipartIdentifier(sqlText) match {
       case AsTableIdentifier(ident) =>
         assert(Some(ident) === expectedIdent)
