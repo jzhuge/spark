@@ -71,7 +71,7 @@ case class DataSourceV2ScanExec(
   override protected def doExecute(): RDD[InternalRow] = {
     Events.sendScan(
       tableName,
-      pushedFilters.reduce(And).sql,
+      if (pushedFilters.nonEmpty) pushedFilters.reduce(And).sql else "true",
       V2Util.columns(reader.readSchema()).asJava,
       options.asJava)
 
