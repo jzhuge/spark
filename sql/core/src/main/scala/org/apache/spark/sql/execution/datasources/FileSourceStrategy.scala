@@ -17,14 +17,24 @@
 
 package org.apache.spark.sql.execution.datasources
 
+import scala.collection.JavaConverters._
+
+import com.netflix.bdp.Events
+
 import org.apache.spark.internal.Logging
+import org.apache.spark.rdd.RDD
 import org.apache.spark.sql._
+import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions
 import org.apache.spark.sql.catalyst.expressions._
+import org.apache.spark.sql.catalyst.expressions.codegen.CodegenContext
 import org.apache.spark.sql.catalyst.planning.PhysicalOperation
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
 import org.apache.spark.sql.execution.FileSourceScanExec
 import org.apache.spark.sql.execution.SparkPlan
+import org.apache.spark.sql.execution.datasources.v2.V2Util
+import org.apache.spark.sql.types.StructType
+import org.apache.spark.util.Utils
 
 /**
  * A strategy for planning scans over collections of files that might be partitioned or bucketed
@@ -53,6 +63,18 @@ object FileSourceStrategy extends Strategy with Logging {
   def apply(plan: LogicalPlan): Seq[SparkPlan] = plan match {
     case PhysicalOperation(projects, filters,
       l @ LogicalRelation(fsRelation: HadoopFsRelation, _, table, _)) =>
+      val tableName = l.name
+      val sendScanEvent: StructType => Unit = if (!Utils.isTesting) {
+        schema: StructType => {
+          Events.sendScan(tableName,
+            filters.reduceLeftOption(expressions.And).map(_.sql).getOrElse("true"),
+            V2Util.columns(schema).asJava,
+            Map.empty[String, String].asJava)
+        }
+      } else {
+        _: StructType => {}
+      }
+
       // Filters on this relation fall into four categories based on where we can use them to avoid
       // reading unneeded data:
       //  - partition keys only - used to prune directories to read
@@ -106,13 +128,24 @@ object FileSourceStrategy extends Strategy with Logging {
       val outputAttributes = readDataColumns ++ partitionColumns
 
       val scan =
-        FileSourceScanExec(
+        new FileSourceScanExec(
           fsRelation,
           outputAttributes,
           outputSchema,
           partitionKeyFilters.toSeq,
           dataFilters,
-          table.map(_.identifier))
+          table.map(_.identifier)) {
+
+          override protected def doProduce(ctx: CodegenContext): String = {
+            sendScanEvent(schema)
+            super.doProduce(ctx)
+          }
+
+          override protected def doExecute(): RDD[InternalRow] = {
+            sendScanEvent(schema)
+            super.doExecute()
+          }
+        }
 
       val afterScanFilter = afterScanFilters.toSeq.reduceOption(expressions.And)
       val withFilter = afterScanFilter.map(execution.FilterExec(_, scan)).getOrElse(scan)

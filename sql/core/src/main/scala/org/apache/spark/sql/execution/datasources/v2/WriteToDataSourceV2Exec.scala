@@ -20,6 +20,8 @@ package org.apache.spark.sql.execution.datasources.v2
 import scala.collection.JavaConverters._
 import scala.util.control.NonFatal
 
+import com.netflix.bdp.Events
+
 import org.apache.spark.{SparkEnv, SparkException, TaskContext}
 import org.apache.spark.executor.CommitDeniedException
 import org.apache.spark.internal.Logging
@@ -35,6 +37,7 @@ import org.apache.spark.sql.execution.streaming.StreamExecution
 import org.apache.spark.sql.execution.streaming.continuous.{CommitPartitionEpoch, ContinuousExecution, EpochCoordinatorRef, SetWriterPartitions}
 import org.apache.spark.sql.sources.v2.writer._
 import org.apache.spark.sql.sources.v2.writer.streaming.StreamWriter
+import org.apache.spark.sql.types.{ArrayType, AtomicType, DataType, MapType, StructType}
 import org.apache.spark.util.Utils
 
 /**
@@ -53,6 +56,10 @@ case class AppendDataExec(
     plan: SparkPlan) extends V2TableWriteExec(writeOptions, plan) {
 
   override protected def doExecute(): RDD[InternalRow] = {
+    Events.sendAppend(
+      table.toString,
+      V2Util.columns(plan.schema).asJava,
+      writeOptions.asJava)
     appendToTable(table)
   }
 }
@@ -64,6 +71,11 @@ case class OverwritePartitionsDynamicExec(
   import org.apache.spark.sql.sources.v2.DataSourceV2Implicits._
 
   override protected def doExecute(): RDD[InternalRow] = {
+    Events.sendDynamicOverwrite(
+      table.toString,
+      V2Util.columns(plan.schema).asJava,
+      writeOptions.asJava)
+
     val writer = table.createWriter(writeOptions, plan.schema)
 
     if (!writer.supportsReplacePartitions()) {
@@ -86,6 +98,11 @@ case class CreateTableAsSelectExec(
     ifNotExists: Boolean) extends V2TableWriteExec(writeOptions, plan) {
 
   override protected def doExecute(): RDD[InternalRow] = {
+    Events.sendCTAS(
+      s"${catalog.name}.${ident.unquotedString}",
+      V2Util.columns(plan.schema).asJava,
+      writeOptions.asJava)
+
     if (catalog.tableExists(ident)) {
       if (ifNotExists) {
         return sparkContext.parallelize(Seq.empty, 1)
@@ -112,6 +129,11 @@ case class ReplaceTableAsSelectExec(
     plan: SparkPlan) extends V2TableWriteExec(writeOptions, plan) {
 
   override protected def doExecute(): RDD[InternalRow] = {
+    Events.sendRTAS(
+      s"${catalog.name}.${ident.unquotedString}",
+      V2Util.columns(plan.schema).asJava,
+      writeOptions.asJava)
+
     if (!catalog.tableExists(ident)) {
       throw new NoSuchTableException(ident.database.getOrElse("null"), ident.table)
     }
@@ -133,6 +155,28 @@ case class WriteToDataSourceV2Exec(
 
   override protected def doExecute(): RDD[InternalRow] = {
     doAppend(writer)
+  }
+}
+
+object V2Util {
+  def columns(struct: StructType): Seq[String] = {
+    names(struct).map(_.mkString("."))
+  }
+
+  private def names(dataType: DataType): Seq[List[String]] = {
+    dataType match {
+      case struct: StructType =>
+        struct.fields.flatMap { field =>
+          names(field.dataType).map(col => field.name :: col)
+        }
+      case map: MapType =>
+        names(map.keyType).map(col => "key" :: col) ++
+        names(map.valueType).map(col => "value" :: col)
+      case arr: ArrayType =>
+        names(arr.elementType).map(col => "element" :: col)
+      case _: AtomicType =>
+        Seq(Nil)
+    }
   }
 }
 
