@@ -137,6 +137,7 @@
     <parquet.version>1.9.1-nflx-17</parquet.version>
     <hive.parquet.version>1.6.0-nflx-36</hive.parquet.version>
     <iceberg.version>0.4.0-unstable-130</iceberg.version>
+    <lineage.version>0.1.7</lineage.version>
     <jetty.version>9.2.16.v20160414</jetty.version>
     <javaxservlet.version>3.1.0</javaxservlet.version>
     <chill.version>0.8.0</chill.version>
@@ -1726,6 +1727,12 @@
         <groupId>com.netflix.iceberg</groupId>
         <artifactId>bdp-iceberg</artifactId>
         <version>${iceberg.version}</version>
+        <scope>compile</scope>
+      </dependency>
+      <dependency>
+        <groupId>com.netflix.bdp</groupId>
+        <artifactId>lineage-logging</artifactId>
+        <version>${lineage.version}</version>
         <scope>compile</scope>
       </dependency>
       <dependency>

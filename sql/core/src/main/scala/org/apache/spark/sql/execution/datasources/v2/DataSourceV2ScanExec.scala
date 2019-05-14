@@ -19,6 +19,8 @@ package org.apache.spark.sql.execution.datasources.v2
 
 import scala.collection.JavaConverters._
 
+import com.netflix.bdp.Events
+
 import org.apache.spark.TaskContext
 import org.apache.spark.deploy.SparkHadoopUtil
 import org.apache.spark.internal.Logging
@@ -35,6 +37,7 @@ import org.apache.spark.sql.sources.v2.reader._
 case class DataSourceV2ScanExec(
     output: Seq[AttributeReference],
     @transient sourceName: String,
+    @transient tableName: String,
     @transient options: Map[String, String],
     @transient pushedFilters: Seq[Expression],
     @transient reader: DataSourceReader)
@@ -66,6 +69,12 @@ case class DataSourceV2ScanExec(
     "numOutputRows" -> SQLMetrics.createMetric(sparkContext, "number of output rows"))
 
   override protected def doExecute(): RDD[InternalRow] = {
+    Events.sendScan(
+      tableName,
+      pushedFilters.reduce(And).sql,
+      V2Util.columns(reader.readSchema()).asJava,
+      options.asJava)
+
     val metricsHandler = new MetricsHandler(longMetric("numOutputRows"))
 
     inputRDD.mapPartitions { iter =>
