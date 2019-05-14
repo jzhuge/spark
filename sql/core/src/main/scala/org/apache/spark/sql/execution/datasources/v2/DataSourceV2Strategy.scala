@@ -142,7 +142,7 @@ object DataSourceV2Strategy extends Strategy {
          """.stripMargin)
 
       val scan = DataSourceV2ScanExec(
-        output, sourceName, options, pushedFilters, reader)
+        output, sourceName, relation.name, options, pushedFilters, reader)
 
       val filterCondition = postScanFilters.reduceLeftOption(And)
       val withFilter = filterCondition.map(FilterExec(_, scan)).getOrElse(scan)
@@ -152,8 +152,8 @@ object DataSourceV2Strategy extends Strategy {
 
     case r: StreamingDataSourceV2Relation =>
       // ensure there is a projection, which will produce unsafe rows required by some operators
-      ProjectExec(r.output,
-        DataSourceV2ScanExec(r.output, r.source.name, r.options, r.pushedFilters, r.reader)) :: Nil
+      ProjectExec(r.output, DataSourceV2ScanExec(
+        r.output, r.source.name, r.source.name, r.options, r.pushedFilters, r.reader)) :: Nil
 
     case WriteToDataSourceV2(writer, query) =>
       WriteToDataSourceV2Exec(writer, planLater(query)) :: Nil

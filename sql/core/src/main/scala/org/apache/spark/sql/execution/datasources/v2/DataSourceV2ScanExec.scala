@@ -19,6 +19,8 @@ package org.apache.spark.sql.execution.datasources.v2
 
 import scala.collection.JavaConverters._
 
+import com.netflix.bdp.Events
+
 import org.apache.spark.TaskContext
 import org.apache.spark.deploy.SparkHadoopUtil
 import org.apache.spark.internal.Logging
@@ -38,6 +40,7 @@ import org.apache.spark.sql.sources.v2.reader.streaming.ContinuousReader
 case class DataSourceV2ScanExec(
     output: Seq[AttributeReference],
     @transient sourceName: String,
+    @transient tableName: String,
     @transient options: Map[String, String],
     @transient pushedFilters: Seq[Expression],
     @transient reader: DataSourceReader)
@@ -97,6 +100,12 @@ case class DataSourceV2ScanExec(
   override protected def needsUnsafeRowConversion: Boolean = false
 
   override protected def doExecute(): RDD[InternalRow] = {
+    Events.sendScan(
+      tableName,
+      if (pushedFilters.nonEmpty) pushedFilters.reduce(And).sql else "true",
+      V2Util.columns(reader.readSchema()).asJava,
+      options.asJava)
+
     if (supportsBatch) {
       WholeStageCodegenExec(this)(codegenStageId = 0).execute()
     } else {

@@ -17,11 +17,17 @@
 
 package org.apache.spark.sql.execution.datasources
 
+import scala.collection.JavaConverters._
+
+import com.netflix.bdp.Events
+
 import org.apache.spark.sql._
 import org.apache.spark.sql.catalyst.plans.QueryPlan
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
 import org.apache.spark.sql.execution.command.RunnableCommand
+import org.apache.spark.sql.execution.datasources.v2.V2Util
 import org.apache.spark.sql.sources.InsertableRelation
+import org.apache.spark.util.Utils
 
 
 /**
@@ -36,6 +42,23 @@ case class InsertIntoDataSourceCommand(
   override protected def innerChildren: Seq[QueryPlan[_]] = Seq(query)
 
   override def run(sparkSession: SparkSession): Seq[Row] = {
+    if (!Utils.isTesting) {
+      val tableName = logicalRelation.name
+      if (overwrite) {
+        Events.sendDynamicOverwrite(
+          tableName,
+          V2Util.columns(logicalRelation.schema).asJava,
+          Map.empty[String, String].asJava
+        )
+      } else {
+        Events.sendAppend(
+          tableName,
+          V2Util.columns(logicalRelation.schema).asJava,
+          Map.empty[String, String].asJava
+        )
+      }
+    }
+
     val relation = logicalRelation.relation.asInstanceOf[InsertableRelation]
     val data = Dataset.ofRows(sparkSession, query)
     // Data has been casted to the target relation's schema by the PreprocessTableInsertion rule.

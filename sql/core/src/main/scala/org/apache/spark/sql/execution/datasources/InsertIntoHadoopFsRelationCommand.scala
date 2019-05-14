@@ -19,8 +19,10 @@ package org.apache.spark.sql.execution.datasources
 
 import java.io.IOException
 
+import scala.collection.JavaConverters._
 import scala.collection.mutable
 
+import com.netflix.bdp.Events
 import org.apache.hadoop.fs.{FileSystem, Path}
 
 import org.apache.spark.internal.io.FileCommitProtocol
@@ -31,9 +33,10 @@ import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.command._
-import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.execution.datasources.v2.V2Util
 import org.apache.spark.sql.internal.SQLConf.PartitionOverwriteMode
 import org.apache.spark.sql.util.SchemaUtils
+import org.apache.spark.util.Utils
 
 /**
  * A command for writing data to a [[HadoopFsRelation]].  Supports both overwriting and appending.
@@ -199,6 +202,40 @@ case class InsertIntoHadoopFsRelationCommand(
                 retainData = true /* already deleted */).run(sparkSession)
             }
           }
+        }
+      }
+
+      if (!Utils.isTesting) {
+        val tableName = catalogTable.map(_.identifier).map { ident =>
+          ident.database match {
+            case Some(db) =>
+              s"$db.${ident.table}"
+            case _ =>
+              ident.table
+          }
+        }.getOrElse("unknown")
+
+        val schema = catalogTable.map(_.schema).getOrElse(query.schema)
+
+        mode match {
+          case SaveMode.Overwrite =>
+            Events.sendDynamicOverwrite(
+              tableName,
+              V2Util.columns(schema).asJava,
+              committerOptions.asJava
+            )
+          case SaveMode.Append | SaveMode.Ignore =>
+            Events.sendAppend(
+              tableName,
+              V2Util.columns(schema).asJava,
+              committerOptions.asJava
+            )
+          case SaveMode.ErrorIfExists =>
+            Events.sendCTAS(
+              tableName,
+              V2Util.columns(schema).asJava,
+              committerOptions.asJava
+            )
         }
       }
 

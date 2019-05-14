@@ -17,6 +17,10 @@
 
 package org.apache.spark.sql.execution.datasources.v2
 
+import scala.collection.JavaConverters._
+
+import com.netflix.bdp.Events
+
 import org.apache.spark.SparkException
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
@@ -29,6 +33,11 @@ case class DeleteFromV2Exec(rel: TableV2Relation, expr: Expression)
     extends LeafExecNode with PredicateHelper {
 
   override protected def doExecute(): RDD[InternalRow] = {
+    Events.sendDelete(
+      rel.table.toString,
+      expr.sql,
+      Map.empty[String, String].asJava)
+
     rel.table match {
       case d: DeleteSupport =>
         val filters = splitConjunctivePredicates(expr).map { expr =>

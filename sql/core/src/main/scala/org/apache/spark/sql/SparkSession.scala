@@ -25,6 +25,8 @@ import scala.collection.mutable
 import scala.reflect.runtime.universe.TypeTag
 import scala.util.control.NonFatal
 
+import com.netflix.bdp.KSGatewayListener
+
 import org.apache.spark.{SPARK_VERSION, SparkConf, SparkContext}
 import org.apache.spark.annotation.{DeveloperApi, Experimental, InterfaceStability}
 import org.apache.spark.api.java.JavaRDD
@@ -91,6 +93,19 @@ class SparkSession private(
   }
 
   sparkContext.assertNotStopped()
+
+  // initialize the Keystone listener to send events from this JVM
+  Option(sparkContext.hadoopConfiguration.get("keystone.gateway.host")) match {
+    case Some(host) =>
+      KSGatewayListener.initialize(
+        "spark",
+        sparkContext.applicationId,
+        sparkContext.hadoopConfiguration.get("genie.job.id"),
+        host,
+        sparkContext.hadoopConfiguration.getInt("keystone.gateway.port", 80))
+
+    case _ =>
+  }
 
   // If there is no active SparkSession, uses the default SQL conf. Otherwise, use the session's.
   SQLConf.setSQLConfGetter(() => {

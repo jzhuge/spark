@@ -17,8 +17,10 @@
 
 package org.apache.spark.sql.hive.execution
 
+import scala.collection.JavaConverters._
 import scala.collection.mutable
 
+import com.netflix.bdp.Events
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
 import org.apache.hadoop.hive.ql.ErrorMsg
@@ -31,8 +33,10 @@ import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.command.CommandUtils
+import org.apache.spark.sql.execution.datasources.v2.V2Util
 import org.apache.spark.sql.hive.HiveShim.{ShimFileSinkDesc => FileSinkDesc}
 import org.apache.spark.sql.hive.client.HiveClientImpl
+import org.apache.spark.util.Utils
 
 
 /**
@@ -226,6 +230,23 @@ case class InsertIntoHiveTable(
       Some(sparkSession.sessionState.conf.s3CommitProtocolClass)
     } else {
       None
+    }
+
+    if (!Utils.isTesting) {
+      val tableName = s"${table.identifier.database.getOrElse("default")}.${table.identifier.table}"
+      if (overwrite) {
+        Events.sendDynamicOverwrite(
+          tableName,
+          V2Util.columns(table.schema).asJava,
+          committerOptions.asJava
+        )
+      } else {
+        Events.sendAppend(
+          tableName,
+          V2Util.columns(table.schema).asJava,
+          committerOptions.asJava
+        )
+      }
     }
 
     saveAsHiveFile(

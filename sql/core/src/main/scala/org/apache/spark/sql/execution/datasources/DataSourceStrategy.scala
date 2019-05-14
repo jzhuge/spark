@@ -20,7 +20,10 @@ package org.apache.spark.sql.execution.datasources
 import java.util.Locale
 import java.util.concurrent.Callable
 
+import scala.collection.JavaConverters._
+
 import com.netflix.iceberg.spark.source.IcebergMetacatSource
+import com.netflix.bdp.Events
 import org.apache.hadoop.fs.Path
 
 import org.apache.spark.internal.Logging
@@ -33,6 +36,7 @@ import org.apache.spark.sql.catalyst.analysis._
 import org.apache.spark.sql.catalyst.catalog._
 import org.apache.spark.sql.catalyst.expressions
 import org.apache.spark.sql.catalyst.expressions._
+import org.apache.spark.sql.catalyst.expressions.codegen.CodegenContext
 import org.apache.spark.sql.catalyst.planning.PhysicalOperation
 import org.apache.spark.sql.catalyst.plans.logical.{InsertIntoDir, InsertIntoTable, LogicalPlan, Project}
 import org.apache.spark.sql.catalyst.plans.logical.sql
@@ -40,12 +44,13 @@ import org.apache.spark.sql.catalyst.plans.physical.HashPartitioning
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution.{RowDataSourceScanExec, SparkPlan}
 import org.apache.spark.sql.execution.command._
-import org.apache.spark.sql.execution.datasources.v2.DataSourceV2Relation
+import org.apache.spark.sql.execution.datasources.v2.{DataSourceV2Relation, V2Util}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.sources._
 import org.apache.spark.sql.sources.v2.DataSourceV2
 import org.apache.spark.sql.types._
 import org.apache.spark.unsafe.types.UTF8String
+import org.apache.spark.util.Utils
 
 /**
  * Replaces generic operations with specific variants that are designed to work with Spark
@@ -389,14 +394,37 @@ case class DataSourceStrategy(conf: SQLConf) extends Strategy with Logging with 
         (a, _) => toCatalystRDD(l, a, t.buildScan(a.map(_.name).toArray))) :: Nil
 
     case l @ LogicalRelation(baseRelation: TableScan, _, _, _) =>
-      RowDataSourceScanExec(
+      val tableName = l.name
+      val sendScanEvent: StructType => Unit = if (!Utils.isTesting) {
+        schema: StructType => {
+          Events.sendScan(tableName,
+            "true",
+            V2Util.columns(schema).asJava,
+            Map.empty[String, String].asJava)
+        }
+      } else {
+        _: StructType => {}
+      }
+
+      new RowDataSourceScanExec(
         l.output,
         l.output.indices,
         Set.empty,
         Set.empty,
         toCatalystRDD(l, baseRelation.buildScan()),
         baseRelation,
-        None) :: Nil
+        None) {
+
+        override protected def doProduce(ctx: CodegenContext): String = {
+          sendScanEvent(schema)
+          super.doProduce(ctx)
+        }
+
+        override protected def doExecute(): RDD[InternalRow] = {
+          sendScanEvent(schema)
+          super.doExecute()
+        }
+      } :: Nil
 
     case _ => Nil
   }
@@ -462,6 +490,18 @@ case class DataSourceStrategy(conf: SQLConf) extends Strategy with Logging with 
     // `Filter`s or cannot be handled by `relation`.
     val filterCondition = unhandledPredicates.reduceLeftOption(expressions.And)
 
+    val tableName = relation.name
+    val sendScanEvent: StructType => Unit = if (!Utils.isTesting) {
+      schema: StructType => {
+        Events.sendScan(tableName,
+          filterPredicates.reduceLeftOption(expressions.And).map(_.sql).getOrElse("true"),
+          V2Util.columns(schema).asJava,
+          Map.empty[String, String].asJava)
+      }
+    } else {
+      _: StructType => {}
+    }
+
     if (projects.map(_.toAttribute) == projects &&
         projectSet.size == projects.size &&
         filterSet.subsetOf(projectSet)) {
@@ -474,14 +514,26 @@ case class DataSourceStrategy(conf: SQLConf) extends Strategy with Logging with 
         // Match original case of attributes.
         .map(relation.attributeMap)
 
-      val scan = RowDataSourceScanExec(
+      val scan = new RowDataSourceScanExec(
         relation.output,
         requestedColumns.map(relation.output.indexOf),
         pushedFilters.toSet,
         handledFilters,
         scanBuilder(requestedColumns, candidatePredicates, pushedFilters),
         relation.relation,
-        relation.catalogTable.map(_.identifier))
+        relation.catalogTable.map(_.identifier)) {
+
+        override protected def doProduce(ctx: CodegenContext): String = {
+          sendScanEvent(schema)
+          super.doProduce(ctx)
+        }
+
+        override protected def doExecute(): RDD[InternalRow] = {
+          sendScanEvent(schema)
+          super.doExecute()
+        }
+      }
+
       filterCondition.map(execution.FilterExec(_, scan)).getOrElse(scan)
     } else {
       // A set of column attributes that are only referenced by pushed down filters.  We can
@@ -496,14 +548,25 @@ case class DataSourceStrategy(conf: SQLConf) extends Strategy with Logging with 
       val requestedColumns =
         (projectSet ++ filterSet -- handledSet).map(relation.attributeMap).toSeq
 
-      val scan = RowDataSourceScanExec(
+      val scan = new RowDataSourceScanExec(
         relation.output,
         requestedColumns.map(relation.output.indexOf),
         pushedFilters.toSet,
         handledFilters,
         scanBuilder(requestedColumns, candidatePredicates, pushedFilters),
         relation.relation,
-        relation.catalogTable.map(_.identifier))
+        relation.catalogTable.map(_.identifier)) {
+
+        override protected def doProduce(ctx: CodegenContext): String = {
+          sendScanEvent(schema)
+          super.doProduce(ctx)
+        }
+
+        override protected def doExecute(): RDD[InternalRow] = {
+          sendScanEvent(schema)
+          super.doExecute()
+        }
+      }
       execution.ProjectExec(
         projects, filterCondition.map(execution.FilterExec(_, scan)).getOrElse(scan))
     }
