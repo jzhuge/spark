@@ -1320,9 +1320,10 @@ class SparkSqlAstBuilder(conf: SQLConf) extends AstBuilder {
         }
       case (rfDelimited: RowFormatDelimitedContext, ffGeneric: GenericFileFormatContext) =>
         ffGeneric.identifier.getText.toLowerCase match {
-          case "textfile" => // OK
+          case ("textfile" | "sequencefile") => // OK
           case fmt => operationNotAllowed(
-            s"ROW FORMAT DELIMITED is only compatible with 'textfile', not '$fmt'", parentCtx)
+            s"ROW FORMAT DELIMITED is only compatible with 'textfile' and 'sequencefile', " +
+                s"not '$fmt'", parentCtx)
         }
       case _ =>
         // should never happen
