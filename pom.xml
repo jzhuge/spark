@@ -319,6 +319,16 @@
   </properties>
   <repositories>
     <repository>
+      <id>nfrepo-everything-pom</id>
+      <url>https://artifacts.netflix.net/nfrepo-everything-pom</url>
+      <releases>
+        <enabled>true</enabled>
+      </releases>
+      <snapshots>
+        <enabled>false</enabled>
+      </snapshots>
+    </repository>
+    <repository>
       <id>gcs-maven-central-mirror</id>
       <!--
         Google Mirror of Maven Central, placed first so that it's used instead of flaky Maven Central.
@@ -349,6 +359,16 @@
     </repository>
   </repositories>
   <pluginRepositories>
+    <pluginRepository>
+      <id>nfrepo-everything-pom</id>
+      <url>https://artifacts.netflix.net/nfrepo-everything-pom</url>
+      <releases>
+        <enabled>true</enabled>
+      </releases>
+      <snapshots>
+        <enabled>false</enabled>
+      </snapshots>
+    </pluginRepository>
     <pluginRepository>
       <id>gcs-maven-central-mirror</id>
       <!--
