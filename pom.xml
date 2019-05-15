@@ -240,10 +240,8 @@
   </properties>
   <repositories>
     <repository>
-      <id>central</id>
-      <!-- This should be at top, it makes maven try the central repo first and then others and hence faster dep resolution -->
-      <name>Maven Repository</name>
-      <url>https://repo.maven.apache.org/maven2</url>
+      <id>nfrepo-everything-pom</id>
+      <url>https://repo.test.netflix.net/artifactory/nfrepo-everything-pom</url>
       <releases>
         <enabled>true</enabled>
       </releases>
@@ -254,8 +252,8 @@
   </repositories>
   <pluginRepositories>
     <pluginRepository>
-      <id>central</id>
-      <url>https://repo.maven.apache.org/maven2</url>
+      <id>nfrepo-everything-pom</id>
+      <url>https://repo.test.netflix.net/artifactory/nfrepo-everything-pom</url>
       <releases>
         <enabled>true</enabled>
       </releases>
