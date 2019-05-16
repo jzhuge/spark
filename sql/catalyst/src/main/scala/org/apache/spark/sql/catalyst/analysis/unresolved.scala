@@ -36,6 +36,21 @@ class UnresolvedException[TreeType <: TreeNode[_]](tree: TreeType, function: Str
   extends TreeNodeException(tree, s"Invalid call to $function on unresolved object", null)
 
 /**
+ * Holds the name of a V2 relation that has yet to be looked up in a catalog.
+ *
+ * @param multipartIdentifier multipart identifier
+ */
+case class UnresolvedV2Relation(multipartIdentifier: Seq[String])
+  extends LeafNode {
+
+  def table: String = multipartIdentifier.last
+
+  override def output: Seq[Attribute] = Nil
+
+  override lazy val resolved = false
+}
+
+/**
  * Holds the name of a relation that has yet to be looked up in a catalog.
  *
  * @param tableIdentifier table name

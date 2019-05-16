@@ -17,8 +17,8 @@
 
 package org.apache.spark.sql.catalyst.parser
 
-import org.apache.spark.sql.catalyst.{FunctionIdentifier, TableIdentifier}
-import org.apache.spark.sql.catalyst.analysis.{AnalysisTest, UnresolvedAttribute, UnresolvedFunction, UnresolvedGenerator, UnresolvedInlineTable, UnresolvedRelation, UnresolvedSubqueryColumnAliases, UnresolvedTableValuedFunction}
+import org.apache.spark.sql.catalyst.FunctionIdentifier
+import org.apache.spark.sql.catalyst.analysis.{AnalysisTest, UnresolvedAttribute, UnresolvedFunction, UnresolvedGenerator, UnresolvedInlineTable, UnresolvedRelation, UnresolvedSubqueryColumnAliases, UnresolvedTableValuedFunction, UnresolvedV2Relation}
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.plans._
 import org.apache.spark.sql.catalyst.plans.logical._
@@ -513,7 +513,7 @@ class PlanParserSuite extends AnalysisTest {
       "SELECT * FROM testData AS t(col1, col2)",
       UnresolvedSubqueryColumnAliases(
         Seq("col1", "col2"),
-        SubqueryAlias("t", UnresolvedRelation(TableIdentifier("testData")))
+        SubqueryAlias("t", UnresolvedV2Relation(Seq("testData")))
       ).select(star()))
   }
 
@@ -524,13 +524,13 @@ class PlanParserSuite extends AnalysisTest {
         Seq("col1", "col2"),
         SubqueryAlias(
           "t",
-          UnresolvedRelation(TableIdentifier("t")).select('a.as("x"), 'b.as("y")))
+          UnresolvedV2Relation(Seq("t")).select('a.as("x"), 'b.as("y")))
       ).select(star()))
   }
 
   test("SPARK-20963 Support aliases for join relations in FROM clause") {
-    val src1 = UnresolvedRelation(TableIdentifier("src1")).as("s1")
-    val src2 = UnresolvedRelation(TableIdentifier("src2")).as("s2")
+    val src1 = UnresolvedV2Relation(Seq("src1")).as("s1")
+    val src2 = UnresolvedV2Relation(Seq("src2")).as("s2")
     assertEqual(
       "SELECT * FROM (src1 s1 INNER JOIN src2 s2 ON s1.id = s2.id) dst(a, b, c, d)",
       UnresolvedSubqueryColumnAliases(

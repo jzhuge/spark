@@ -35,7 +35,7 @@ import org.apache.spark.scheduler.{SparkListener, SparkListenerApplicationEnd}
 import org.apache.spark.sql.catalog.Catalog
 import org.apache.spark.sql.catalog.v2.{CatalogPlugin, Catalogs}
 import org.apache.spark.sql.catalyst._
-import org.apache.spark.sql.catalyst.analysis.UnresolvedRelation
+import org.apache.spark.sql.catalyst.analysis.{UnresolvedRelation, UnresolvedV2Relation}
 import org.apache.spark.sql.catalyst.encoders._
 import org.apache.spark.sql.catalyst.expressions.AttributeReference
 import org.apache.spark.sql.catalyst.plans.logical.{LocalRelation, Range}
@@ -624,7 +624,11 @@ class SparkSession private(
    * @since 2.0.0
    */
   def table(tableName: String): DataFrame = {
-    table(sessionState.sqlParser.parseTableIdentifier(tableName))
+    table(sessionState.sqlParser.parseMultipartIdentifier(tableName))
+  }
+
+  private[sql] def table(multipartIdentifier: Seq[String]): DataFrame = {
+    Dataset.ofRows(self, UnresolvedV2Relation(multipartIdentifier))
   }
 
   private[sql] def table(tableIdent: TableIdentifier): DataFrame = {

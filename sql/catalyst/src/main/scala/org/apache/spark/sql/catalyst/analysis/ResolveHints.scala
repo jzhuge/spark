@@ -71,17 +71,17 @@ object ResolveHints {
 
       val newNode = CurrentOrigin.withOrigin(plan.origin) {
         plan match {
-          case ResolvedHint(u: UnresolvedRelation, hint)
-              if relations.exists(resolver(_, u.tableIdentifier.table)) =>
-            relations.remove(u.tableIdentifier.table)
+          case ResolvedHint(u: UnresolvedV2Relation, hint)
+              if relations.exists(resolver(_, u.table)) =>
+            relations.remove(u.table)
             ResolvedHint(u, createHintInfo(hintName).merge(hint, handleOverriddenHintInfo))
           case ResolvedHint(r: SubqueryAlias, hint)
               if relations.exists(resolver(_, r.alias)) =>
             relations.remove(r.alias)
             ResolvedHint(r, createHintInfo(hintName).merge(hint, handleOverriddenHintInfo))
 
-          case u: UnresolvedRelation if relations.exists(resolver(_, u.tableIdentifier.table)) =>
-            relations.remove(u.tableIdentifier.table)
+          case u: UnresolvedV2Relation if relations.exists(resolver(_, u.table)) =>
+            relations.remove(u.table)
             ResolvedHint(plan, createHintInfo(hintName))
           case r: SubqueryAlias if relations.exists(resolver(_, r.alias)) =>
             relations.remove(r.alias)

@@ -23,7 +23,7 @@ import scala.collection.JavaConverters._
 
 import org.apache.spark.annotation.Stable
 import org.apache.spark.sql.catalyst.TableIdentifier
-import org.apache.spark.sql.catalyst.analysis.{EliminateSubqueryAliases, UnresolvedRelation}
+import org.apache.spark.sql.catalyst.analysis.{EliminateSubqueryAliases, UnresolvedRelation, UnresolvedV2Relation}
 import org.apache.spark.sql.catalyst.catalog._
 import org.apache.spark.sql.catalyst.expressions.Literal
 import org.apache.spark.sql.catalyst.plans.logical.{AppendData, InsertIntoTable, LogicalPlan, OverwriteByExpression}
@@ -358,10 +358,10 @@ final class DataFrameWriter[T] private[sql](ds: Dataset[T]) {
    * @since 1.4.0
    */
   def insertInto(tableName: String): Unit = {
-    insertInto(df.sparkSession.sessionState.sqlParser.parseTableIdentifier(tableName))
+    insertInto(df.sparkSession.sessionState.sqlParser.parseMultipartIdentifier(tableName))
   }
 
-  private def insertInto(tableIdent: TableIdentifier): Unit = {
+  private def insertInto(multipartIdentifier: Seq[String]): Unit = {
     assertNotBucketed("insertInto")
 
     if (partitioningColumns.isDefined) {
@@ -374,7 +374,7 @@ final class DataFrameWriter[T] private[sql](ds: Dataset[T]) {
 
     runCommand(df.sparkSession, "insertInto") {
       InsertIntoTable(
-        table = UnresolvedRelation(tableIdent),
+        table = UnresolvedV2Relation(multipartIdentifier),
         partition = Map.empty[String, Option[String]],
         query = df.logicalPlan,
         overwrite = mode == SaveMode.Overwrite,

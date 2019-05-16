@@ -20,19 +20,22 @@ package org.apache.spark.sql.execution.datasources
 import java.util.Locale
 
 import scala.collection.mutable
+import scala.util.{Failure, Success, Try}
 
 import org.apache.spark.sql.{AnalysisException, SaveMode}
 import org.apache.spark.sql.catalog.v2.{CatalogPlugin, Identifier, LookupCatalog, TableCatalog}
 import org.apache.spark.sql.catalog.v2.expressions.Transform
 import org.apache.spark.sql.catalyst.TableIdentifier
-import org.apache.spark.sql.catalyst.analysis.CastSupport
+import org.apache.spark.sql.catalyst.analysis.{CastSupport, NoSuchTableException, UnresolvedRelation, UnresolvedV2Relation}
 import org.apache.spark.sql.catalyst.catalog.{BucketSpec, CatalogTable, CatalogTableType, CatalogUtils}
-import org.apache.spark.sql.catalyst.plans.logical.{CreateTableAsSelect, LogicalPlan}
+import org.apache.spark.sql.catalyst.plans.logical.{CreateTableAsSelect, InsertIntoTable, LogicalPlan}
 import org.apache.spark.sql.catalyst.plans.logical.sql.{CreateTableAsSelectStatement, CreateTableStatement}
 import org.apache.spark.sql.catalyst.rules.Rule
+import org.apache.spark.sql.execution.datasources.v2.DataSourceV2Relation
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.sources.v2.TableProvider
+import org.apache.spark.sql.sources.v2.{Table, TableProvider}
 import org.apache.spark.sql.types.StructType
+import org.apache.spark.sql.util.CaseInsensitiveStringMap
 
 case class DataSourceResolution(
     conf: SQLConf,
@@ -46,6 +49,39 @@ case class DataSourceResolution(
   def defaultCatalog: Option[CatalogPlugin] = conf.defaultV2Catalog.map(findCatalog)
 
   override def apply(plan: LogicalPlan): LogicalPlan = plan resolveOperators {
+    case UnresolvedV2Relation(multipartIdentifier) =>
+      multipartIdentifier match {
+        case CatalogObjectIdentifier(Some(catalog), ident) =>
+          // V2 table in catalog
+          DataSourceV2Relation.create(catalog.asTableCatalog.loadTable(ident),
+            CaseInsensitiveStringMap.empty)
+
+        case CatalogObjectIdentifier(None, TableInDefaultCatalog(table)) =>
+          // V2 table in default catalog
+          DataSourceV2Relation.create(table, CaseInsensitiveStringMap.empty)
+
+        case AsTableIdentifier(ident) =>
+          // V1 table, fallback to ResolveRelations
+          UnresolvedRelation(ident)
+      }
+
+    case i @ InsertIntoTable(UnresolvedV2Relation(multipartIdentifier), _, child, _, _)
+      if child.resolved =>
+      multipartIdentifier match {
+        case CatalogObjectIdentifier(Some(catalog), ident) =>
+          // V2 table in catalog
+          i.copy(table = DataSourceV2Relation.create(catalog.asTableCatalog.loadTable(ident),
+            CaseInsensitiveStringMap.empty))
+
+        case CatalogObjectIdentifier(None, TableInDefaultCatalog(table)) =>
+          // V2 table in default catalog
+          i.copy(table = DataSourceV2Relation.create(table, CaseInsensitiveStringMap.empty))
+
+        case AsTableIdentifier(ident) =>
+          // V1 table, fallback to ResolveRelations
+          i.copy(table = UnresolvedRelation(ident))
+      }
+
     case CreateTableStatement(
         AsTableIdentifier(table), schema, partitionCols, bucketSpec, properties,
         V1WriteProvider(provider), options, location, comment, ifNotExists) =>
@@ -181,5 +217,17 @@ case class DataSourceResolution(
       properties.toMap,
       writeOptions = options,
       ignoreIfExists = ctas.ifNotExists)
+  }
+
+  object TableInDefaultCatalog {
+    def unapply(ident: Identifier): Option[Table] =
+      Try(defaultCatalog.map(_.asTableCatalog.loadTable(ident))) match {
+        case Success(value) =>
+          value
+        case Failure(_: NoSuchTableException) =>
+          None
+        case Failure(ex) =>
+          throw ex
+      }
   }
 }
