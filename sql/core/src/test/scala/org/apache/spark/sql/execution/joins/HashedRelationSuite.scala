@@ -26,6 +26,7 @@ import org.apache.spark.memory.{StaticMemoryManager, TaskMemoryManager}
 import org.apache.spark.serializer.KryoSerializer
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions._
+import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.test.SharedSQLContext
 import org.apache.spark.sql.types._
 import org.apache.spark.unsafe.map.BytesToBytesMap
@@ -256,7 +257,7 @@ class HashedRelationSuite extends SparkFunSuite with SharedSQLContext {
   test("SPARK-24257: insert big values into LongToUnsafeRowMap") {
     val taskMemoryManager = new TaskMemoryManager(
       new StaticMemoryManager(
-        new SparkConf().set(MEMORY_OFFHEAP_ENABLED.key, "false"),
+        new SparkConf().set("spark.memory.offHeap.enabled", "false"),
         Long.MaxValue,
         Long.MaxValue,
         1),
