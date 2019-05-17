@@ -37,6 +37,24 @@ case class LogicalRelation(
     catalogTable: Option[CatalogTable] = None)
   extends LeafNode with MultiInstanceRelation with MaybeCatalogRelation {
 
+  def name: String = {
+    val table = catalogTable.map(_.identifier).map { ident =>
+      ident.database match {
+        case Some(db) =>
+          s"$db.${ident.table}"
+        case _ =>
+          ident.table
+      }
+    }
+
+    table.getOrElse(relation match {
+      case fsRel: HadoopFsRelation =>
+        fsRel.location.rootPaths.mkString(",")
+      case _ =>
+        "unknown"
+    })
+  }
+
   override def asCatalogRelation: Option[CatalogRelation] = {
     relation match {
       case c: CatalogRelation =>

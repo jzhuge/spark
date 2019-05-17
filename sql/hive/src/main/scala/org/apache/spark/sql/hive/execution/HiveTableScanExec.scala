@@ -19,6 +19,7 @@ package org.apache.spark.sql.hive.execution
 
 import scala.collection.JavaConverters._
 
+import com.netflix.bdp.Events
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.PathFilter
 import org.apache.hadoop.hive.ql.metadata.{Partition => HivePartition}
@@ -35,6 +36,7 @@ import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.datasources.DataSourceStrategy
+import org.apache.spark.sql.execution.datasources.v2.V2Util
 import org.apache.spark.sql.execution.metric.SQLMetrics
 import org.apache.spark.sql.hive._
 import org.apache.spark.sql.hive.parquet.HiveParquetFilters
@@ -192,6 +194,16 @@ case class HiveTableScanExec(
   }
 
   protected override def doExecute(): RDD[InternalRow] = {
+    val allPredicates = filterPredicates
+        .map(partitionPruningPred ++ _)
+        .getOrElse(partitionPruningPred)
+
+    Events.sendScan(
+      s"${relation.databaseName}.${relation.tableName}",
+      if (allPredicates.nonEmpty) allPredicates.reduce(And).sql else "true",
+      V2Util.columns(schema).asJava,
+      Map.empty[String, String].asJava)
+
     // Using dummyCallSite, as getCallSite can turn out to be expensive with
     // with multiple partitions.
     val rdd = if (!relation.hiveQlTable.isPartitioned) {

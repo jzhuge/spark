@@ -17,8 +17,10 @@
 
 package org.apache.spark.sql.execution.datasources
 
+import scala.collection.JavaConverters._
 import scala.collection.mutable.ArrayBuffer
 
+import com.netflix.bdp.Events
 import org.apache.hadoop.fs.Path
 
 import org.apache.spark.internal.Logging
@@ -32,6 +34,7 @@ import org.apache.spark.sql.catalyst.catalog.{CatalogTable, CatalogTablePartitio
 import org.apache.spark.sql.catalyst.catalog.CatalogTypes.TablePartitionSpec
 import org.apache.spark.sql.catalyst.expressions
 import org.apache.spark.sql.catalyst.expressions._
+import org.apache.spark.sql.catalyst.expressions.codegen.CodegenContext
 import org.apache.spark.sql.catalyst.planning.PhysicalOperation
 import org.apache.spark.sql.catalyst.plans.logical
 import org.apache.spark.sql.catalyst.plans.logical.{LogicalPlan, Project}
@@ -40,6 +43,7 @@ import org.apache.spark.sql.catalyst.plans.physical.{HashPartitioning, UnknownPa
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution.{RowDataSourceScanExec, SparkPlan}
 import org.apache.spark.sql.execution.command._
+import org.apache.spark.sql.execution.datasources.v2.V2Util
 import org.apache.spark.sql.sources._
 import org.apache.spark.sql.sources.v2.DataSourceV2
 import org.apache.spark.sql.types._
@@ -434,13 +438,31 @@ object DataSourceStrategy extends Strategy with Logging {
         (a, _) => toCatalystRDD(l, a, t.buildScan(a.map(_.name).toArray))) :: Nil
 
     case l @ LogicalRelation(baseRelation: TableScan, _, _) =>
-      RowDataSourceScanExec(
+      val sendScanEvent: StructType => Unit = (schema: StructType) => {
+        Events.sendScan(l.name,
+          "true",
+          V2Util.columns(schema).asJava,
+          Map.empty[String, String].asJava)
+      }
+
+      new RowDataSourceScanExec(
         l.output,
         toCatalystRDD(l, baseRelation.buildScan()),
         baseRelation,
         UnknownPartitioning(0),
         Map.empty,
-        None) :: Nil
+        None) {
+
+        override protected def doProduce(ctx: CodegenContext): String = {
+          sendScanEvent(schema)
+          super.doProduce(ctx)
+        }
+
+        override protected def doExecute(): RDD[InternalRow] = {
+          sendScanEvent(schema)
+          super.doExecute()
+        }
+      } :: Nil
 
     case i @ logical.InsertIntoTable(l @ LogicalRelation(t: InsertableRelation, _, _),
       part, query, overwrite, false, _) if part.isEmpty =>
@@ -520,6 +542,13 @@ object DataSourceStrategy extends Strategy with Logging {
     // `Filter`s or cannot be handled by `relation`.
     val filterCondition = unhandledPredicates.reduceLeftOption(expressions.And)
 
+    val sendScanEvent: StructType => Unit = (schema: StructType) => {
+      Events.sendScan(relation.name,
+        filterPredicates.reduceLeftOption(expressions.And).map(_.sql).getOrElse("true"),
+        V2Util.columns(schema).asJava,
+        Map.empty[String, String].asJava)
+    }
+
     // These metadata values make scan plans uniquely identifiable for equality checking.
     // TODO(SPARK-17701) using strings for equality checking is brittle
     val metadata: Map[String, String] = {
@@ -551,22 +580,45 @@ object DataSourceStrategy extends Strategy with Logging {
         // Don't request columns that are only referenced by pushed filters.
         .filterNot(handledSet.contains)
 
-      val scan = RowDataSourceScanExec(
+      val scan = new RowDataSourceScanExec(
         projects.map(_.toAttribute),
         scanBuilder(requestedColumns, candidatePredicates, pushedFilters),
         relation.relation, UnknownPartitioning(0), metadata,
-        relation.catalogTable.map(_.identifier))
+        relation.catalogTable.map(_.identifier)) {
+
+        override protected def doProduce(ctx: CodegenContext): String = {
+          sendScanEvent(schema)
+          super.doProduce(ctx)
+        }
+
+        override protected def doExecute(): RDD[InternalRow] = {
+          sendScanEvent(schema)
+          super.doExecute()
+        }
+      }
+
       filterCondition.map(execution.FilterExec(_, scan)).getOrElse(scan)
     } else {
       // Don't request columns that are only referenced by pushed filters.
       val requestedColumns =
         (projectSet ++ filterSet -- handledSet).map(relation.attributeMap).toSeq
 
-      val scan = RowDataSourceScanExec(
+      val scan = new RowDataSourceScanExec(
         requestedColumns,
         scanBuilder(requestedColumns, candidatePredicates, pushedFilters),
         relation.relation, UnknownPartitioning(0), metadata,
-        relation.catalogTable.map(_.identifier))
+        relation.catalogTable.map(_.identifier)) {
+
+        override protected def doProduce(ctx: CodegenContext): String = {
+          sendScanEvent(schema)
+          super.doProduce(ctx)
+        }
+
+        override protected def doExecute(): RDD[InternalRow] = {
+          sendScanEvent(schema)
+          super.doExecute()
+        }
+      }
       execution.ProjectExec(
         projects, filterCondition.map(execution.FilterExec(_, scan)).getOrElse(scan))
     }
