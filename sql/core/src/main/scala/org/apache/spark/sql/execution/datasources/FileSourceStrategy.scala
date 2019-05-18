@@ -34,6 +34,7 @@ import org.apache.spark.sql.execution.FileSourceScanExec
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.datasources.v2.V2Util
 import org.apache.spark.sql.types.StructType
+import org.apache.spark.util.Utils
 
 /**
  * A strategy for planning scans over collections of files that might be partitioned or bucketed
@@ -62,12 +63,16 @@ object FileSourceStrategy extends Strategy with Logging {
   def apply(plan: LogicalPlan): Seq[SparkPlan] = plan match {
     case PhysicalOperation(projects, filters,
       l @ LogicalRelation(fsRelation: HadoopFsRelation, _, table)) =>
-      val sendScanEvent: StructType => Unit = (schema: StructType) => {
-        val tableName = l.name
-        Events.sendScan(tableName,
-          filters.reduceLeftOption(expressions.And).map(_.sql).getOrElse("true"),
-          V2Util.columns(schema).asJava,
-          Map.empty[String, String].asJava)
+      val tableName = l.name
+      val sendScanEvent: StructType => Unit = if (!Utils.isTesting) {
+        schema: StructType => {
+          Events.sendScan(tableName,
+            filters.reduceLeftOption(expressions.And).map(_.sql).getOrElse("true"),
+            V2Util.columns(schema).asJava,
+            Map.empty[String, String].asJava)
+        }
+      } else {
+        _: StructType => {}
       }
 
       // Filters on this relation fall into four categories based on where we can use them to avoid

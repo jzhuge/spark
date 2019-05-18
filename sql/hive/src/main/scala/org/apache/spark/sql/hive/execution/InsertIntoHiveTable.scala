@@ -22,9 +22,11 @@ import java.net.URI
 import java.text.SimpleDateFormat
 import java.util.{Date, Locale, Random, UUID}
 
+import scala.collection.JavaConverters._
 import scala.collection.mutable
 import scala.util.control.NonFatal
 
+import com.netflix.bdp.Events
 import org.apache.hadoop.fs.{FileSystem, Path}
 import org.apache.hadoop.hive.common.FileUtils
 import org.apache.hadoop.hive.ql.ErrorMsg
@@ -39,9 +41,10 @@ import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Attribute, SortOrder}
 import org.apache.spark.sql.catalyst.plans.physical.{AllTuples, ClusteredDistribution, Distribution, Partitioning}
 import org.apache.spark.sql.execution.{SparkPlan, UnaryExecNode}
+import org.apache.spark.sql.execution.datasources.v2.V2Util
 import org.apache.spark.sql.hive._
 import org.apache.spark.sql.hive.HiveShim.{ShimFileSinkDesc => FileSinkDesc}
-import org.apache.spark.util.SerializableJobConf
+import org.apache.spark.util.{SerializableJobConf, Utils}
 
 
 /**
@@ -361,6 +364,23 @@ case class InsertIntoHiveTable(
       jobId = java.util.UUID.randomUUID().toString,
       outputPath = tableLocation.toString,
       committerOptions.toMap)
+
+    if (!Utils.isTesting) {
+      val tableName = s"${table.databaseName}.${table.tableName}"
+      if (overwrite) {
+        Events.sendDynamicOverwrite(
+          tableName,
+          V2Util.columns(table.schema).asJava,
+          committerOptions.asJava
+        )
+      } else {
+        Events.sendAppend(
+          tableName,
+          V2Util.columns(table.schema).asJava,
+          committerOptions.asJava
+        )
+      }
+    }
 
     val writerContainer = if (isPartitioned) {
       new SparkHiveDynamicPartitionWriterContainer(

@@ -48,6 +48,7 @@ import org.apache.spark.sql.sources._
 import org.apache.spark.sql.sources.v2.DataSourceV2
 import org.apache.spark.sql.types._
 import org.apache.spark.unsafe.types.UTF8String
+import org.apache.spark.util.Utils
 
 /**
  * Replaces generic operations with specific variants that are designed to work with Spark
@@ -439,11 +440,15 @@ object DataSourceStrategy extends Strategy with Logging {
 
     case l @ LogicalRelation(baseRelation: TableScan, _, _) =>
       val tableName = l.name
-      val sendScanEvent: StructType => Unit = (schema: StructType) => {
-        Events.sendScan(tableName,
-          "true",
-          V2Util.columns(schema).asJava,
-          Map.empty[String, String].asJava)
+      val sendScanEvent: StructType => Unit = if (!Utils.isTesting) {
+        schema: StructType => {
+          Events.sendScan(tableName,
+            "true",
+            V2Util.columns(schema).asJava,
+            Map.empty[String, String].asJava)
+        }
+      } else {
+        _: StructType => {}
       }
 
       new RowDataSourceScanExec(
@@ -544,11 +549,15 @@ object DataSourceStrategy extends Strategy with Logging {
     val filterCondition = unhandledPredicates.reduceLeftOption(expressions.And)
 
     val tableName = relation.name
-    val sendScanEvent: StructType => Unit = (schema: StructType) => {
-      Events.sendScan(tableName,
-        filterPredicates.reduceLeftOption(expressions.And).map(_.sql).getOrElse("true"),
-        V2Util.columns(schema).asJava,
-        Map.empty[String, String].asJava)
+    val sendScanEvent: StructType => Unit = if (!Utils.isTesting) {
+      schema: StructType => {
+        Events.sendScan(tableName,
+          filterPredicates.reduceLeftOption(expressions.And).map(_.sql).getOrElse("true"),
+          V2Util.columns(schema).asJava,
+          Map.empty[String, String].asJava)
+      }
+    } else {
+      _: StructType => {}
     }
 
     // These metadata values make scan plans uniquely identifiable for equality checking.
