@@ -188,7 +188,7 @@ case class CreateViewCommand(
       // added/generated from a temporary view.
       // 2) The temp functions are represented by multiple classes. Most are inaccessible from this
       // package (e.g., HiveGenericUDF).
-      child.collect {
+     sparkSession.sessionState.analyzer.lookupIdentifiers(child).collect {
         // Disallow creating permanent views based on temporary views.
         case s: UnresolvedRelation
           if sparkSession.sessionState.catalog.isTemporaryTable(s.tableIdentifier) =>

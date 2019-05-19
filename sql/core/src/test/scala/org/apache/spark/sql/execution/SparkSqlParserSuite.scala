@@ -326,7 +326,7 @@ class SparkSqlParserSuite extends AnalysisTest {
     // Test all valid combinations of order by/sort by/distribute by/cluster by/limit/windows
     val baseSql = "select * from t"
     val basePlan =
-      Project(Seq(UnresolvedStar(None)), UnresolvedRelation(TableIdentifier("t")))
+      Project(Seq(UnresolvedStar(None)), UnresolvedRelation(Seq("t")))
 
     assertEqual(s"$baseSql distribute by a, b",
       RepartitionByExpression(UnresolvedAttribute("a") :: UnresolvedAttribute("b") :: Nil,
@@ -355,7 +355,7 @@ class SparkSqlParserSuite extends AnalysisTest {
     )
     assertEqual(
       "SELECT a || b || c FROM t",
-      Project(UnresolvedAlias(concat) :: Nil, UnresolvedRelation(TableIdentifier("t"))))
+      Project(UnresolvedAlias(concat) :: Nil, UnresolvedRelation(Seq("t"))))
   }
 
   test("database and schema tokens are interchangeable") {

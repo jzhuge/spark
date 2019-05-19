@@ -17,6 +17,8 @@
 
 package org.apache.spark.sql.catalyst
 
+import org.apache.spark.sql.catalog.v2.{CatalogPlugin, Identifier}
+
 /**
  * An identifier that optionally specifies a database.
  *
@@ -65,13 +67,49 @@ object AliasIdentifier {
 }
 
 /**
+ * Multipart identifiers are parsed as [[MultipartIdentifier]] into UnresolvedRelation.
+ * Identifier lookup rules in analysis batch "Identifier" turn them into either
+ * [[CatalogTableIdentifier]] or [[TableIdentifier]].
+ */
+
+sealed trait TableIdentifierLike {
+  def tableIdentifier: TableIdentifier
+}
+
+case class MultipartIdentifier(parts: Seq[String])
+  extends TableIdentifierLike {
+
+  override def tableIdentifier: TableIdentifier =
+    throw new UnsupportedOperationException(
+      s"${getClass.getSimpleName} should not be used as TableIdentifier. " +
+        s"This indicates the identifier has not been analyzed in Identifier batch.")
+
+  private def quoteIdentifier(name: String): String = s"`${name.replace("`", "``")}`"
+
+  def quotedString: String = parts.map(quoteIdentifier).mkString(".")
+
+  override def toString: String = quotedString
+}
+
+case class CatalogTableIdentifier(catalog: CatalogPlugin, ident: Identifier)
+  extends TableIdentifierLike {
+
+  override def tableIdentifier: TableIdentifier =
+    throw new UnsupportedOperationException(
+      s"${getClass.getSimpleName} should not be used as TableIdentifier. " +
+        s"This indicates a V2 table used in V1 code path.")
+}
+
+/**
  * Identifies a table in a database.
  * If `database` is not defined, the current database is used.
  * When we register a permanent function in the FunctionRegistry, we use
  * unquotedString as the function name.
  */
 case class TableIdentifier(table: String, database: Option[String])
-  extends IdentifierWithDatabase {
+  extends IdentifierWithDatabase with TableIdentifierLike {
+
+  override def tableIdentifier: TableIdentifier = this
 
   override val identifier: String = table
 

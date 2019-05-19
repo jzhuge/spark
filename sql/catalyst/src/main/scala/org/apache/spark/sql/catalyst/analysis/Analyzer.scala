@@ -144,7 +144,20 @@ class Analyzer(
    */
   val postHocResolutionRules: Seq[Rule[LogicalPlan]] = Nil
 
+  /**
+   * Override to provide additional rules to lookup the identifiers.
+   */
+  val identifierLookupRules: Seq[Rule[LogicalPlan]] = FallbackIdentifierLookup :: Nil
+
+  def lookupIdentifiers(plan: LogicalPlan): LogicalPlan =
+    new RuleExecutor[LogicalPlan] {
+      val batches: Seq[Batch] =
+        Batch("Identifier", FixedPoint(maxIterations), identifierLookupRules: _*) :: Nil
+    }.execute(plan)
+
   lazy val batches: Seq[Batch] = Seq(
+    Batch("Identifier", fixedPoint,
+      identifierLookupRules: _*),
     Batch("Hints", fixedPoint,
       new ResolveHints.ResolveJoinStrategyHints(conf),
       ResolveHints.ResolveCoalesceHints,
