@@ -89,7 +89,7 @@ class SparkSession private(
   KSGatewayListener.initialize(
     "spark",
     sparkContext.applicationId,
-    sparkContext.getConf.get("spark.genie.id"),
+    sparkContext.hadoopConfiguration.get("genie.job.id"),
     sparkContext.hadoopConfiguration.get("keystone.gateway.host"),
     sparkContext.hadoopConfiguration.getInt("keystone.gateway.port", 80))
 
