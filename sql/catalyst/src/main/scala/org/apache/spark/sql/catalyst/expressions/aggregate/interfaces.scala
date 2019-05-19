@@ -17,6 +17,7 @@
 
 package org.apache.spark.sql.catalyst.expressions.aggregate
 
+import org.apache.spark.sql.catalog.v2.ScalarFunction
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.analysis.UnresolvedAttribute
 import org.apache.spark.sql.catalyst.expressions._
@@ -65,6 +66,29 @@ case object NoOp extends Expression with Unevaluable {
   override def nullable: Boolean = true
   override def dataType: DataType = NullType
   override def children: Seq[Expression] = Nil
+}
+
+/**
+ * Expression to apply a v2 ScalarFunction.
+ */
+case class ApplyFunctionExpression(
+    func: ScalarFunction[_],
+    children: Seq[Expression]) extends Expression with CodegenFallback {
+
+  override def prettyName: String = func.name
+  override def dataType: DataType = func.resultType
+  override def nullable: Boolean = true
+
+  private lazy val reusedRow = new GenericInternalRow(children.size)
+
+  override def eval(input: InternalRow): Any = {
+    children.zipWithIndex.foreach {
+      case (expr, pos) =>
+        reusedRow.update(pos, expr.eval(input))
+    }
+
+    func.produceResult(reusedRow)
+  }
 }
 
 object AggregateExpression {
