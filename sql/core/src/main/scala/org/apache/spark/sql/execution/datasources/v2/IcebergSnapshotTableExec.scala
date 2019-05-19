@@ -25,7 +25,7 @@ import org.apache.hadoop.conf.Configuration
 import org.apache.spark.SparkException
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.DataFrame
-import org.apache.spark.sql.catalog.v2.{CatalogV2Implicits, TableCatalog}
+import org.apache.spark.sql.catalog.v2.TableCatalog
 import org.apache.spark.sql.catalyst.{InternalRow, TableIdentifier}
 import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.execution.LeafExecNode
@@ -39,7 +39,6 @@ case class IcebergSnapshotTableExec(
     sourceTable: TableIdentifier) extends LeafExecNode {
 
   import IcebergSnapshotTableExec.addFiles
-  import CatalogV2Implicits._
 
   @transient private lazy val spark = sqlContext.sparkSession
 
@@ -55,7 +54,7 @@ case class IcebergSnapshotTableExec(
     val name = targetTable.table
 
     // use the default table catalog
-    val source = spark.catalog(None).asTableCatalog.loadTable(sourceTable)
+    val source = spark.v1CatalogAsV2.loadTable(sourceTable)
     val sourceName = s"${sourceTable.database.get}.${sourceTable.table}"
     val partitions: DataFrame = IcebergUtil.partitionDF(spark, sourceName)
 

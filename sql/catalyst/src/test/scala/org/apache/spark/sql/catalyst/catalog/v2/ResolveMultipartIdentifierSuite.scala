@@ -18,12 +18,11 @@ package org.apache.spark.sql.catalyst.catalog.v2
 
 import org.scalatest.Matchers._
 
-import org.apache.spark.sql.catalog.v2.{CatalogNotFoundException, CatalogPlugin}
+import org.apache.spark.sql.catalog.v2.{CaseInsensitiveStringMap, CatalogNotFoundException, CatalogPlugin}
 import org.apache.spark.sql.catalyst.TableIdentifier
 import org.apache.spark.sql.catalyst.analysis.{AnalysisTest, Analyzer}
 import org.apache.spark.sql.catalyst.parser.CatalystSqlParser
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.util.CaseInsensitiveStringMap
 
 private class TestCatalogPlugin(override val name: String) extends CatalogPlugin {
 

@@ -51,7 +51,7 @@ class DataSourceV2Analysis(spark: SparkSession) extends Rule[LogicalPlan] {
   import DataSourceV2Analysis._
 
   // TODO: after identifier is extended to include catalog, load the correct catalog for each ident
-  private val catalog = spark.catalog(None).asTableCatalog
+  private val catalog = spark.v1CatalogAsV2.asTableCatalog
 
   override def apply(plan: LogicalPlan): LogicalPlan = plan transformUp {
     case insert @ InsertIntoTable(unresolved: UnresolvedRelation, _, child, _, _, _)

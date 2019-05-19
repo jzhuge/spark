@@ -32,7 +32,7 @@ import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
 import org.apache.spark.scheduler.{SparkListener, SparkListenerApplicationEnd}
 import org.apache.spark.sql.catalog.Catalog
-import org.apache.spark.sql.catalog.v2.{CaseInsensitiveStringMap, CatalogProvider, Catalogs, V1TableCatalog}
+import org.apache.spark.sql.catalog.v2.{CaseInsensitiveStringMap, CatalogProvider, Catalogs, TableCatalog, V1TableCatalog}
 import org.apache.spark.sql.catalyst._
 import org.apache.spark.sql.catalyst.analysis.UnresolvedRelation
 import org.apache.spark.sql.catalyst.encoders._
@@ -614,16 +614,21 @@ class SparkSession private(
 
   @transient private lazy val catalogs = new mutable.HashMap[String, CatalogProvider]()
 
-  @transient private lazy val v1CatalogAsV2 = {
+  private[sql] lazy val v1CatalogAsV2: TableCatalog = {
     val cat = new V1TableCatalog(sessionState)
     cat.initialize("default", CaseInsensitiveStringMap.empty())
     cat
   }
 
-  private[sql] def catalog(name: Option[String]): CatalogProvider = synchronized {
-    name match {
-      case Some(catalogName) =>
-        catalogs.getOrElseUpdate(catalogName, Catalogs.load(catalogName, sessionState.conf))
+  private[sql] def catalog(name: String): CatalogProvider = synchronized {
+    catalogs.getOrElseUpdate(name, Catalogs.load(name, sessionState.conf))
+  }
+
+  @deprecated
+  private[sql] def catalog(maybeName: Option[String]): CatalogProvider = synchronized {
+    maybeName match {
+      case Some(name) =>
+        catalogs.getOrElseUpdate(name, Catalogs.load(name, sessionState.conf))
       case _ =>
         v1CatalogAsV2
     }

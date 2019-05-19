@@ -22,7 +22,7 @@ import scala.collection.JavaConverters._
 import org.apache.spark.SparkException
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.DataFrame
-import org.apache.spark.sql.catalog.v2.{CatalogV2Implicits, TableCatalog, TableChange, V1MetadataTable}
+import org.apache.spark.sql.catalog.v2.{TableCatalog, TableChange, V1MetadataTable}
 import org.apache.spark.sql.catalyst.{InternalRow, TableIdentifier}
 import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.execution.LeafExecNode
@@ -38,7 +38,6 @@ case class IcebergMigrateTableExec(
   private val HasPartitionFolder = """.*/[^/]+=[^/]+/?""".r
 
   import IcebergSnapshotTableExec.addFiles
-  import CatalogV2Implicits._
 
   @transient private lazy val spark = sqlContext.sparkSession
 
@@ -57,7 +56,7 @@ case class IcebergMigrateTableExec(
     val tempIdent = TableIdentifier(tempName, Some(db))
 
     // use the default table catalog
-    val source = spark.catalog(None).asTableCatalog.loadTable(ident).asInstanceOf[V1MetadataTable]
+    val source = spark.v1CatalogAsV2.loadTable(ident).asInstanceOf[V1MetadataTable]
     val location: String = source.catalogTable.location.toString match {
       case HasBatchID(parent) => parent
       case withoutBatchID => withoutBatchID

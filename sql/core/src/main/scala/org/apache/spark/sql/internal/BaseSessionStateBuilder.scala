@@ -19,6 +19,7 @@ package org.apache.spark.sql.internal
 import org.apache.spark.SparkConf
 import org.apache.spark.annotation.{Experimental, InterfaceStability}
 import org.apache.spark.sql.{ExperimentalMethods, SparkSession, UDFRegistration, _}
+import org.apache.spark.sql.catalog.v2.CatalogPlugin
 import org.apache.spark.sql.catalyst.analysis.{Analyzer, FunctionRegistry}
 import org.apache.spark.sql.catalyst.catalog.SessionCatalog
 import org.apache.spark.sql.catalyst.optimizer.Optimizer
@@ -126,6 +127,8 @@ abstract class BaseSessionStateBuilder(
    */
   protected lazy val resourceLoader: SessionResourceLoader = new SessionResourceLoader(session)
 
+  protected def lookupCatalog(catalogName: String): CatalogPlugin = session.catalog(catalogName)
+
   /**
    * Catalog for managing table and database states. If there is a pre-existing catalog, the state
    * of that catalog (temp tables & current database) will be copied into the new catalog.
@@ -158,7 +161,7 @@ abstract class BaseSessionStateBuilder(
    *
    * Note: this depends on the `conf` and `catalog` fields.
    */
-  protected def analyzer: Analyzer = new Analyzer(catalog, conf) {
+  protected def analyzer: Analyzer = new Analyzer(Some(lookupCatalog(_)), catalog, conf) {
     override val extendedResolutionRules: Seq[Rule[LogicalPlan]] =
       DataSourceV2Analysis(session) +:
         new FindDataSourceTable(session) +:

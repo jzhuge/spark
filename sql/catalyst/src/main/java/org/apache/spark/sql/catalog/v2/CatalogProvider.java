@@ -17,40 +17,9 @@
 
 package org.apache.spark.sql.catalog.v2;
 
-import org.apache.spark.sql.internal.SQLConf;
-
 /**
  * A marker interface to provide a catalog implementation for Spark.
- * <p>
- * Implementations can provide catalog functions by implementing additional interfaces, like
- * {@link TableCatalog} to expose table operations.
- * <p>
- * Catalog implementations must implement this marker interface to be loaded by
- * {@link Catalogs#load(String, SQLConf)}. The loader will instantiate catalog classes using the
- * required public no-arg constructor. After creating an instance, it will be configured by calling
- * {@link #initialize(String, CaseInsensitiveStringMap)}.
- * <p>
- * Catalog implementations are registered to a name by adding a configuration option to Spark:
- * {@code spark.sql.catalog.catalog-name=com.example.YourCatalogClass}. All configuration properties
- * in the Spark configuration that share the catalog name prefix,
- * {@code spark.sql.catalog.catalog-name.(key)=(value)} will be passed in the case insensitive
- * string map of options in initialization with the prefix removed. An additional property,
- * {@code name}, is also added to the options and will contain the catalog's name; in this case,
- * "catalog-name".
+ * Replaced by {@Link CatalogPlugin}.
  */
-public interface CatalogProvider {
-  /**
-   * Called to initialize configuration.
-   * <p>
-   * This method is called once, just after the provider is instantiated.
-   *
-   * @param name the name used to identify this catalog
-   * @param options a case-insensitive string map of configuration
-   */
-  void initialize(String name, CaseInsensitiveStringMap options);
-
-  /**
-   * Called to get this catalog's name.
-   */
-  String name();
+public interface CatalogProvider extends CatalogPlugin {
 }
