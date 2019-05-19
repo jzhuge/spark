@@ -40,7 +40,8 @@ class NetflixAnalysis(spark: SparkSession) extends Rule[LogicalPlan] {
   import NetflixAnalysis._
 
   private lazy val icebergCatalog: TableCatalog =
-    Try(spark.catalog(Some("iceberg"))).getOrElse(spark.catalog(None)).asTableCatalog
+    Try(spark.catalog("iceberg")).getOrElse(spark.v1CatalogAsV2).asTableCatalog
+
   private lazy val icebergTables: DataSourceV2 = new IcebergMetacatSource()
 
   override def apply(plan: LogicalPlan): LogicalPlan = plan transformUp {

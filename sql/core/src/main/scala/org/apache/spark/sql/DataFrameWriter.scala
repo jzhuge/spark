@@ -254,7 +254,7 @@ final class DataFrameWriter[T] private[sql](ds: Dataset[T]) {
     // use the v2 API if there is a table name.
     extraOptions.toMap.table.orElse(pathAsTable) match {
       case Some(identifier) =>
-        val catalog = df.sparkSession.catalog(extraOptions.get("catalog")).asTableCatalog
+        val catalog = df.sparkSession.catalog(extraOptions("catalog")).asTableCatalog
         val options = (extraOptions +
             ("provider" -> source) +
             ("database" -> identifier.database.getOrElse(df.sparkSession.catalog.currentDatabase)) +
@@ -389,7 +389,7 @@ final class DataFrameWriter[T] private[sql](ds: Dataset[T]) {
    */
   def insertInto(tableName: String): Unit = {
     import org.apache.spark.sql.sources.v2.DataSourceV2Implicits._
-    val catalog = df.sparkSession.catalog(extraOptions.get("catalog")).asTableCatalog
+    val catalog = df.sparkSession.catalog(extraOptions("catalog")).asTableCatalog
     val identifier = df.sparkSession.sessionState.sqlParser.parseTableIdentifier(tableName)
     lazy val table = loadV2Table(catalog, identifier).get
 
@@ -563,7 +563,7 @@ final class DataFrameWriter[T] private[sql](ds: Dataset[T]) {
    */
   def saveAsTable(tableName: String): Unit = {
     import org.apache.spark.sql.sources.v2.DataSourceV2Implicits._
-    val catalog = df.sparkSession.catalog(extraOptions.get("catalog")).asTableCatalog
+    val catalog = df.sparkSession.catalog(extraOptions("catalog")).asTableCatalog
     val identifier = df.sparkSession.sessionState.sqlParser.parseTableIdentifier(tableName)
     lazy val table = loadV2Table(catalog, identifier)
 

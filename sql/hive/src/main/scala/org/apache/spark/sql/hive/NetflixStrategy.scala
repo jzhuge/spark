@@ -29,7 +29,7 @@ class NetflixStrategy(spark: SparkSession) extends Strategy {
   import CatalogV2Implicits._
 
   private lazy val icebergCatalog: TableCatalog =
-    Try(spark.catalog(Some("iceberg"))).getOrElse(spark.catalog(None)).asTableCatalog
+    Try(spark.catalog("iceberg")).getOrElse(spark.v1CatalogAsV2).asTableCatalog
 
   override def apply(plan: LogicalPlan): Seq[SparkPlan] = plan match {
     case MigrateTable(identifier, provider) if provider.equalsIgnoreCase("iceberg") =>

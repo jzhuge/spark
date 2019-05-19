@@ -206,7 +206,7 @@ class DataFrameReader private[sql](sparkSession: SparkSession) extends Logging {
 
     // if the catalog is set or the source is not set, attempt to read as a table
     if (isCatalogDefined || isV2Source) {
-      val catalog = sparkSession.catalog(extraOptions.get("catalog")).asTableCatalog
+      val catalog = sparkSession.catalog(extraOptions("catalog")).asTableCatalog
       options.table match {
         case Some(ident) if catalog.tableExists(ident) =>
           return Dataset.ofRows(sparkSession,
