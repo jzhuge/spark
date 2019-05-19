@@ -212,23 +212,34 @@ case class UnresolvedGenerator(name: FunctionIdentifier, children: Seq[Expressio
 }
 
 case class UnresolvedFunction(
-    name: FunctionIdentifier,
+    multipartName: Seq[String],
     children: Seq[Expression],
     isDistinct: Boolean)
   extends Expression with Unevaluable {
+
+  import org.apache.spark.sql.catalog.v2.CatalogV2Implicits._
 
   override def dataType: DataType = throw new UnresolvedException(this, "dataType")
   override def foldable: Boolean = throw new UnresolvedException(this, "foldable")
   override def nullable: Boolean = throw new UnresolvedException(this, "nullable")
   override lazy val resolved = false
 
-  override def prettyName: String = name.unquotedString
-  override def toString: String = s"'$name(${children.mkString(", ")})"
+  override def prettyName: String = multipartName.quoted
+  override def toString: String = s"'${multipartName.quoted}(${children.mkString(", ")})"
 }
 
 object UnresolvedFunction {
+  import org.apache.spark.sql.catalog.v2.CatalogV2Implicits._
+
+  def apply(
+      name: FunctionIdentifier,
+      children: Seq[Expression],
+      isDistinct: Boolean): UnresolvedFunction = {
+    UnresolvedFunction(name.asMultipart, children, isDistinct)
+  }
+
   def apply(name: String, children: Seq[Expression], isDistinct: Boolean): UnresolvedFunction = {
-    UnresolvedFunction(FunctionIdentifier(name, None), children, isDistinct)
+    UnresolvedFunction(Seq(name), children, isDistinct)
   }
 }
 

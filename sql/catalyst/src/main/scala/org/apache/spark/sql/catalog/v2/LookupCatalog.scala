@@ -18,7 +18,7 @@
 package org.apache.spark.sql.catalog.v2
 
 import org.apache.spark.annotation.Experimental
-import org.apache.spark.sql.catalyst.TableIdentifier
+import org.apache.spark.sql.catalyst.{FunctionIdentifier, TableIdentifier}
 
 /**
  * A trait to encapsulate catalog lookup function and helpful extractors.
@@ -64,6 +64,28 @@ trait LookupCatalog {
             Some(TableIdentifier(ident.name))
           case Array(database) =>
             Some(TableIdentifier(ident.name, Some(database)))
+          case _ =>
+            None
+        }
+      case _ =>
+        None
+    }
+  }
+
+  /**
+   * Extract legacy function identifier from a multi-part identifier.
+   *
+   * For legacy support only. Please use
+   * [[org.apache.spark.sql.catalog.v2.LookupCatalog.CatalogObjectIdentifier]] in DSv2 code paths.
+   */
+  object AsFunctionIdentifier {
+    def unapply(parts: Seq[String]): Option[FunctionIdentifier] = parts match {
+      case CatalogObjectIdentifier(None, ident) =>
+        ident.namespace match {
+          case Array() =>
+            Some(FunctionIdentifier(ident.name))
+          case Array(database) =>
+            Some(FunctionIdentifier(ident.name, Some(database)))
           case _ =>
             None
         }
