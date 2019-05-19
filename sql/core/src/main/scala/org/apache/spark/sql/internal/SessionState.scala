@@ -25,7 +25,7 @@ import org.apache.hadoop.fs.Path
 import org.apache.spark.SparkContext
 import org.apache.spark.annotation.{Experimental, Unstable}
 import org.apache.spark.sql._
-import org.apache.spark.sql.catalyst.analysis.{Analyzer, FunctionRegistry}
+import org.apache.spark.sql.catalyst.analysis.{Analyzer, FunctionRegistry, TableIdentifierImplicits}
 import org.apache.spark.sql.catalyst.catalog._
 import org.apache.spark.sql.catalyst.optimizer.Optimizer
 import org.apache.spark.sql.catalyst.parser.ParserInterface
@@ -63,6 +63,7 @@ private[sql] class SessionState(
     val functionRegistry: FunctionRegistry,
     val udfRegistration: UDFRegistration,
     catalogBuilder: () => SessionCatalog,
+    val tableIdentifierImplicits: TableIdentifierImplicits,
     val sqlParser: ParserInterface,
     analyzerBuilder: () => Analyzer,
     optimizerBuilder: () => Optimizer,

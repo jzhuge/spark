@@ -89,9 +89,17 @@ class TestTableCatalog extends TableCatalog {
   }
 
   override def dropTable(ident: Identifier): Boolean = Option(tables.remove(ident)).isDefined
+
+  override def toString: String = s"${getClass.getSimpleName}($name)"
 }
 
 object TestTableCatalog {
+  def apply(name: String): TestTableCatalog = {
+    val newCatalog = new TestTableCatalog
+    newCatalog.initialize(name, CaseInsensitiveStringMap.empty())
+    newCatalog
+  }
+
   /**
    * Apply properties changes to a map and return the result.
    */

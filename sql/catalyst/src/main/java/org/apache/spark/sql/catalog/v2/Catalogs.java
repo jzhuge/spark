@@ -23,16 +23,30 @@ import org.apache.spark.sql.internal.SQLConf;
 import org.apache.spark.sql.util.CaseInsensitiveStringMap;
 import org.apache.spark.util.Utils;
 
-import java.util.HashMap;
 import java.util.Map;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 import static scala.collection.JavaConverters.mapAsJavaMapConverter;
 
 @Private
 public class Catalogs {
   private Catalogs() {
+  }
+
+  private static String classKey(String catalogName) {
+    return "spark.sql.catalog." + catalogName;
+  }
+
+  private static String optionKeyPrefix(String catalogName) {
+    return "spark.sql.catalog." + catalogName + ".";
+  }
+
+  private static boolean isOptionKey(String keyName, String catalogName) {
+    return keyName.startsWith(optionKeyPrefix(catalogName));
+  }
+
+  private static String optionKeyToName(String keyName, String catalogName) {
+    return keyName.substring(optionKeyPrefix(catalogName).length());
   }
 
   /**
@@ -49,10 +63,10 @@ public class Catalogs {
    */
   public static CatalogPlugin load(String name, SQLConf conf)
       throws CatalogNotFoundException, SparkException {
-    String pluginClassName = conf.getConfString("spark.sql.catalog." + name, null);
+    String pluginClassName = conf.getConfString(classKey(name), null);
     if (pluginClassName == null) {
       throw new CatalogNotFoundException(String.format(
-          "Catalog '%s' plugin class not found: spark.sql.catalog.%s is not defined", name, name));
+          "Catalog '%s' plugin class not found: %s is not defined", name, classKey(name)));
     }
 
     ClassLoader loader = Utils.getContextOrSparkClassLoader();
@@ -96,17 +110,42 @@ public class Catalogs {
    * @return a case insensitive string map of options starting with spark.sql.catalog.(name).
    */
   private static CaseInsensitiveStringMap catalogOptions(String name, SQLConf conf) {
-    Map<String, String> allConfs = mapAsJavaMapConverter(conf.getAllConfs()).asJava();
-    Pattern prefix = Pattern.compile("^spark\\.sql\\.catalog\\." + name + "\\.(.+)");
-
-    HashMap<String, String> options = new HashMap<>();
-    for (Map.Entry<String, String> entry : allConfs.entrySet()) {
-      Matcher matcher = prefix.matcher(entry.getKey());
-      if (matcher.matches() && matcher.groupCount() > 0) {
-        options.put(matcher.group(1), entry.getValue());
-      }
-    }
-
+    Map<String, String> options =
+        mapAsJavaMapConverter(conf.getAllConfs()).asJava().entrySet().stream()
+            .filter(e -> isOptionKey(e.getKey(), name))
+            .collect(Collectors.toMap(
+                e -> optionKeyToName(e.getKey(), name),
+                e-> e.getValue()));
     return new CaseInsensitiveStringMap(options);
+  }
+
+  /**
+   * Add a catalog.
+   *
+   * @param name a String catalog name
+   * @param options catalog options
+   * @param conf a SQLConf
+   */
+  public static void add(
+      String name,
+      String pluginClassName,
+      CaseInsensitiveStringMap options,
+      SQLConf conf) {
+    options.entrySet().stream()
+        .forEach(e -> conf.setConfString(optionKeyPrefix(name) + e.getKey(), e.getValue()));
+    conf.setConfString(classKey(name), pluginClassName);
+  }
+
+  /**
+   * Remove a catalog.
+   *
+   * @param name a String catalog name
+   * @param conf a SQLConf
+   */
+  public static void remove(String name, SQLConf conf) {
+    conf.unsetConf(classKey(name));
+    mapAsJavaMapConverter(conf.getAllConfs()).asJava().keySet().stream()
+        .filter(key -> isOptionKey(key, name))
+        .forEach(conf::unsetConf);
   }
 }

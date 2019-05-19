@@ -162,6 +162,8 @@ class SparkSession private(
       }
   }
 
+  import sessionState.tableIdentifierImplicits._
+
   /**
    * A wrapped version of this session in the form of a [[SQLContext]], for backward compatibility.
    *
@@ -624,7 +626,11 @@ class SparkSession private(
    * @since 2.0.0
    */
   def table(tableName: String): DataFrame = {
-    table(sessionState.sqlParser.parseTableIdentifier(tableName))
+    table(sessionState.sqlParser.parseMultipartIdentifier(tableName))
+  }
+
+  private[sql] def table(parts: Seq[String]): DataFrame = {
+    Dataset.ofRows(self, UnresolvedRelation(parts.asCatalogTableIdentifier))
   }
 
   private[sql] def table(tableIdent: TableIdentifier): DataFrame = {

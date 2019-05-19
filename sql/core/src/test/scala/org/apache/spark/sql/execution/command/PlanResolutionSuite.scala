@@ -19,40 +19,25 @@ package org.apache.spark.sql.execution.command
 
 import java.net.URI
 
+import org.scalatest.Matchers._
+import org.apache.spark.SparkFunSuite
+
 import org.apache.spark.sql.{AnalysisException, SaveMode}
-import org.apache.spark.sql.catalog.v2.{CatalogNotFoundException, CatalogPlugin, Identifier, TableCatalog, TestTableCatalog}
+import org.apache.spark.sql.catalog.v2.{CatalogTestUtils, Identifier, InMemoryTable}
 import org.apache.spark.sql.catalyst.TableIdentifier
-import org.apache.spark.sql.catalyst.analysis.AnalysisTest
 import org.apache.spark.sql.catalyst.catalog.{BucketSpec, CatalogStorageFormat, CatalogTable, CatalogTableType}
-import org.apache.spark.sql.catalyst.parser.CatalystSqlParser
 import org.apache.spark.sql.catalyst.plans.logical.{CreateTableAsSelect, LogicalPlan}
 import org.apache.spark.sql.execution.datasources.{CreateTable, DataSourceResolution}
+import org.apache.spark.sql.execution.datasources.v2.DataSourceV2Relation
 import org.apache.spark.sql.execution.datasources.v2.orc.OrcDataSourceV2
 import org.apache.spark.sql.types.{IntegerType, StringType, StructType}
-import org.apache.spark.sql.util.CaseInsensitiveStringMap
 
-class PlanResolutionSuite extends AnalysisTest {
-  import CatalystSqlParser._
+class PlanResolutionSuite extends SparkFunSuite with CatalogTestUtils {
 
   private val orc2 = classOf[OrcDataSourceV2].getName
 
-  private val testCat: TableCatalog = {
-    val newCatalog = new TestTableCatalog
-    newCatalog.initialize("testcat", CaseInsensitiveStringMap.empty())
-    newCatalog
-  }
-
-  private val lookupCatalog: String => CatalogPlugin = {
-    case "testcat" =>
-      testCat
-    case name =>
-      throw new CatalogNotFoundException(s"No such catalog: $name")
-  }
-
   def parseAndResolve(query: String): LogicalPlan = {
-    val newConf = conf.copy()
-    newConf.setConfString("spark.sql.default.catalog", "testcat")
-    DataSourceResolution(newConf, lookupCatalog).apply(parsePlan(query))
+    DataSourceResolution(conf, findCatalog).apply(sqlParser.parsePlan(query))
   }
 
   private def extractTableDesc(sql: String): (CatalogTable, Boolean) = {
@@ -349,7 +334,7 @@ class PlanResolutionSuite extends AnalysisTest {
 
     parseAndResolve(sql) match {
       case ctas: CreateTableAsSelect =>
-        assert(ctas.catalog.name == "testcat")
+        assert(ctas.catalog.name == "default")
         assert(ctas.tableName == Identifier.of(Array("mydb"), "page_view"))
         assert(ctas.properties == expectedProperties)
         assert(ctas.writeOptions.isEmpty)
@@ -359,6 +344,18 @@ class PlanResolutionSuite extends AnalysisTest {
       case other =>
         fail(s"Expected to parse ${classOf[CreateTableAsSelect].getName} from query," +
             s"got ${other.getClass.getName}: $sql")
+    }
+  }
+
+  test("Select from multiple catalogs") {
+    withCatalogTable("testcat.v2tbl") {
+      createTable("testcat.v2tbl")
+      parseAndResolve("TABLE testcat.v2tbl") should matchPattern {
+        case DataSourceV2Relation(InMemoryTable("v2tbl", _, _), _, _) =>
+      }
+      parseAndResolve("SELECT * FROM testcat.v2tbl").collect {
+        case DataSourceV2Relation(InMemoryTable("v2tbl", _, _), _, _) => true
+      }.size shouldEqual 1
     }
   }
 }
