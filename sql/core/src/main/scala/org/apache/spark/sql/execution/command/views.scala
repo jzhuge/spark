@@ -20,7 +20,7 @@ package org.apache.spark.sql.execution.command
 import scala.collection.mutable
 
 import org.apache.spark.sql.{AnalysisException, Row, SparkSession}
-import org.apache.spark.sql.catalyst.TableIdentifier
+import org.apache.spark.sql.catalyst.{FunctionIdentifier, TableIdentifier}
 import org.apache.spark.sql.catalyst.analysis.{UnresolvedFunction, UnresolvedRelation}
 import org.apache.spark.sql.catalyst.catalog.{CatalogStorageFormat, CatalogTable, CatalogTableType}
 import org.apache.spark.sql.catalyst.expressions.{Alias, SubqueryExpression}
@@ -196,10 +196,10 @@ case class CreateViewCommand(
             s"referencing a temporary view ${s.tableIdentifier}")
         case other if !other.resolved => other.expressions.flatMap(_.collect {
           // Disallow creating permanent views based on temporary UDFs.
-          case e: UnresolvedFunction
-            if sparkSession.sessionState.catalog.isTemporaryFunction(e.name) =>
+          case UnresolvedFunction(Seq(funcName), _, _) if sparkSession.sessionState.catalog
+              .isTemporaryFunction(FunctionIdentifier(funcName)) =>
             throw new AnalysisException(s"Not allowed to create a permanent view $name by " +
-              s"referencing a temporary function `${e.name}`")
+              s"referencing a temporary function $funcName")
         })
       }
     }
