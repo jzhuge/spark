@@ -624,6 +624,7 @@ class SparkSession private(
     catalogs.getOrElseUpdate(name, Catalogs.load(name, sessionState.conf))
   }
 
+  @deprecated
   private[sql] def catalog(maybeName: Option[String]): CatalogProvider = synchronized {
     maybeName match {
       case Some(name) =>
