@@ -624,6 +624,15 @@ class SparkSession private(
     catalogs.getOrElseUpdate(name, Catalogs.load(name, sessionState.conf))
   }
 
+  private[sql] def catalog(maybeName: Option[String]): CatalogProvider = synchronized {
+    maybeName match {
+      case Some(name) =>
+        catalogs.getOrElseUpdate(name, Catalogs.load(name, sessionState.conf))
+      case _ =>
+        v1CatalogAsV2
+    }
+  }
+
   /**
    * Returns the specified table/view as a `DataFrame`.
    *
