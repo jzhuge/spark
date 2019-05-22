@@ -18,6 +18,7 @@
 package org.apache.spark.sql.catalyst.analysis
 
 import org.apache.spark.sql.AnalysisException
+import org.apache.spark.sql.catalog.v2.Identifier
 import org.apache.spark.sql.catalyst.catalog.CatalogTypes.TablePartitionSpec
 
 
@@ -47,10 +48,19 @@ class NoSuchPartitionException(
 class NoSuchPermanentFunctionException(db: String, func: String)
   extends AnalysisException(s"Function '$func' not found in database '$db'")
 
-class NoSuchFunctionException(db: String, func: String)
-  extends AnalysisException(
-    s"Undefined function: '$func'. This function is neither a registered temporary function nor " +
-    s"a permanent function registered in the database '$db'.")
+class NoSuchFunctionException(msg: String) extends AnalysisException(msg) {
+  import org.apache.spark.sql.catalog.v2.CatalogV2Implicits._
+
+  def this(db: String, func: String) = {
+    this(s"Undefined function: '$func'. " +
+        s"This function is neither a registered temporary function nor " +
+        s"a permanent function registered in the database '$db'.")
+  }
+
+  def this(identifier: Identifier) = {
+    this(s"Undefined function: ${identifier.quoted}")
+  }
+}
 
 class NoSuchPartitionsException(db: String, table: String, specs: Seq[TablePartitionSpec])
   extends AnalysisException(
