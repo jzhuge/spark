@@ -49,8 +49,6 @@ class NoSuchPermanentFunctionException(db: String, func: String)
   extends AnalysisException(s"Function '$func' not found in database '$db'")
 
 class NoSuchFunctionException(msg: String) extends AnalysisException(msg) {
-  import org.apache.spark.sql.catalog.v2.CatalogV2Implicits._
-
   def this(db: String, func: String) = {
     this(s"Undefined function: '$func'. " +
         s"This function is neither a registered temporary function nor " +
@@ -58,7 +56,7 @@ class NoSuchFunctionException(msg: String) extends AnalysisException(msg) {
   }
 
   def this(identifier: Identifier) = {
-    this(s"Undefined function: ${identifier.quoted}")
+    this(s"Undefined function: ${identifier.namespace.mkString(".")}.${identifier.name}")
   }
 }
 
