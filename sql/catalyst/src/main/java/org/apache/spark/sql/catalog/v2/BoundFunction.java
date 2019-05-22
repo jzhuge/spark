@@ -20,10 +20,12 @@ package org.apache.spark.sql.catalog.v2;
 import org.apache.spark.sql.types.DataType;
 import org.apache.spark.sql.types.IntegerType;
 
+import java.io.Serializable;
+
 /**
  * Represents a function that is bound to an input type.
  */
-public interface BoundFunction extends Function {
+public interface BoundFunction extends Function, Serializable {
 
   /**
    * Returns the {@link DataType data type} of values produced by this function.
