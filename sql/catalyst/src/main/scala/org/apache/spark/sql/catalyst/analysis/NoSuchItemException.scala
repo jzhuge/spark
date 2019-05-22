@@ -58,7 +58,8 @@ class NoSuchFunctionException(msg: String) extends AnalysisException(msg) {
   }
 
   def this(identifier: Identifier) = {
-    this(s"Undefined function: ${identifier.quoted}")
+    this(s"Undefined function: " +
+        s"${identifier.namespace.map(quote).mkString(".")}.${quote(identifier.name)}")
   }
 }
 
