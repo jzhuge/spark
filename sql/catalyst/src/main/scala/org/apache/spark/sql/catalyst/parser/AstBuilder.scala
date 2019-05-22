@@ -1250,8 +1250,8 @@ class AstBuilder(conf: SQLConf) extends SqlBaseBaseVisitor[AnyRef] with Logging 
    */
   override def visitFunctionCall(ctx: FunctionCallContext): Expression = withOrigin(ctx) {
     def replaceFunctions(
-        funcID: FunctionIdentifier,
-        ctx: FunctionCallContext): FunctionIdentifier = {
+        funcID: Seq[String],
+        ctx: FunctionCallContext): Seq[String] = {
       val opt = ctx.trimOption
       if (opt != null) {
         if (ctx.qualifiedName.getText.toLowerCase(Locale.ROOT) != "trim") {
@@ -1260,8 +1260,8 @@ class AstBuilder(conf: SQLConf) extends SqlBaseBaseVisitor[AnyRef] with Logging 
         }
         opt.getType match {
           case SqlBaseParser.BOTH => funcID
-          case SqlBaseParser.LEADING => funcID.copy(funcName = "ltrim")
-          case SqlBaseParser.TRAILING => funcID.copy(funcName = "rtrim")
+          case SqlBaseParser.LEADING => funcID.init :+ "ltrim"
+          case SqlBaseParser.TRAILING => funcID.init :+ "rtrim"
           case _ => throw new ParseException("Function trim doesn't support with " +
             s"type ${opt.getType}. Please use BOTH, LEADING or Trailing as trim type", ctx)
         }
@@ -1280,7 +1280,7 @@ class AstBuilder(conf: SQLConf) extends SqlBaseBaseVisitor[AnyRef] with Logging 
       case expressions =>
         expressions
     }
-    val funcId = replaceFunctions(visitFunctionName(ctx.qualifiedName), ctx)
+    val funcId = replaceFunctions(visitMultipartName(ctx.qualifiedName), ctx)
     val function = UnresolvedFunction(funcId, arguments, isDistinct)
 
 
@@ -1292,6 +1292,13 @@ class AstBuilder(conf: SQLConf) extends SqlBaseBaseVisitor[AnyRef] with Logging 
         WindowExpression(function, visitWindowDef(spec))
       case _ => function
     }
+  }
+
+  /**
+   * Create a function database (optional) and name pair.
+   */
+  protected def visitMultipartName(ctx: QualifiedNameContext): Seq[String] = {
+    ctx.identifier().asScala.map(_.getText)
   }
 
   /**
