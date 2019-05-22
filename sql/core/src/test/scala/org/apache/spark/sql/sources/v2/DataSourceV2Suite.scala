@@ -20,6 +20,7 @@ package org.apache.spark.sql.sources.v2
 import java.io.File
 import java.util.{ArrayList, List => JList}
 
+import org.scalatest.BeforeAndAfter
 import test.org.apache.spark.sql.sources.v2._
 
 import org.apache.spark.SparkException
@@ -36,8 +37,22 @@ import org.apache.spark.sql.test.SharedSQLContext
 import org.apache.spark.sql.types.{IntegerType, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
-class DataSourceV2Suite extends QueryTest with SharedSQLContext {
+class DataSourceV2Suite extends QueryTest with SharedSQLContext with BeforeAndAfter{
   import testImplicits._
+
+  before {
+    spark.conf.set("spark.sql.catalog.reflect", "com.netflix.bdp.catalog.ReflectFunctionCatalog")
+  }
+
+  test("test reflect catalog") {
+    var df = spark.sql(
+      "SELECT reflect.org.apache.spark.sql.catalog.v2.FunctionCatalogTestMethods.plus(1, 2)")
+    checkAnswer(df, Row(3))
+
+    df = spark.sql(
+      "SELECT reflect.org.apache.spark.sql.catalog.v2.FunctionCatalogTestMethods.plus('a', 'b')")
+    checkAnswer(df, Row("ab"))
+  }
 
   test("simplest implementation") {
     Seq(classOf[SimpleDataSourceV2], classOf[JavaSimpleDataSourceV2]).foreach { cls =>
