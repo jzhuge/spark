@@ -1421,7 +1421,8 @@ class Analyzer(
             } catch {
               case unsupported: UnsupportedOperationException =>
                 failAnalysis(s"Function ${unbound.name} cannot process input: " +
-                    s"${children.map(_.dataType.simpleString)}: ${unsupported.getMessage}")
+                    s"(${children.map(_.dataType.simpleString).mkString(", ")}): " +
+                    unsupported.getMessage)
             }
 
             bound match {
