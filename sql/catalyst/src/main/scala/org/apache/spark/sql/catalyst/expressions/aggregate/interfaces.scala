@@ -77,7 +77,7 @@ case class ApplyFunctionExpression(
 
   override def prettyName: String = func.name
   override def dataType: DataType = func.resultType
-  override def nullable: Boolean = true
+  override def nullable: Boolean = func.isResultNullable
 
   private lazy val reusedRow = new GenericInternalRow(children.size)
 

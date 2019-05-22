@@ -37,4 +37,16 @@ public interface BoundFunction extends Function, Serializable {
    */
   DataType resultType();
 
+  /**
+   * Returns the whether values produced by this function may be null.
+   * <p>
+   * For example, a "plus" function may return false when it is bound to arguments that are always
+   * non-null, but true when either argument may be null.
+   *
+   * @return true if values produced by this function may be null, false otherwise
+   */
+  default boolean isResultNullable() {
+    return true;
+  }
+
 }
