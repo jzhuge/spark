@@ -21,6 +21,7 @@ import java.net.URI
 import java.util.Locale
 
 import org.apache.spark.sql.AnalysisException
+import org.apache.spark.sql.catalog.v2.CatalogNotFoundException
 import org.apache.spark.sql.catalyst.catalog.{CatalogDatabase, InMemoryCatalog, SessionCatalog}
 import org.apache.spark.sql.catalyst.plans.PlanTest
 import org.apache.spark.sql.catalyst.plans.logical._
@@ -40,7 +41,8 @@ trait AnalysisTest extends PlanTest {
     catalog.createTempView("TaBlE", TestRelations.testRelation, overrideIfExists = true)
     catalog.createTempView("TaBlE2", TestRelations.testRelation2, overrideIfExists = true)
     catalog.createTempView("TaBlE3", TestRelations.testRelation3, overrideIfExists = true)
-    new Analyzer(catalog, conf) {
+    new Analyzer(
+        Some((_: String) => throw new CatalogNotFoundException("No v2 catalogs")), catalog, conf) {
       override val extendedResolutionRules = EliminateSubqueryAliases :: Nil
     }
   }

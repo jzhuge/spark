@@ -1382,29 +1382,4 @@ abstract class SessionCatalogSuite extends AnalysisTest {
       assert(clone.getCurrentDatabase == db2)
     }
   }
-
-  test("SPARK-19737: detect undefined functions without triggering relation resolution") {
-    import org.apache.spark.sql.catalyst.dsl.plans._
-
-    Seq(true, false) foreach { caseSensitive =>
-      val conf = new SQLConf().copy(SQLConf.CASE_SENSITIVE -> caseSensitive)
-      val catalog = new SessionCatalog(newBasicCatalog(), new SimpleFunctionRegistry, conf)
-      try {
-        val analyzer = new Analyzer(catalog, conf)
-
-        // The analyzer should report the undefined function rather than the undefined table first.
-        val cause = intercept[AnalysisException] {
-          analyzer.execute(
-            UnresolvedRelation(TableIdentifier("undefined_table")).select(
-              UnresolvedFunction("undefined_fn", Nil, isDistinct = false)
-            )
-          )
-        }
-
-        assert(cause.getMessage.contains("Undefined function: 'undefined_fn'"))
-      } finally {
-        catalog.reset()
-      }
-    }
-  }
 }

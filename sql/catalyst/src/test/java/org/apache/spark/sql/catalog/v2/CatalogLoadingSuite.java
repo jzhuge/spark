@@ -70,7 +70,7 @@ public class CatalogLoadingSuite {
         () -> Catalogs.load("missing", conf));
 
     Assert.assertTrue("Should complain that implementation is not configured",
-        exc.getMessage().contains("provider not found: spark.sql.catalog.missing is not defined"));
+        exc.getMessage().contains("not found: spark.sql.catalog.missing is not defined"));
     Assert.assertTrue("Should identify the catalog by name", exc.getMessage().contains("missing"));
   }
 
