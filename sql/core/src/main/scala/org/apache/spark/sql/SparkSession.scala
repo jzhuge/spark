@@ -614,7 +614,7 @@ class SparkSession private(
 
   @transient private lazy val catalogs = new mutable.HashMap[String, CatalogProvider]()
 
-  private[sql] lazy val v1CatalogAsV2: TableCatalog = {
+  @transient private[sql] lazy val v1CatalogAsV2: TableCatalog = {
     val cat = new V1TableCatalog(sessionState)
     cat.initialize("default", CaseInsensitiveStringMap.empty())
     cat
