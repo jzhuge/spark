@@ -295,10 +295,16 @@ package object dsl {
   object expressions extends ExpressionConversions  // scalastyle:ignore
 
   object plans {  // scalastyle:ignore
-    def table(ref: String): LogicalPlan = UnresolvedRelation(TableIdentifier(ref))
+    def table(parts: String*): LogicalPlan = UnresolvedRelation(parts)
 
-    def table(db: String, ref: String): LogicalPlan =
-      UnresolvedRelation(TableIdentifier(ref, Option(db)))
+    // Cannot use the name `with` since it is reserved
+    def cte(plan: LogicalPlan, namedPlans: (String, LogicalPlan)*): With = {
+      val ctes = namedPlans.map {
+        case (name, cte) =>
+          name -> SubqueryAlias(name, cte)
+      }
+      With(plan, ctes)
+    }
 
     implicit class DslLogicalPlan(val logicalPlan: LogicalPlan) {
       def select(exprs: Expression*): LogicalPlan = {
