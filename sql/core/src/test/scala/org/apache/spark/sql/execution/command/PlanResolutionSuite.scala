@@ -18,17 +18,20 @@
 package org.apache.spark.sql.execution.command
 
 import java.net.URI
-import java.util.Locale
+import java.util.{Collections, Locale}
 
 import org.apache.spark.sql.{AnalysisException, SaveMode}
 import org.apache.spark.sql.catalog.v2.{CatalogNotFoundException, CatalogPlugin, Identifier, TableCatalog, TestTableCatalog}
 import org.apache.spark.sql.catalyst.TableIdentifier
-import org.apache.spark.sql.catalyst.analysis.AnalysisTest
+import org.apache.spark.sql.catalyst.analysis.{AnalysisTest, UnresolvedStar}
 import org.apache.spark.sql.catalyst.catalog.{BucketSpec, CatalogStorageFormat, CatalogTable, CatalogTableType}
+import org.apache.spark.sql.catalyst.dsl.expressions._
 import org.apache.spark.sql.catalyst.parser.CatalystSqlParser
-import org.apache.spark.sql.catalyst.plans.logical.{CreateTableAsSelect, CreateV2Table, DropTable, LogicalPlan}
+import org.apache.spark.sql.catalyst.plans.logical.{CreateTableAsSelect, CreateV2Table, DropTable, LogicalPlan, Project, UnresolvedHint}
 import org.apache.spark.sql.execution.datasources.{CreateTable, DataSourceResolution}
+import org.apache.spark.sql.execution.datasources.v2.DataSourceV2Relation
 import org.apache.spark.sql.execution.datasources.v2.orc.OrcDataSourceV2
+import org.apache.spark.sql.sources.v2.Table
 import org.apache.spark.sql.types.{DoubleType, IntegerType, LongType, StringType, StructType}
 import org.apache.spark.sql.util.CaseInsensitiveStringMap
 
@@ -56,8 +59,25 @@ class PlanResolutionSuite extends AnalysisTest {
     DataSourceResolution(newConf, lookupCatalog).apply(parsePlan(query))
   }
 
-  private def parseResolveCompare(query: String, expected: LogicalPlan): Unit =
-    comparePlans(parseAndResolve(query), expected, checkAnalysis = true)
+  private def parseResolveCompare(
+      query: String, expected: LogicalPlan, checkAnalysis: Boolean = true): Unit =
+    comparePlans(parseAndResolve(query), expected, checkAnalysis)
+
+  private def createTable(tableCatalog: TableCatalog, tableIdent: Identifier): Table =
+    tableCatalog.createTable(
+      tableIdent,
+      new StructType().add("a", StringType),
+      Array.empty,
+      Collections.emptyMap[String, String])
+
+  /**
+   * Drops table `ident` in `catalog` after calling `f`.
+   */
+  private def withCatalogTable(catalog: TableCatalog, ident: Identifier*)(f: => Unit): Unit =
+    try f finally { ident.foreach(catalog.dropTable(_)) }
+
+  private def createRelation(table: Table): LogicalPlan =
+    DataSourceV2Relation.create(table, CaseInsensitiveStringMap.empty())
 
   private def extractTableDesc(sql: String): (CatalogTable, Boolean) = {
     parseAndResolve(sql).collect {
@@ -576,5 +596,30 @@ class PlanResolutionSuite extends AnalysisTest {
       None,
       "new location")
     comparePlans(parsed1, expected1)
+  }
+
+  test("relation in v2 catalog") {
+    val ident = Identifier.of(Array("db"), "tab")
+    withCatalogTable(testCat, ident) {
+      val relation = createRelation(createTable(testCat, ident))
+
+      parseResolveCompare("TABLE testcat.db.tab", relation)
+      parseResolveCompare(
+        "SELECT * FROM testcat.db.tab",
+        Project(Seq(UnresolvedStar(None)), relation),
+        checkAnalysis = false)
+    }
+  }
+
+  test("hint - broadcast table in v2 catalog") {
+    val ident = Identifier.of(Array("db"), "tab")
+    withCatalogTable(testCat, ident) {
+      val relation = createRelation(createTable(testCat, ident))
+
+      parseResolveCompare(
+        "SELECT /*+ BROADCAST(tab) */ * FROM testcat.db.tab",
+        UnresolvedHint("BROADCAST", Seq($"tab"), Project(Seq(UnresolvedStar(None)), relation)),
+        checkAnalysis = false)
+    }
   }
 }
