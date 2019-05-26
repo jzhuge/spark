@@ -22,31 +22,39 @@ import scala.collection.JavaConverters._
 import org.scalatest.BeforeAndAfter
 
 import org.apache.spark.sql.{AnalysisException, QueryTest}
-import org.apache.spark.sql.catalog.v2.Identifier
-import org.apache.spark.sql.catalyst.analysis.TableAlreadyExistsException
+import org.apache.spark.sql.catalog.v2.{CatalogV2TestUtils, Identifier}
+import org.apache.spark.sql.catalyst.analysis.{NoSuchTableException, TableAlreadyExistsException}
 import org.apache.spark.sql.execution.datasources.v2.orc.OrcDataSourceV2
 import org.apache.spark.sql.test.SharedSQLContext
 import org.apache.spark.sql.types.{LongType, StringType, StructType}
 
-class DataSourceV2SQLSuite extends QueryTest with SharedSQLContext with BeforeAndAfter {
+class DataSourceV2SQLSuite
+  extends QueryTest with SharedSQLContext with BeforeAndAfter with CatalogV2TestUtils {
 
   import org.apache.spark.sql.catalog.v2.CatalogV2Implicits._
 
   private val orc2 = classOf[OrcDataSourceV2].getName
 
-  before {
-    spark.conf.set("spark.sql.catalog.testcat", classOf[TestInMemoryTableCatalog].getName)
-    spark.conf.set("spark.sql.default.catalog", "testcat")
+  private val previousDefaultCatalog = defaultCatalog
 
+  before {
     val df = spark.createDataFrame(Seq((1L, "a"), (2L, "b"), (3L, "c"))).toDF("id", "data")
     df.createOrReplaceTempView("source")
     val df2 = spark.createDataFrame(Seq((4L, "d"), (5L, "e"), (6L, "f"))).toDF("id", "data")
     df2.createOrReplaceTempView("source2")
+
+    addCatalog("testcat", classOf[TestInMemoryTableCatalog].getName)
+    addCatalog("testcat2", classOf[TestInMemoryTableCatalog].getName)
+    setDefaultCatalog("testcat")
   }
 
   after {
+    restoreDefaultCatalog(previousDefaultCatalog)
+    removeCatalog("testcat", "testcat2")
+
     spark.catalog("testcat").asInstanceOf[TestInMemoryTableCatalog].clearTables()
     spark.sql("DROP TABLE source")
+    spark.sql("DROP TABLE source2")
   }
 
   test("CreateTable: use v2 plan because catalog is set") {
@@ -264,6 +272,74 @@ class DataSourceV2SQLSuite extends QueryTest with SharedSQLContext with BeforeAn
 
     } finally {
       conf.setConfString("spark.sql.default.catalog", originalDefaultCatalog)
+    }
+  }
+
+  test("DropTable: basic") {
+    val tableName = "testcat.ns1.ns2.tbl"
+    val ident = Identifier.of(Array("ns1", "ns2"), "tbl")
+    sql(s"CREATE TABLE $tableName USING foo AS SELECT id, data FROM source")
+    assert(spark.catalog("testcat").asTableCatalog.tableExists(ident) === true)
+    sql(s"DROP TABLE $tableName")
+    assert(spark.catalog("testcat").asTableCatalog.tableExists(ident) === false)
+  }
+
+  test("DropTable: if exists") {
+    intercept[NoSuchTableException] {
+      sql(s"DROP TABLE testcat.db.notbl")
+    }
+    sql(s"DROP TABLE IF EXISTS testcat.db.notbl")
+  }
+
+  test("Relation: v2 catalog") {
+    val t1 = "testcat.ns1.ns2.tbl"
+    withTable(t1) {
+      sql(s"CREATE TABLE $t1 USING foo AS SELECT id, data FROM source")
+      checkAnswer(sql(s"TABLE $t1"), spark.table("source"))
+      checkAnswer(sql(s"SELECT * FROM $t1"), spark.table("source"))
+    }
+  }
+
+  test("Relation: CTE") {
+    val t1 = "testcat.ns1.ns2.tbl"
+    withTable(t1) {
+      sql(s"CREATE TABLE $t1 USING foo AS SELECT id, data FROM source")
+      checkAnswer(sql(
+        s"""
+           |WITH cte AS (SELECT * FROM $t1)
+           |SELECT * FROM cte
+        """.stripMargin),
+        spark.table("source"))
+    }
+  }
+
+  test("Relation: view text") {
+    val t1 = "testcat.ns1.ns2.tbl"
+    withTable(t1) {
+      withView("view1") { v1: String =>
+        sql(s"CREATE TABLE $t1 USING foo AS SELECT id, data FROM source")
+        sql(s"CREATE VIEW $v1 AS SELECT * from $t1")
+        checkAnswer(sql(s"TABLE $v1"), spark.table("source"))
+      }
+    }
+  }
+
+  test("Relation: join tables from 2 catalogs") {
+    val t1 = "testcat.ns1.ns2.tbl"
+    val t2 = "testcat2.v2tbl"
+    withTable(t1, t2) {
+      sql(s"CREATE TABLE $t1 USING foo AS SELECT id, data FROM source")
+      sql(s"CREATE TABLE $t2 USING foo AS SELECT id, data FROM source2")
+      val df1 = spark.table("source")
+      val df2 = spark.table("source2")
+      val df_joined = df1.join(df2).where(df1("id") + 1 === df2("id"))
+      checkAnswer(sql(
+        s"""
+           |SELECT *
+           |FROM $t1 t1, $t2 t2
+           |WHERE t1.id + 1 = t2.id
+        """.stripMargin),
+        df_joined)
     }
   }
 }

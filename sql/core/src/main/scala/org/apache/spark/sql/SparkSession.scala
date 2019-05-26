@@ -33,7 +33,7 @@ import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
 import org.apache.spark.scheduler.{SparkListener, SparkListenerApplicationEnd}
 import org.apache.spark.sql.catalog.Catalog
-import org.apache.spark.sql.catalog.v2.{CatalogPlugin, Catalogs}
+import org.apache.spark.sql.catalog.v2.{CatalogPlugin, Catalogs, TableIdentifierHelper}
 import org.apache.spark.sql.catalyst._
 import org.apache.spark.sql.catalyst.analysis.UnresolvedRelation
 import org.apache.spark.sql.catalyst.encoders._
@@ -613,6 +613,12 @@ class SparkSession private(
     catalogs.getOrElseUpdate(name, Catalogs.load(name, sessionState.conf))
   }
 
+  private[sql] val tableIdentifierHelper = new TableIdentifierHelper {
+    override def lookupCatalog: Option[String => CatalogPlugin] = Some(catalog(_))
+  }
+
+  import tableIdentifierHelper._
+
   /**
    * Returns the specified table/view as a `DataFrame`.
    *
@@ -624,10 +630,10 @@ class SparkSession private(
    * @since 2.0.0
    */
   def table(tableName: String): DataFrame = {
-    table(sessionState.sqlParser.parseTableIdentifier(tableName))
+    table(sessionState.sqlParser.parseMultipartIdentifier(tableName).asCatalogTableIdentifier)
   }
 
-  private[sql] def table(tableIdent: TableIdentifier): DataFrame = {
+  private[sql] def table(tableIdent: TableIdentifierLike): DataFrame = {
     Dataset.ofRows(self, UnresolvedRelation(tableIdent))
   }
 
