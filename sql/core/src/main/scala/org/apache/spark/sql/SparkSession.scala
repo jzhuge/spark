@@ -82,7 +82,7 @@ class SparkSession private(
     @transient private val existingSharedState: Option[SharedState],
     @transient private val parentSessionState: Option[SessionState],
     @transient private[sql] val extensions: SparkSessionExtensions)
-  extends Serializable with Closeable with Logging { self =>
+  extends Serializable with Closeable with Logging with TableIdentifierHelper { self =>
 
   // The call site where this SparkSession was constructed.
   private val creationSite: CallSite = Utils.getCallSite()
@@ -613,11 +613,7 @@ class SparkSession private(
     catalogs.getOrElseUpdate(name, Catalogs.load(name, sessionState.conf))
   }
 
-  private[sql] val tableIdentifierHelper = new TableIdentifierHelper {
-    override def lookupCatalog: Option[String => CatalogPlugin] = Some(catalog(_))
-  }
-
-  import tableIdentifierHelper._
+  override def lookupCatalog: Option[String => CatalogPlugin] = Some(catalog(_))
 
   /**
    * Returns the specified table/view as a `DataFrame`.

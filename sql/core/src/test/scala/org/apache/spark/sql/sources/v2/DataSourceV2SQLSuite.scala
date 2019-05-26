@@ -291,7 +291,7 @@ class DataSourceV2SQLSuite
     sql(s"DROP TABLE IF EXISTS testcat.db.notbl")
   }
 
-  test("Relation: v2 catalog") {
+  test("Relation: basic") {
     val t1 = "testcat.ns1.ns2.tbl"
     withTable(t1) {
       sql(s"CREATE TABLE $t1 USING foo AS SELECT id, data FROM source")
@@ -304,8 +304,8 @@ class DataSourceV2SQLSuite
     val t1 = "testcat.ns1.ns2.tbl"
     withTable(t1) {
       sql(s"CREATE TABLE $t1 USING foo AS SELECT id, data FROM source")
-      checkAnswer(sql(
-        s"""
+      checkAnswer(
+        sql(s"""
            |WITH cte AS (SELECT * FROM $t1)
            |SELECT * FROM cte
         """.stripMargin),
@@ -333,8 +333,8 @@ class DataSourceV2SQLSuite
       val df1 = spark.table("source")
       val df2 = spark.table("source2")
       val df_joined = df1.join(df2).where(df1("id") + 1 === df2("id"))
-      checkAnswer(sql(
-        s"""
+      checkAnswer(
+        sql(s"""
            |SELECT *
            |FROM $t1 t1, $t2 t2
            |WHERE t1.id + 1 = t2.id
