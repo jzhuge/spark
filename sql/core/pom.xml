@@ -41,7 +41,7 @@
     </dependency>
     <dependency>
       <groupId>com.netflix.bdp</groupId>
-      <artifactId>bdp-catalogs</artifactId>
+      <artifactId>bdc-catalogs</artifactId>
     </dependency>
     <dependency>
       <groupId>com.univocity</groupId>
