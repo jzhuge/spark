@@ -25,7 +25,7 @@ import org.apache.spark.sql.catalyst.TableIdentifier
 import org.apache.spark.sql.catalyst.analysis.AnalysisTest
 import org.apache.spark.sql.catalyst.catalog.{BucketSpec, CatalogStorageFormat, CatalogTable, CatalogTableType}
 import org.apache.spark.sql.catalyst.parser.CatalystSqlParser
-import org.apache.spark.sql.catalyst.plans.logical.{CreateTableAsSelect, CreateV2Table, LogicalPlan}
+import org.apache.spark.sql.catalyst.plans.logical.{CreateTableAsSelect, CreateV2Table, DropTable, LogicalPlan}
 import org.apache.spark.sql.execution.datasources.{CreateTable, DataSourceResolution}
 import org.apache.spark.sql.execution.datasources.v2.orc.OrcDataSourceV2
 import org.apache.spark.sql.types.{DoubleType, IntegerType, LongType, StringType, StructType}
@@ -436,6 +436,83 @@ class PlanResolutionSuite extends AnalysisTest {
       case other =>
         fail(s"Expected to parse ${classOf[CreateTableAsSelect].getName} from query," +
             s"got ${other.getClass.getName}: $sql")
+    }
+  }
+
+  test("drop table") {
+    val tableName1 = "db.tab"
+    val tableName2 = "tab"
+
+    val parsed = Seq(
+      s"DROP TABLE $tableName1",
+      s"DROP TABLE IF EXISTS $tableName1",
+      s"DROP TABLE $tableName2",
+      s"DROP TABLE IF EXISTS $tableName2",
+      s"DROP TABLE $tableName2 PURGE",
+      s"DROP TABLE IF EXISTS $tableName2 PURGE"
+    ).map(parseAndResolve)
+
+    val expected = Seq(
+      DropTableCommand(TableIdentifier("tab", Option("db")), ifExists = false, isView = false,
+        purge = false),
+      DropTableCommand(TableIdentifier("tab", Option("db")), ifExists = true, isView = false,
+        purge = false),
+      DropTableCommand(TableIdentifier("tab", None), ifExists = false, isView = false,
+        purge = false),
+      DropTableCommand(TableIdentifier("tab", None), ifExists = true, isView = false,
+        purge = false),
+      DropTableCommand(TableIdentifier("tab", None), ifExists = false, isView = false,
+        purge = true),
+      DropTableCommand(TableIdentifier("tab", None), ifExists = true, isView = false,
+        purge = true))
+
+    parsed.zip(expected).foreach { case (p, e) => comparePlans(p, e) }
+  }
+
+  test("drop view") {
+    val viewName1 = "db.view"
+    val viewName2 = "view"
+
+    val parsed1 = parseAndResolve(s"DROP VIEW $viewName1")
+    val parsed2 = parseAndResolve(s"DROP VIEW IF EXISTS $viewName1")
+    val parsed3 = parseAndResolve(s"DROP VIEW $viewName2")
+    val parsed4 = parseAndResolve(s"DROP VIEW IF EXISTS $viewName2")
+
+    val expected1 =
+      DropTableCommand(TableIdentifier("view", Option("db")), ifExists = false, isView = true,
+        purge = false)
+    val expected2 =
+      DropTableCommand(TableIdentifier("view", Option("db")), ifExists = true, isView = true,
+        purge = false)
+    val expected3 =
+      DropTableCommand(TableIdentifier("view", None), ifExists = false, isView = true,
+        purge = false)
+    val expected4 =
+      DropTableCommand(TableIdentifier("view", None), ifExists = true, isView = true,
+        purge = false)
+
+    comparePlans(parsed1, expected1)
+    comparePlans(parsed2, expected2)
+    comparePlans(parsed3, expected3)
+    comparePlans(parsed4, expected4)
+  }
+
+  test("drop table v2") {
+    val tableName1 = "testcat.db.tab"
+    val tableName2 = "testcat.tab"
+    val tableIdent1 = Identifier.of(Array("db"), "tab")
+    val tableIdent2 = Identifier.of(Array.empty, "tab")
+    Seq(
+      (s"DROP TABLE $tableName1",
+        DropTable(testCat, tableIdent1, ifExists = false)),
+      (s"DROP TABLE IF EXISTS $tableName1",
+        DropTable(testCat, tableIdent1, ifExists = true)),
+      (s"DROP TABLE $tableName2",
+        DropTable(testCat, tableIdent2, ifExists = false)),
+      (s"DROP TABLE IF EXISTS $tableName2",
+        DropTable(testCat, tableIdent2, ifExists = true))).foreach {
+      case (sql, expected) =>
+        assert(parseAndResolve(sql) === expected)
     }
   }
 }

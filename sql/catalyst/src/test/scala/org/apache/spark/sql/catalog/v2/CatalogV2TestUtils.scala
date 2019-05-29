@@ -20,25 +20,22 @@ package org.apache.spark.sql.catalog.v2
 import org.apache.spark.sql.internal.SQLConf
 
 private[sql] trait CatalogV2TestUtils {
-
-  protected lazy val catalogManager: CatalogManager = new CatalogManager(SQLConf.get)
-
   /**
-   * Adds a catalog.
+   * Add a catalog.
    */
   protected def addCatalog(name: String, pluginClassName: String): Unit =
-    catalogManager.add(name, pluginClassName)
+    SQLConf.get.setConfString(s"spark.sql.catalog.$name", pluginClassName)
 
   /**
-   * Removes catalogs.
+   * Remove catalogs.
    */
   protected def removeCatalog(catalogNames: String*): Unit =
-    catalogNames.foreach { catalogName =>
-      catalogManager.remove(catalogName)
+    catalogNames.foreach { name =>
+      SQLConf.get.unsetConf(s"spark.sql.catalog.$name")
     }
 
   /**
-   * Sets the default catalog.
+   * Set the default catalog.
    *
    * @param catalog the new default catalog
    */
@@ -46,12 +43,12 @@ private[sql] trait CatalogV2TestUtils {
     SQLConf.get.setConfString(SQLConf.DEFAULT_V2_CATALOG.key, catalog)
 
   /**
-   * Returns the current default catalog.
+   * Return the current default catalog.
    */
   protected def defaultCatalog: Option[String] = SQLConf.get.defaultV2Catalog
 
   /**
-   * Restores the default catalog to the previously saved value.
+   * Restore the default catalog to the previously saved value.
    */
   protected def restoreDefaultCatalog(previous: Option[String]): Unit =
     previous.foreach(SQLConf.get.setConfString(SQLConf.DEFAULT_V2_CATALOG.key, _))
