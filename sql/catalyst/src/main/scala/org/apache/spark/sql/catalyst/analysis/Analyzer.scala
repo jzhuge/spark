@@ -215,22 +215,26 @@ class Analyzer(
   object CTESubstitution extends Rule[LogicalPlan] {
     def apply(plan: LogicalPlan): LogicalPlan = plan.resolveOperatorsUp {
       case With(child, relations) =>
-        substituteCTE(child, relations.foldLeft(Seq.empty[(String, LogicalPlan)]) {
-          case (resolved, (name, relation)) =>
-            resolved :+ name -> executeSameContext(substituteCTE(relation, resolved))
-        })
+        // substitute CTE expressions right-to-left to resolve references to previous CTEs:
+        // with a as (select * from t) with b as (select * from a) select * from b
+        relations.reverse.foldLeft(child) {
+          case (currentPlan, (cteName, ctePlan)) =>
+            substituteCTE(currentPlan, cteName, ctePlan)
+        }
       case other => other
     }
 
-    def substituteCTE(plan: LogicalPlan, cteRelations: Seq[(String, LogicalPlan)]): LogicalPlan = {
-      plan resolveOperatorsDown {
-        case u @ UnresolvedRelation(Seq(table)) =>
-          cteRelations.find(x => resolver(x._1, table)).map(_._2).getOrElse(u)
+    def substituteCTE(plan: LogicalPlan, cteName: String, ctePlan: LogicalPlan): LogicalPlan = {
+      plan resolveOperatorsUp {
+        case UnresolvedRelation(Seq(table)) if resolver(cteName, table) =>
+          ctePlan
+        case u: UnresolvedRelation =>
+          u
         case other =>
           // This cannot be done in ResolveSubquery because ResolveSubquery does not know the CTE.
           other transformExpressions {
             case e: SubqueryExpression =>
-              e.withNewPlan(substituteCTE(e.plan, cteRelations))
+              e.withNewPlan(substituteCTE(e.plan, cteName, ctePlan))
           }
       }
     }
