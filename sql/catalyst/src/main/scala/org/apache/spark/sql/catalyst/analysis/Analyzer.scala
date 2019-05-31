@@ -224,8 +224,9 @@ class Analyzer(
 
     def substituteCTE(plan: LogicalPlan, cteRelations: Seq[(String, LogicalPlan)]): LogicalPlan = {
       plan resolveOperatorsDown {
-        case u @ UnresolvedRelation(TableIdentifier(table, _)) =>
-          cteRelations.find(x => resolver(x._1, table)).map(_._2).getOrElse(u)
+        case u: UnresolvedRelation =>
+          cteRelations.find(x => resolver(x._1, u.tableIdentifier.table))
+            .map(_._2).getOrElse(u)
         case other =>
           // This cannot be done in ResolveSubquery because ResolveSubquery does not know the CTE.
           other transformExpressions {
@@ -717,7 +718,7 @@ class Analyzer(
             u.failAnalysis(s"Inserting into a view is not allowed. View: ${v.desc.identifier}.")
           case other => i.copy(table = other)
         }
-      case u @ UnresolvedRelation(_: TableIdentifier) => resolveRelation(u)
+      case u: UnresolvedRelation => resolveRelation(u)
     }
 
     // Look up the table with the given name from catalog. The database we used is decided by the

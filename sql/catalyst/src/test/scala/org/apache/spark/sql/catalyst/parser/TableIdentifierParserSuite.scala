@@ -17,27 +17,12 @@
 package org.apache.spark.sql.catalyst.parser
 
 import org.apache.spark.SparkFunSuite
-import org.apache.spark.sql.catalog.v2.{CatalogNotFoundException, CatalogPlugin, Identifier, TableIdentifierHelper, TestTableCatalog}
-import org.apache.spark.sql.catalyst.{CatalogTableIdentifier, TableIdentifier}
+import org.apache.spark.sql.catalyst.TableIdentifier
 import org.apache.spark.sql.catalyst.plans.SQLHelper
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.util.CaseInsensitiveStringMap
 
-class TableIdentifierParserSuite extends SparkFunSuite with SQLHelper with TableIdentifierHelper {
+class TableIdentifierParserSuite extends SparkFunSuite with SQLHelper {
   import CatalystSqlParser._
-
-  private val testCat = new TestTableCatalog {
-    initialize("testcat", CaseInsensitiveStringMap.empty())
-  }
-
-  private def findCatalog(name: String): CatalogPlugin = name match {
-    case "testcat" =>
-      testCat
-    case _ =>
-      throw new CatalogNotFoundException(s"$name not found")
-  }
-
-  override protected def lookupCatalog(name: String): CatalogPlugin = findCatalog(name)
 
   // Add "$elem$", "$value$" & "$key$"
   // It is recommended to list them in alphabetical order.
@@ -713,12 +698,5 @@ class TableIdentifierParserSuite extends SparkFunSuite with SQLHelper with Table
     // Table identifier contains countious backticks should be treated correctly.
     val complexName2 = TableIdentifier("x``y", Some("d``b"))
     assert(complexName2 === parseTableIdentifier(complexName2.quotedString))
-  }
-
-  test("multipart table identifier") {
-    assert(parseMultipartIdentifier("testcat.v2tbl").asCatalogTableIdentifier ===
-      CatalogTableIdentifier(testCat, Identifier.of(Array.empty, "v2tbl")))
-    assert(parseMultipartIdentifier("db.tbl").asCatalogTableIdentifier ===
-      TableIdentifier("tbl", Some("db")))
   }
 }

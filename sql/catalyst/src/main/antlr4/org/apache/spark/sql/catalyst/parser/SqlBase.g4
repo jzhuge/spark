@@ -397,7 +397,7 @@ queryTerm
 
 queryPrimary
     : querySpecification                                                    #queryPrimaryDefault
-    | TABLE multipartIdentifier                                             #table
+    | TABLE tableIdentifier                                                 #table
     | inlineTable                                                           #inlineTableDefault1
     | '(' queryNoWith  ')'                                                  #subquery
     ;
@@ -536,7 +536,7 @@ identifierComment
     ;
 
 relationPrimary
-    : multipartIdentifier sample? tableAlias  #tableName
+    : tableIdentifier sample? tableAlias      #tableName
     | '(' queryNoWith ')' sample? tableAlias  #aliasedQuery
     | '(' relation ')' sample? tableAlias     #aliasedRelation
     | inlineTable                             #inlineTableDefault2

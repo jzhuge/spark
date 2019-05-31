@@ -24,18 +24,16 @@ import scala.collection.mutable
 import org.apache.spark.sql.{AnalysisException, SaveMode}
 import org.apache.spark.sql.catalog.v2.{CatalogPlugin, Identifier, LookupCatalog, TableCatalog}
 import org.apache.spark.sql.catalog.v2.expressions.Transform
-import org.apache.spark.sql.catalyst.{CatalogTableIdentifier, TableIdentifier}
-import org.apache.spark.sql.catalyst.analysis.{CastSupport, UnresolvedRelation}
+import org.apache.spark.sql.catalyst.TableIdentifier
+import org.apache.spark.sql.catalyst.analysis.CastSupport
 import org.apache.spark.sql.catalyst.catalog.{BucketSpec, CatalogTable, CatalogTableType, CatalogUtils}
 import org.apache.spark.sql.catalyst.plans.logical.{CreateTableAsSelect, CreateV2Table, DropTable, LogicalPlan}
 import org.apache.spark.sql.catalyst.plans.logical.sql.{CreateTableAsSelectStatement, CreateTableStatement, DropTableStatement, DropViewStatement}
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution.command.DropTableCommand
-import org.apache.spark.sql.execution.datasources.v2.DataSourceV2Relation
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.sources.v2.TableProvider
 import org.apache.spark.sql.types.StructType
-import org.apache.spark.sql.util.CaseInsensitiveStringMap
 
 case class DataSourceResolution(
     conf: SQLConf,
@@ -100,10 +98,6 @@ case class DataSourceResolution(
 
     case DropViewStatement(AsTableIdentifier(tableName), ifExists) =>
       DropTableCommand(tableName, ifExists, isView = true, purge = false)
-
-    case UnresolvedRelation(CatalogTableIdentifier(catalog, ident)) =>
-      DataSourceV2Relation.create(catalog.loadTable(ident),
-        CaseInsensitiveStringMap.empty)
   }
 
   object V1WriteProvider {
