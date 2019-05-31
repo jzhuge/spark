@@ -41,8 +41,7 @@ class ResolveSQLOnFile(sparkSession: SparkSession) extends Rule[LogicalPlan] wit
   override protected def lookupCatalog(name: String): CatalogPlugin = sparkSession.catalog(name)
 
   private def maybeSQLFile(u: UnresolvedRelation): Boolean = {
-    sparkSession.sessionState.conf.runSQLonFile && u.multipartIdentifier.size == 2 &&
-        u.multipartIdentifier.last.contains("/")
+    sparkSession.sessionState.conf.runSQLonFile && u.multipartIdentifier.size == 2
   }
 
   def apply(plan: LogicalPlan): LogicalPlan = plan resolveOperators {
