@@ -52,16 +52,8 @@ case class UnresolvedRelation(multipartIdentifier: Seq[String]) extends LeafNode
 }
 
 object UnresolvedRelation {
-  def apply(tableIdentifier: TableIdentifier): UnresolvedRelation = {
-    val multipartIdentifier = tableIdentifier.database match {
-      case Some(db) =>
-        Seq(db, tableIdentifier.table)
-      case None =>
-        Seq(tableIdentifier.table)
-    }
-
-    UnresolvedRelation(multipartIdentifier)
-  }
+  def apply(tableIdentifier: TableIdentifier): UnresolvedRelation =
+    UnresolvedRelation(tableIdentifier.database.toSeq :+ tableIdentifier.table)
 }
 
 /**
