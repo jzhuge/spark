@@ -22,7 +22,6 @@ import java.util.Locale
 import scala.collection.mutable
 
 import org.apache.spark.sql.AnalysisException
-import org.apache.spark.sql.catalog.v2.{CatalogPlugin, LookupCatalog}
 import org.apache.spark.sql.catalyst.expressions.IntegerLiteral
 import org.apache.spark.sql.catalyst.plans.logical._
 import org.apache.spark.sql.catalyst.rules.Rule
@@ -52,13 +51,10 @@ object ResolveHints {
    * This rule must happen before common table expressions.
    */
   class ResolveJoinStrategyHints(
-      conf: SQLConf,
-      catalogLookup: String => CatalogPlugin) extends Rule[LogicalPlan] with LookupCatalog {
+      conf: SQLConf) extends Rule[LogicalPlan] {
     private val STRATEGY_HINT_NAMES = JoinStrategyHint.strategies.flatMap(_.hintAliases)
 
     def resolver: Resolver = conf.resolver
-
-    override protected def lookupCatalog(name: String): CatalogPlugin = catalogLookup(name)
 
     private def createHintInfo(hintName: String): HintInfo = {
       HintInfo(strategy =

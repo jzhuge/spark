@@ -20,7 +20,6 @@ package org.apache.spark.sql.execution.datasources
 import java.util.Locale
 
 import org.apache.spark.sql.{AnalysisException, SaveMode, SparkSession}
-import org.apache.spark.sql.catalog.v2.{CatalogPlugin, LookupCatalog}
 import org.apache.spark.sql.catalyst.analysis._
 import org.apache.spark.sql.catalyst.catalog._
 import org.apache.spark.sql.catalyst.expressions.{Alias, Attribute, Cast, Expression, InputFileBlockLength, InputFileBlockStart, InputFileName, RowOrdering}
@@ -36,9 +35,7 @@ import org.apache.spark.sql.util.SchemaUtils
 /**
  * Replaces [[UnresolvedRelation]]s if the plan is for direct query on files.
  */
-class ResolveSQLOnFile(sparkSession: SparkSession) extends Rule[LogicalPlan] with LookupCatalog {
-
-  override protected def lookupCatalog(name: String): CatalogPlugin = sparkSession.catalog(name)
+class ResolveSQLOnFile(sparkSession: SparkSession) extends Rule[LogicalPlan] {
 
   private def maybeSQLFile(u: UnresolvedRelation): Boolean = {
     sparkSession.sessionState.conf.runSQLonFile && u.multipartIdentifier.size == 2
