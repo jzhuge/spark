@@ -345,4 +345,70 @@ class DataSourceV2SQLSuite extends QueryTest with SharedSQLContext with BeforeAn
         df_joined)
     }
   }
+
+  test("InsertTable: append table in v2 catalog") {
+    val t1 = "testcat.ns1.ns2.tbl"
+    withTable(t1) {
+      sql(s"CREATE TABLE $t1 (id bigint, data string) USING parquet")
+      sql(s"INSERT INTO $t1 SELECT id, data FROM source")
+      checkAnswer(sql(s"TABLE $t1"), spark.table("source"))
+    }
+  }
+
+  test("InsertTable: append from table in v2 catalog") {
+    val t1 = "testcat.ns1.ns2.tbl"
+    val t2 = "target"
+    withTable(t1, t2) {
+      sql(s"CREATE TABLE $t1 USING foo AS SELECT id, data FROM source")
+      sql(s"CREATE TABLE $t2 (id bigint, data string) USING parquet")
+
+      sql(s"INSERT INTO $t2 SELECT * FROM $t1")
+      checkAnswer(sql(s"TABLE $t2"), spark.table("source"))
+    }
+  }
+
+  test("InsertTable: append from/into table in v2 catalog") {
+    val t1 = "testcat.ns1.ns2.tbl"
+    val t2 = "testcat2.db.tbl"
+    withTable(t1, t2) {
+      sql(s"CREATE TABLE $t1 USING foo AS SELECT id, data FROM source")
+      sql(s"CREATE TABLE $t2 (id bigint, data string) USING parquet")
+
+      sql(s"INSERT INTO $t2 SELECT * FROM $t1")
+      checkAnswer(sql(s"TABLE $t2"), spark.table("source"))
+    }
+  }
+
+  ignore("InsertTable: overwrite table in v2 catalog") {
+    val t1 = "testcat.ns1.ns2.tbl"
+    withTable(t1) {
+      sql(s"CREATE TABLE $t1 (id bigint, data string) USING parquet")
+      sql(s"INSERT OVERWRITE TABLE $t1 SELECT id, data FROM source")
+      checkAnswer(sql(s"TABLE $t1"), spark.table("source"))
+    }
+  }
+
+  test("InsertTable: overwrite from table in v2 catalog") {
+    val t1 = "testcat.ns1.ns2.tbl"
+    val t2 = "target"
+    withTable(t1, t2) {
+      sql(s"CREATE TABLE $t1 USING foo AS SELECT id, data FROM source")
+      sql(s"CREATE TABLE $t2 (id bigint, data string) USING parquet")
+
+      sql(s"INSERT OVERWRITE TABLE $t2 SELECT * FROM $t1")
+      checkAnswer(sql(s"TABLE $t2"), spark.table("source"))
+    }
+  }
+
+  ignore("InsertTable: overwrite from/into table in v2 catalog") {
+    val t1 = "testcat.ns1.ns2.tbl"
+    val t2 = "testcat2.db.tbl"
+    withTable(t1, t2) {
+      sql(s"CREATE TABLE $t1 USING foo AS SELECT id, data FROM source")
+      sql(s"CREATE TABLE $t2 (id bigint, data string) USING parquet")
+
+      sql(s"INSERT OVERWRITE TABLE $t2 SELECT * FROM $t1")
+      checkAnswer(sql(s"TABLE $t2"), spark.table("source"))
+    }
+  }
 }

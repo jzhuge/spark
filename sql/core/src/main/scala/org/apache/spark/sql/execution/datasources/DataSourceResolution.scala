@@ -27,8 +27,8 @@ import org.apache.spark.sql.catalog.v2.expressions.Transform
 import org.apache.spark.sql.catalyst.TableIdentifier
 import org.apache.spark.sql.catalyst.analysis.{CastSupport, NoSuchTableException, UnresolvedRelation}
 import org.apache.spark.sql.catalyst.catalog.{BucketSpec, CatalogTable, CatalogTableType, CatalogUtils}
-import org.apache.spark.sql.catalyst.plans.logical.{CreateTableAsSelect, CreateV2Table, DropTable, LogicalPlan}
-import org.apache.spark.sql.catalyst.plans.logical.sql.{AlterTableAddColumnsStatement, AlterTableSetLocationStatement, AlterTableSetPropertiesStatement, AlterTableUnsetPropertiesStatement, AlterViewSetPropertiesStatement, AlterViewUnsetPropertiesStatement, CreateTableAsSelectStatement, CreateTableStatement, DropTableStatement, DropViewStatement, QualifiedColType}
+import org.apache.spark.sql.catalyst.plans.logical._
+import org.apache.spark.sql.catalyst.plans.logical.sql._
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution.command.{AlterTableAddColumnsCommand, AlterTableSetLocationCommand, AlterTableSetPropertiesCommand, AlterTableUnsetPropertiesCommand, DropTableCommand}
 import org.apache.spark.sql.execution.datasources.v2.DataSourceV2Relation
@@ -122,7 +122,27 @@ case class DataSourceResolution(
       AlterTableAddColumnsCommand(table, newColumns.map(convertToStructField))
 
     case u @ UnresolvedRelation(CatalogObjectIdentifier(Some(catalog), ident)) =>
-      loadV2Table(catalog, ident).map(createV2Relation).getOrElse(u)
+      loadV2Table(catalog, ident)
+        .map(createV2Relation)
+        .getOrElse(u)
+
+    case i @ InsertTableStatement(UnresolvedRelation(CatalogObjectIdentifier(Some(catalog), ident)),
+    _, query, overwrite, _) if query.resolved && !overwrite =>
+      loadV2Table(catalog, ident)
+        .map(createV2Relation)
+        .map(AppendData.byPosition(_, query))
+        .getOrElse(i)
+
+    case i @ InsertTableStatement(UnresolvedRelation(CatalogObjectIdentifier(Some(catalog), ident)),
+    _, query, overwrite, _) if query.resolved && overwrite =>
+      loadV2Table(catalog, ident)
+        .map(createV2Relation)
+        .map(OverwritePartitionsDynamic.byPosition(_, query))
+        .getOrElse(i)
+
+    case InsertTableStatement(u @ UnresolvedRelation(AsTableIdentifier(_)), partition, query,
+    overwrite, ifPartitionNotExists) if query.resolved =>
+      InsertIntoTable(u, partition, query, overwrite, ifPartitionNotExists)
   }
 
   private def loadV2Table(catalog: CatalogPlugin, ident: Identifier): Option[Table] =

@@ -20,10 +20,10 @@ package org.apache.spark.sql.catalyst.parser
 import java.util.Locale
 
 import org.apache.spark.sql.catalog.v2.expressions.{ApplyTransform, BucketTransform, DaysTransform, FieldReference, HoursTransform, IdentityTransform, LiteralValue, MonthsTransform, YearsTransform}
-import org.apache.spark.sql.catalyst.analysis.AnalysisTest
+import org.apache.spark.sql.catalyst.analysis.{AnalysisTest, UnresolvedRelation}
 import org.apache.spark.sql.catalyst.catalog.BucketSpec
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
-import org.apache.spark.sql.catalyst.plans.logical.sql.{AlterTableAddColumnsStatement, AlterTableAlterColumnStatement, AlterTableDropColumnsStatement, AlterTableRenameColumnStatement, AlterTableSetLocationStatement, AlterTableSetPropertiesStatement, AlterTableUnsetPropertiesStatement, AlterViewSetPropertiesStatement, AlterViewUnsetPropertiesStatement, CreateTableAsSelectStatement, CreateTableStatement, DropTableStatement, DropViewStatement, QualifiedColType}
+import org.apache.spark.sql.catalyst.plans.logical.sql.{AlterTableAddColumnsStatement, AlterTableAlterColumnStatement, AlterTableDropColumnsStatement, AlterTableRenameColumnStatement, AlterTableSetLocationStatement, AlterTableSetPropertiesStatement, AlterTableUnsetPropertiesStatement, AlterViewSetPropertiesStatement, AlterViewUnsetPropertiesStatement, CreateTableAsSelectStatement, CreateTableStatement, DropTableStatement, DropViewStatement, InsertTableStatement, QualifiedColType}
 import org.apache.spark.sql.types.{IntegerType, LongType, StringType, StructType, TimestampType}
 import org.apache.spark.unsafe.types.UTF8String
 
@@ -592,5 +592,70 @@ class DDLParserSuite extends AnalysisTest {
           Seq("table_name"),
           Seq(Seq("x"), Seq("y"), Seq("a", "b", "c"))))
     }
+  }
+
+  test("insert table: append table in v2 catalog") {
+    parseCompare("INSERT INTO TABLE testcat.ns1.ns2.tbl TABLE source",
+      InsertTableStatement(
+        table = UnresolvedRelation(Seq("testcat", "ns1", "ns2", "tbl")),
+        partition = Map.empty,
+        query = UnresolvedRelation(Seq("source")),
+        overwrite = false,
+        ifPartitionNotExists = false))
+  }
+
+  test("insert table: append partition of table in v2 catalog") {
+    parseCompare(
+      """
+        |INSERT INTO testcat.ns1.ns2.tbl
+        |PARTITION (p1 = 3, p2)
+        |TABLE source
+      """.stripMargin,
+      InsertTableStatement(
+        table = UnresolvedRelation(Seq("testcat", "ns1", "ns2", "tbl")),
+        partition = Map("p1" -> Some("3"), "p2" -> None),
+        query = UnresolvedRelation(Seq("source")),
+        overwrite = false,
+        ifPartitionNotExists = false))
+  }
+
+  test("insert table: overwrite table in v2 catalog") {
+    parseCompare("INSERT OVERWRITE TABLE testcat.ns1.ns2.tbl TABLE source",
+      InsertTableStatement(
+        table = UnresolvedRelation(Seq("testcat", "ns1", "ns2", "tbl")),
+        partition = Map.empty,
+        query = UnresolvedRelation(Seq("source")),
+        overwrite = true,
+        ifPartitionNotExists = false))
+  }
+
+  test("insert table: overwrite partition of table in v2 catalog") {
+    parseCompare(
+      """
+        |INSERT OVERWRITE TABLE testcat.ns1.ns2.tbl
+        |PARTITION (p1 = 3) IF NOT EXISTS
+        |TABLE source
+      """.stripMargin,
+      InsertTableStatement(
+        table = UnresolvedRelation(Seq("testcat", "ns1", "ns2", "tbl")),
+        partition = Map("p1" -> Some("3")),
+        query = UnresolvedRelation(Seq("source")),
+        overwrite = true,
+        ifPartitionNotExists = true))
+  }
+
+  test("insert table: overwrite dynamic partition of table in v2 catalog") {
+    parseCompare(
+      """
+        |INSERT OVERWRITE TABLE testcat.ns1.ns2.tbl
+        |PARTITION (p1 = 3, p2)
+        |TABLE source
+      """.stripMargin,
+      InsertTableStatement(
+        table = UnresolvedRelation(Seq("testcat", "ns1", "ns2", "tbl")),
+        partition = Map("p1" -> Some("3"), "p2" -> None),
+        query = UnresolvedRelation(Seq("source")),
+        overwrite = true,
+        ifPartitionNotExists = false))
   }
 }
