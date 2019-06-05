@@ -17,6 +17,8 @@
 
 package org.apache.spark.sql.catalyst.plans.logical.sql
 
+import scala.util.Try
+
 import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
 
@@ -37,8 +39,11 @@ import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
 private[sql] abstract class ParsedStatement extends LogicalPlan {
   // Redact properties and options when parsed nodes are used by generic methods like toString
   override def productIterator: Iterator[Any] = super.productIterator.map {
-    case mapArg: Map[_, _] => conf.redactOptions(mapArg.asInstanceOf[Map[String, String]])
-    case other => other
+    case mapArg: Map[_, _] =>
+      // May match any Map type, e.g. Map[String, Int], due to type erasure
+      Try(conf.redactOptions(mapArg.asInstanceOf[Map[String, String]])).getOrElse(mapArg)
+    case other =>
+      other
   }
 
   override def output: Seq[Attribute] = Seq.empty
