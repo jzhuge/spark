@@ -181,7 +181,7 @@ case class CreateViewCommand(
    * Permanent views are not allowed to reference temp objects, including temp function and views
    */
   private def verifyTemporaryObjectsNotExists(sparkSession: SparkSession): Unit = {
-    import sparkSession.sessionState.analyzer._
+    import sparkSession.sessionState.analyzer.AsTableIdentifier
 
     if (!isTemporary) {
       // This func traverses the unresolved plan `child`. Below are the reasons:
