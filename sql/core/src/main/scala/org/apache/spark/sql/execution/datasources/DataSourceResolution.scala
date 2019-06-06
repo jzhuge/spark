@@ -133,7 +133,7 @@ case class DataSourceResolution(
         None
     }
 
-  private def createV2Relation(table: Table): LogicalPlan =
+  private def createV2Relation(table: Table): DataSourceV2Relation =
     DataSourceV2Relation.create(table, CaseInsensitiveStringMap.empty)
 
   object V1WriteProvider {
