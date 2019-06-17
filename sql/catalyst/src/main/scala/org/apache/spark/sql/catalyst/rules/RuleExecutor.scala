@@ -90,7 +90,7 @@ abstract class RuleExecutor[TreeType <: TreeNode[_]] extends Logging {
             if (!result.fastEquals(plan)) {
               queryExecutionMetrics.incNumEffectiveExecution(rule.ruleName)
               queryExecutionMetrics.incTimeEffectiveExecutionBy(rule.ruleName, runTime)
-              logTrace(
+              RuleExecutor.this.logTrace(
                 s"""
                   |=== Applying Rule ${rule.ruleName} ===
                   |${sideBySide(plan.treeString, result.treeString).mkString("\n")}
@@ -116,14 +116,14 @@ abstract class RuleExecutor[TreeType <: TreeNode[_]] extends Logging {
             if (Utils.isTesting) {
               throw new TreeNodeException(curPlan, message, null)
             } else {
-              logWarning(message)
+              RuleExecutor.this.logWarning(message)
             }
           }
           continue = false
         }
 
         if (curPlan.fastEquals(lastPlan)) {
-          logTrace(
+          RuleExecutor.this.logTrace(
             s"Fixed point reached for batch ${batch.name} after ${iteration - 1} iterations.")
           continue = false
         }
@@ -131,13 +131,13 @@ abstract class RuleExecutor[TreeType <: TreeNode[_]] extends Logging {
       }
 
       if (!batchStartPlan.fastEquals(curPlan)) {
-        logDebug(
+        RuleExecutor.this.logDebug(
           s"""
             |=== Result of Batch ${batch.name} ===
             |${sideBySide(batchStartPlan.treeString, curPlan.treeString).mkString("\n")}
           """.stripMargin)
       } else {
-        logTrace(s"Batch ${batch.name} has no effect.")
+        RuleExecutor.this.logTrace(s"Batch ${batch.name} has no effect.")
       }
     }
 
