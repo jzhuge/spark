@@ -75,6 +75,8 @@ private[sql] class JSONOptions(
   val dropMalformed = ParseModes.isDropMalformedMode(parseMode)
   val permissive = ParseModes.isPermissiveMode(parseMode)
 
+  val writeNull = parameters.get("writeNull").map(_.toBoolean).getOrElse(false)
+
   /** Sets config options on a Jackson [[JsonFactory]]. */
   def setJacksonOptions(factory: JsonFactory): Unit = {
     factory.configure(JsonParser.Feature.ALLOW_COMMENTS, allowComments)
