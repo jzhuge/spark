@@ -236,10 +236,8 @@ public final class UnsafeExternalRowSorter {
         Object baseObj2,
         long baseOff2,
         int baseLen2) {
-      // Note that since ordering doesn't need the total length of the record, we just pass 0
-      // into the row.
-      row1.pointTo(baseObj1, baseOff1, 0);
-      row2.pointTo(baseObj2, baseOff2, 0);
+      row1.pointTo(baseObj1, baseOff1, baseLen1);
+      row2.pointTo(baseObj2, baseOff2, baseLen2);
       return ordering.compare(row1, row2);
     }
   }
