@@ -9,6 +9,30 @@
     <value>1.0</value>
   </property>
   <property>
+    <name>bdp.metrics.jvm-CodeCache.sample-rate</name>
+    <value>0.0</value>
+  </property>
+  <property>
+    <name>bdp.metrics.jvm-CompressedClassSpace.sample-rate</name>
+    <value>0.0</value>
+  </property>
+  <property>
+    <name>bdp.metrics.jvm-G1SurvivorSpace.sample-rate</name>
+    <value>0.0</value>
+  </property>
+  <property>
+    <name>bdp.metrics.jvm-Metaspace.sample-rate</name>
+    <value>0.0</value>
+  </property>
+  <property>
+    <name>bdp.metrics.jvm-PSSurvivorSpace.sample-rate</name>
+    <value>0.0</value>
+  </property>
+  <property>
+    <name>bdp.metrics.jvm-ParSurvivorSpace.sample-rate</name>
+    <value>0.0</value>
+  </property>
+  <property>
     <name>bdp.metrics.topic</name>
     <value>bdp_process_metrics</value>
   </property>
