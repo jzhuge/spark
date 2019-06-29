@@ -366,6 +366,10 @@ object SparkEnv extends Logging {
       ms
     }
 
+    if (!isDriver) {
+      System.setProperty("spark.app.id", conf.get("spark.app.id", ""))
+    }
+    System.setProperty("spark.genie.id", conf.get("spark.genie.id", ""))
     GarbageCollectionMetrics.registerListener()
 
     val outputCommitCoordinator = mockOutputCommitCoordinator.getOrElse {
