@@ -31,6 +31,7 @@ import scala.util.control.NonFatal
 
 import com.codahale.metrics.Histogram
 import com.netflix.bdp
+import com.netflix.bdp.GarbageCollectionMetrics
 
 import org.apache.spark._
 import org.apache.spark.deploy.SparkHadoopUtil
@@ -153,6 +154,12 @@ private[spark] class Executor(
   private var heartbeatFailures = 0
 
   startDriverHeartbeater()
+
+  if (!isLocal && conf.getBoolean("spark.report.gc.metrics", true)) {
+    System.setProperty("spark.app.id", conf.getAppId)
+    conf.getOption("spark.genie.id").foreach(System.setProperty("spark.genie.id", _))
+    GarbageCollectionMetrics.registerListener()
+  }
 
   def launchTask(
       context: ExecutorBackend,
