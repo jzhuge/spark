@@ -154,27 +154,6 @@ private[spark] class Executor(
 
   startDriverHeartbeater()
 
-  private val memoryReporter = ThreadUtils.newDaemonSingleThreadScheduledExecutor("memory-reporter")
-
-  private val usedMemory: Histogram =
-    com.netflix.bdp.TaskMetrics.histogram("executor-memory-usage", "usedMemory")
-
-  if (conf.getBoolean("spark.executor.memory-reporter.enable", false)) {
-    startMemoryReporter()
-  }
-
-  private def startMemoryReporter(): Unit = {
-    val memoryReporterTask = new Runnable() {
-      override def run(): Unit = {
-        System.gc()
-        usedMemory.update(Runtime.getRuntime.totalMemory() - Runtime.getRuntime.freeMemory())
-      }
-    }
-    log.info("Starting memoryReporter")
-    memoryReporter.scheduleAtFixedRate(memoryReporterTask,
-      1000, conf.getInt("spark.executor.memory-reporter.interval", 10000), TimeUnit.MILLISECONDS)
-  }
-
   def launchTask(
       context: ExecutorBackend,
       taskId: Long,
@@ -753,8 +732,6 @@ private[spark] class Executor(
     heartbeater.scheduleAtFixedRate(heartbeatTask, initialDelay, intervalMs, TimeUnit.MILLISECONDS)
   }
 }
-
-
 
 private[spark] object Executor {
   // This is reserved for internal use by components that need to read task properties before a
