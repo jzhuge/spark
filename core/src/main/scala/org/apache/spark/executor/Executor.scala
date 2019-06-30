@@ -173,7 +173,7 @@ private[spark] class Executor(
 
   if (!isLocal && conf.getBoolean("spark.report.gc.metrics", true)) {
     System.setProperty("spark.app.id", conf.getAppId)
-    System.setProperty("spark.genie.id", conf.get("spark.genie.id", ""))
+    conf.getOption("spark.genie.id").foreach(System.setProperty("spark.genie.id", _))
     GarbageCollectionMetrics.registerListener()
   }
 
@@ -825,6 +825,8 @@ private[spark] class Executor(
     heartbeater.scheduleAtFixedRate(heartbeatTask, initialDelay, intervalMs, TimeUnit.MILLISECONDS)
   }
 }
+
+
 
 private[spark] object Executor {
   // This is reserved for internal use by components that need to read task properties before a
