@@ -25,7 +25,6 @@ import scala.collection.mutable
 import scala.util.Properties
 
 import com.google.common.collect.MapMaker
-import com.netflix.bdp.GarbageCollectionMetrics
 
 import org.apache.spark.annotation.DeveloperApi
 import org.apache.spark.api.python.PythonWorkerFactory
@@ -365,12 +364,6 @@ object SparkEnv extends Logging {
       ms.start()
       ms
     }
-
-    if (!isDriver) {
-      System.setProperty("spark.app.id", conf.get("spark.app.id", ""))
-    }
-    System.setProperty("spark.genie.id", conf.get("spark.genie.id", ""))
-    GarbageCollectionMetrics.registerListener()
 
     val outputCommitCoordinator = mockOutputCommitCoordinator.getOrElse {
       new OutputCommitCoordinator(conf, isDriver)
