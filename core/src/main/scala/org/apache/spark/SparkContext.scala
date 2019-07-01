@@ -33,6 +33,7 @@ import scala.util.control.NonFatal
 
 import com.google.common.collect.MapMaker
 import com.netflix.bdp.GarbageCollectionMetrics
+import com.netflix.bdp.TaskMetrics.addTag
 import org.apache.commons.lang3.SerializationUtils
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FileSystem, Path}
@@ -509,9 +510,9 @@ class SparkContext(config: SparkConf) extends Logging {
     _ui.foreach(_.setAppId(_applicationId))
     _env.blockManager.initialize(_applicationId)
 
-    if (_conf.getBoolean("spark.report.gc.metrics", true)) {
-      System.setProperty("spark.app.id", _applicationId)
-      _conf.getOption("spark.genie.id").foreach(System.setProperty("spark.genie.id", _))
+    if (_conf.getBoolean("spark.metrics.report.gc", true)) {
+      addTag("app", _conf.getAppId)
+      _conf.getOption("spark.genie.id").foreach(addTag("job", _))
       GarbageCollectionMetrics.registerListener()
     }
 
