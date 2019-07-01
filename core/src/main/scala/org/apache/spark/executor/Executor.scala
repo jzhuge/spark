@@ -32,7 +32,6 @@ import scala.util.control.NonFatal
 import com.codahale.metrics.Histogram
 import com.netflix.bdp
 import com.netflix.bdp.GarbageCollectionMetrics
-import com.netflix.bdp.TaskMetrics.addTag
 
 import org.apache.spark._
 import org.apache.spark.deploy.SparkHadoopUtil
@@ -157,8 +156,8 @@ private[spark] class Executor(
   startDriverHeartbeater()
 
   if (!isLocal && conf.getBoolean("spark.report.gc.metrics", true)) {
-    addTag("app", conf.getAppId)
-    conf.getOption("spark.genie.id").foreach(addTag("job", _))
+    bdp.TaskMetrics.addTag("app", conf.getAppId)
+    conf.getOption("spark.genie.id").foreach(bdp.TaskMetrics.addTag("job", _))
     GarbageCollectionMetrics.registerListener()
   }
 
