@@ -126,9 +126,9 @@ case class DataSourceV2ScanExec(
         inputMetrics.recordsRead % SparkHadoopUtil.UPDATE_INPUT_METRICS_INTERVAL_RECORDS == 0
       if (shouldUpdateBytesRead || force) {
         inputMetrics.setBytesRead(startingBytesRead + getBytesRead())
-        inputMetrics.incRecordsRead(1)
-        numOutputRows += 1
       }
+      inputMetrics.incRecordsRead(1)
+      numOutputRows += 1
     }
   }
 }
