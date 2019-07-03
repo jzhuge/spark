@@ -9,27 +9,51 @@
     <value>1.0</value>
   </property>
   <property>
-    <name>bdp.metrics.jvm-CodeCache.sample-rate</name>
+    <name>bdp.metrics.jvm-memory-beforegc-Code_Cache.sample-rate</name>
     <value>0.0</value>
   </property>
   <property>
-    <name>bdp.metrics.jvm-CompressedClassSpace.sample-rate</name>
+    <name>bdp.metrics.jvm-memory-beforegc-Compressed_Class_Space.sample-rate</name>
     <value>0.0</value>
   </property>
   <property>
-    <name>bdp.metrics.jvm-G1SurvivorSpace.sample-rate</name>
+    <name>bdp.metrics.jvm-memory-beforegc-G1_Survivor_Space.sample-rate</name>
     <value>0.0</value>
   </property>
   <property>
-    <name>bdp.metrics.jvm-Metaspace.sample-rate</name>
+    <name>bdp.metrics.jvm-memory-beforegc-Metaspace.sample-rate</name>
     <value>0.0</value>
   </property>
   <property>
-    <name>bdp.metrics.jvm-PSSurvivorSpace.sample-rate</name>
+    <name>bdp.metrics.jvm-memory-beforegc-PS_Survivor_Space.sample-rate</name>
     <value>0.0</value>
   </property>
   <property>
-    <name>bdp.metrics.jvm-ParSurvivorSpace.sample-rate</name>
+    <name>bdp.metrics.jvm-memory-beforegc-Par_Survivor_Space.sample-rate</name>
+    <value>0.0</value>
+  </property>
+  <property>
+    <name>bdp.metrics.jvm-memory-aftergc-Code_Cache.sample-rate</name>
+    <value>0.0</value>
+  </property>
+  <property>
+    <name>bdp.metrics.jvm-memory-aftergc-Compressed_Class_Space.sample-rate</name>
+    <value>0.0</value>
+  </property>
+  <property>
+    <name>bdp.metrics.jvm-memory-aftergc-G1_Survivor_Space.sample-rate</name>
+    <value>0.0</value>
+  </property>
+  <property>
+    <name>bdp.metrics.jvm-memory-aftergc-Metaspace.sample-rate</name>
+    <value>0.0</value>
+  </property>
+  <property>
+    <name>bdp.metrics.jvm-memory-aftergc-PS_Survivor_Space.sample-rate</name>
+    <value>0.0</value>
+  </property>
+  <property>
+    <name>bdp.metrics.jvm-memory-aftergc-Par_Survivor_Space.sample-rate</name>
     <value>0.0</value>
   </property>
   <property>

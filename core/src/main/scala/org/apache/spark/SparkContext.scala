@@ -33,7 +33,7 @@ import scala.util.control.NonFatal
 
 import com.google.common.collect.MapMaker
 import com.netflix.bdp
-import com.netflix.bdp.GarbageCollectionMetrics
+import com.netflix.bdp.metrics.GcLogger
 import org.apache.commons.lang3.SerializationUtils
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FileSystem, Path}
@@ -513,7 +513,7 @@ class SparkContext(config: SparkConf) extends Logging {
     if (_conf.getBoolean("spark.metrics.report.gc", true)) {
       bdp.TaskMetrics.addTag("app", _conf.getAppId)
       _conf.getOption("spark.genie.id").foreach(bdp.TaskMetrics.addTag("job", _))
-      GarbageCollectionMetrics.registerListener()
+      GcLogger.start(bdp.TaskMetrics.groupFactory())
     }
 
     // The metrics system for Driver need to be set spark.app.id to app ID.
