@@ -237,7 +237,7 @@ private[sql] object IcebergUtil {
     val fs = partition.getFileSystem(conf)
 
     fs.listStatus(partition, HiddenPathFilter).filter(_.isFile).map { stat =>
-      val metrics = ParquetMetrics.fromMetadata(ParquetFileReader.readFooter(conf, stat))
+      val metrics = ParquetMetrics.fromMetadata(ParquetFileReader.readFooter(conf, stat), 16)
 
       SparkDataFile(
         stat.getPath.toString,
