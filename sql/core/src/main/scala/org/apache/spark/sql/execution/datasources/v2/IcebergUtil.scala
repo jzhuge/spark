@@ -23,7 +23,7 @@ import java.util
 import scala.collection.JavaConverters._
 
 import com.google.common.collect.Maps
-import com.netflix.iceberg.{DataFile, DataFiles, Metrics, PartitionSpec}
+import com.netflix.iceberg.{DataFile, DataFiles, Metrics, MetricsConfig, PartitionSpec}
 import com.netflix.iceberg.parquet.ParquetMetrics
 import com.netflix.iceberg.spark.hacks.Hive
 import org.apache.hadoop.conf.Configuration
@@ -237,7 +237,9 @@ private[sql] object IcebergUtil {
     val fs = partition.getFileSystem(conf)
 
     fs.listStatus(partition, HiddenPathFilter).filter(_.isFile).map { stat =>
-      val metrics = ParquetMetrics.fromMetadata(ParquetFileReader.readFooter(conf, stat))
+      val metrics = ParquetMetrics.fromMetadata(
+        ParquetFileReader.readFooter(conf, stat),
+        MetricsConfig.getDefault)
 
       SparkDataFile(
         stat.getPath.toString,
