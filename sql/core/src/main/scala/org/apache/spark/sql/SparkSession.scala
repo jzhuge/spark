@@ -86,12 +86,17 @@ class SparkSession private(
   sparkContext.assertNotStopped()
 
   // initialize the Keystone listener to send events from this JVM
-  KSGatewayListener.initialize(
-    "spark",
-    sparkContext.applicationId,
-    sparkContext.hadoopConfiguration.get("genie.job.id"),
-    sparkContext.hadoopConfiguration.get("keystone.gateway.host"),
-    sparkContext.hadoopConfiguration.getInt("keystone.gateway.port", 80))
+  Option(sparkContext.hadoopConfiguration.get("keystone.gateway.host")) match {
+    case Some(host) =>
+      KSGatewayListener.initialize(
+        "spark",
+        sparkContext.applicationId,
+        sparkContext.hadoopConfiguration.get("genie.job.id"),
+        host,
+        sparkContext.hadoopConfiguration.getInt("keystone.gateway.port", 80))
+
+    case _ =>
+  }
 
   // If there is no active SparkSession, uses the default SQL conf. Otherwise, use the session's.
   SQLConf.setSQLConfGetter(() => {
