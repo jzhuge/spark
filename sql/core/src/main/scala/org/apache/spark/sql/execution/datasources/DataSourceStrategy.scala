@@ -22,8 +22,8 @@ import java.util.concurrent.Callable
 
 import scala.collection.JavaConverters._
 
-import com.netflix.iceberg.spark.source.IcebergMetacatSource
 import com.netflix.bdp.Events
+import com.netflix.iceberg.spark.source.IcebergMetacatSource
 import org.apache.hadoop.fs.Path
 
 import org.apache.spark.internal.Logging
