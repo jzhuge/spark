@@ -230,6 +230,12 @@ case class InsertIntoHadoopFsRelationCommand(
               V2Util.columns(schema).asJava,
               committerOptions.asJava
             )
+          case SaveMode.ErrorIfExists =>
+            Events.sendCTAS(
+              tableName,
+              V2Util.columns(schema).asJava,
+              committerOptions.asJava
+            )
         }
       }
 
