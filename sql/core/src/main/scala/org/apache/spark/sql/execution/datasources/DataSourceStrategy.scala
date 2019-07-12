@@ -480,10 +480,11 @@ case class DataSourceStrategy(conf: SQLConf) extends Strategy with Logging with 
     val filterCondition = unhandledPredicates.reduceLeftOption(expressions.And)
 
     val tableName = relation.name
+    val filter = filterPredicates.reduceLeftOption(expressions.And).map(_.sql).getOrElse("true")
     val sendScanEvent: StructType => Unit = if (!Utils.isTesting) {
       schema: StructType => {
         Events.sendScan(tableName,
-          filterPredicates.reduceLeftOption(expressions.And).map(_.sql).getOrElse("true"),
+          filter,
           V2Util.columns(schema).asJava,
           Map.empty[String, String].asJava)
       }

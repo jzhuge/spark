@@ -64,10 +64,11 @@ object FileSourceStrategy extends Strategy with Logging {
     case PhysicalOperation(projects, filters,
       l @ LogicalRelation(fsRelation: HadoopFsRelation, _, table, _)) =>
       val tableName = l.name
+      val filter: String = filters.reduceLeftOption(expressions.And).map(_.sql).getOrElse("true")
       val sendScanEvent: StructType => Unit = if (!Utils.isTesting) {
         schema: StructType => {
           Events.sendScan(tableName,
-            filters.reduceLeftOption(expressions.And).map(_.sql).getOrElse("true"),
+            filter,
             V2Util.columns(schema).asJava,
             Map.empty[String, String].asJava)
         }
