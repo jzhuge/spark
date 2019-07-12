@@ -34,7 +34,6 @@ import org.apache.spark.sql.catalyst.catalog.{CatalogTable, CatalogTablePartitio
 import org.apache.spark.sql.catalyst.catalog.CatalogTypes.TablePartitionSpec
 import org.apache.spark.sql.catalyst.expressions
 import org.apache.spark.sql.catalyst.expressions._
-import org.apache.spark.sql.catalyst.expressions.codegen.CodegenContext
 import org.apache.spark.sql.catalyst.planning.PhysicalOperation
 import org.apache.spark.sql.catalyst.plans.logical
 import org.apache.spark.sql.catalyst.plans.logical.{LogicalPlan, Project}
@@ -451,24 +450,14 @@ object DataSourceStrategy extends Strategy with Logging {
         _: StructType => {}
       }
 
-      new RowDataSourceScanExec(
+      RowDataSourceScanExec(
         l.output,
         toCatalystRDD(l, baseRelation.buildScan()),
         baseRelation,
         UnknownPartitioning(0),
         Map.empty,
-        None) {
-
-        override protected def doProduce(ctx: CodegenContext): String = {
-          sendScanEvent(schema)
-          super.doProduce(ctx)
-        }
-
-        override protected def doExecute(): RDD[InternalRow] = {
-          sendScanEvent(schema)
-          super.doExecute()
-        }
-      } :: Nil
+        None,
+        Some(sendScanEvent)) :: Nil
 
     case i @ logical.InsertIntoTable(l @ LogicalRelation(t: InsertableRelation, _, _),
       part, query, overwrite, false, _) if part.isEmpty =>
@@ -549,10 +538,11 @@ object DataSourceStrategy extends Strategy with Logging {
     val filterCondition = unhandledPredicates.reduceLeftOption(expressions.And)
 
     val tableName = relation.name
+    val filter = filterPredicates.reduceLeftOption(expressions.And).map(_.sql).getOrElse("true")
     val sendScanEvent: StructType => Unit = if (!Utils.isTesting) {
       schema: StructType => {
         Events.sendScan(tableName,
-          filterPredicates.reduceLeftOption(expressions.And).map(_.sql).getOrElse("true"),
+          filter,
           V2Util.columns(schema).asJava,
           Map.empty[String, String].asJava)
       }
@@ -591,22 +581,12 @@ object DataSourceStrategy extends Strategy with Logging {
         // Don't request columns that are only referenced by pushed filters.
         .filterNot(handledSet.contains)
 
-      val scan = new RowDataSourceScanExec(
+      val scan = RowDataSourceScanExec(
         projects.map(_.toAttribute),
         scanBuilder(requestedColumns, candidatePredicates, pushedFilters),
         relation.relation, UnknownPartitioning(0), metadata,
-        relation.catalogTable.map(_.identifier)) {
-
-        override protected def doProduce(ctx: CodegenContext): String = {
-          sendScanEvent(schema)
-          super.doProduce(ctx)
-        }
-
-        override protected def doExecute(): RDD[InternalRow] = {
-          sendScanEvent(schema)
-          super.doExecute()
-        }
-      }
+        relation.catalogTable.map(_.identifier),
+        Some(sendScanEvent))
 
       filterCondition.map(execution.FilterExec(_, scan)).getOrElse(scan)
     } else {
@@ -614,22 +594,13 @@ object DataSourceStrategy extends Strategy with Logging {
       val requestedColumns =
         (projectSet ++ filterSet -- handledSet).map(relation.attributeMap).toSeq
 
-      val scan = new RowDataSourceScanExec(
+      val scan = RowDataSourceScanExec(
         requestedColumns,
         scanBuilder(requestedColumns, candidatePredicates, pushedFilters),
         relation.relation, UnknownPartitioning(0), metadata,
-        relation.catalogTable.map(_.identifier)) {
+        relation.catalogTable.map(_.identifier),
+        Some(sendScanEvent))
 
-        override protected def doProduce(ctx: CodegenContext): String = {
-          sendScanEvent(schema)
-          super.doProduce(ctx)
-        }
-
-        override protected def doExecute(): RDD[InternalRow] = {
-          sendScanEvent(schema)
-          super.doExecute()
-        }
-      }
       execution.ProjectExec(
         projects, filterCondition.map(execution.FilterExec(_, scan)).getOrElse(scan))
     }

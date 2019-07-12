@@ -53,7 +53,8 @@ case class RowDataSourceScanExec(
     @transient relation: BaseRelation,
     override val outputPartitioning: Partitioning,
     override val metadata: Map[String, String],
-    override val metastoreTableIdentifier: Option[TableIdentifier])
+    override val metastoreTableIdentifier: Option[TableIdentifier],
+    sendScanEvent: Option[StructType => Unit] = None)
   extends DataSourceScanExec {
 
   override lazy val metrics =
@@ -65,6 +66,11 @@ case class RowDataSourceScanExec(
         SQLConf.PARQUET_VECTORIZED_READER_ENABLED)
     case _: HadoopFsRelation => true
     case _ => false
+  }
+
+  override protected def doPrepare(): Unit = {
+    super.doPrepare()
+    sendScanEvent.foreach(_(schema))
   }
 
   protected override def doExecute(): RDD[InternalRow] = {
@@ -144,8 +150,14 @@ case class FileSourceScanExec(
     outputSchema: StructType,
     partitionFilters: Seq[Expression],
     dataFilters: Seq[Filter],
-    override val metastoreTableIdentifier: Option[TableIdentifier])
+    override val metastoreTableIdentifier: Option[TableIdentifier],
+    sendScanEvent: Option[StructType => Unit] = None)
   extends DataSourceScanExec {
+
+  override protected def doPrepare(): Unit = {
+    super.doPrepare()
+    sendScanEvent.foreach(_(schema))
+  }
 
   val supportsBatch: Boolean = relation.fileFormat.supportBatch(
     relation.sparkSession, StructType.fromAttributes(output))
