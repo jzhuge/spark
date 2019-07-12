@@ -36,7 +36,6 @@ import org.apache.spark.sql.catalyst.analysis._
 import org.apache.spark.sql.catalyst.catalog._
 import org.apache.spark.sql.catalyst.expressions
 import org.apache.spark.sql.catalyst.expressions._
-import org.apache.spark.sql.catalyst.expressions.codegen.CodegenContext
 import org.apache.spark.sql.catalyst.planning.PhysicalOperation
 import org.apache.spark.sql.catalyst.plans.logical.{InsertIntoDir, InsertIntoTable, LogicalPlan, Project}
 import org.apache.spark.sql.catalyst.plans.logical.sql
@@ -406,25 +405,15 @@ case class DataSourceStrategy(conf: SQLConf) extends Strategy with Logging with 
         _: StructType => {}
       }
 
-      new RowDataSourceScanExec(
+      RowDataSourceScanExec(
         l.output,
         l.output.indices,
         Set.empty,
         Set.empty,
         toCatalystRDD(l, baseRelation.buildScan()),
         baseRelation,
-        None) {
-
-        override protected def doProduce(ctx: CodegenContext): String = {
-          sendScanEvent(schema)
-          super.doProduce(ctx)
-        }
-
-        override protected def doExecute(): RDD[InternalRow] = {
-          sendScanEvent(schema)
-          super.doExecute()
-        }
-      } :: Nil
+        None,
+        Some(sendScanEvent)) :: Nil
 
     case _ => Nil
   }
@@ -514,25 +503,15 @@ case class DataSourceStrategy(conf: SQLConf) extends Strategy with Logging with 
         // Match original case of attributes.
         .map(relation.attributeMap)
 
-      val scan = new RowDataSourceScanExec(
+      val scan = RowDataSourceScanExec(
         relation.output,
         requestedColumns.map(relation.output.indexOf),
         pushedFilters.toSet,
         handledFilters,
         scanBuilder(requestedColumns, candidatePredicates, pushedFilters),
         relation.relation,
-        relation.catalogTable.map(_.identifier)) {
-
-        override protected def doProduce(ctx: CodegenContext): String = {
-          sendScanEvent(schema)
-          super.doProduce(ctx)
-        }
-
-        override protected def doExecute(): RDD[InternalRow] = {
-          sendScanEvent(schema)
-          super.doExecute()
-        }
-      }
+        relation.catalogTable.map(_.identifier),
+        Some(sendScanEvent))
 
       filterCondition.map(execution.FilterExec(_, scan)).getOrElse(scan)
     } else {
@@ -548,25 +527,15 @@ case class DataSourceStrategy(conf: SQLConf) extends Strategy with Logging with 
       val requestedColumns =
         (projectSet ++ filterSet -- handledSet).map(relation.attributeMap).toSeq
 
-      val scan = new RowDataSourceScanExec(
+      val scan = RowDataSourceScanExec(
         relation.output,
         requestedColumns.map(relation.output.indexOf),
         pushedFilters.toSet,
         handledFilters,
         scanBuilder(requestedColumns, candidatePredicates, pushedFilters),
         relation.relation,
-        relation.catalogTable.map(_.identifier)) {
-
-        override protected def doProduce(ctx: CodegenContext): String = {
-          sendScanEvent(schema)
-          super.doProduce(ctx)
-        }
-
-        override protected def doExecute(): RDD[InternalRow] = {
-          sendScanEvent(schema)
-          super.doExecute()
-        }
-      }
+        relation.catalogTable.map(_.identifier),
+        Some(sendScanEvent))
       execution.ProjectExec(
         projects, filterCondition.map(execution.FilterExec(_, scan)).getOrElse(scan))
     }

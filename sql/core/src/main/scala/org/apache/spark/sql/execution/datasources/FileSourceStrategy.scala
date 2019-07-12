@@ -128,24 +128,14 @@ object FileSourceStrategy extends Strategy with Logging {
       val outputAttributes = readDataColumns ++ partitionColumns
 
       val scan =
-        new FileSourceScanExec(
+        FileSourceScanExec(
           fsRelation,
           outputAttributes,
           outputSchema,
           partitionKeyFilters.toSeq,
           dataFilters,
-          table.map(_.identifier)) {
-
-          override protected def doProduce(ctx: CodegenContext): String = {
-            sendScanEvent(schema)
-            super.doProduce(ctx)
-          }
-
-          override protected def doExecute(): RDD[InternalRow] = {
-            sendScanEvent(schema)
-            super.doExecute()
-          }
-        }
+          table.map(_.identifier),
+          Some(sendScanEvent))
 
       val afterScanFilter = afterScanFilters.toSeq.reduceOption(expressions.And)
       val withFilter = afterScanFilter.map(execution.FilterExec(_, scan)).getOrElse(scan)

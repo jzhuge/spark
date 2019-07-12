@@ -81,13 +81,19 @@ case class RowDataSourceScanExec(
     handledFilters: Set[Filter],
     rdd: RDD[InternalRow],
     @transient relation: BaseRelation,
-    override val tableIdentifier: Option[TableIdentifier])
+    override val tableIdentifier: Option[TableIdentifier],
+    sendScanEvent: Option[StructType => Unit] = None)
   extends DataSourceScanExec {
 
   def output: Seq[Attribute] = requiredColumnsIndex.map(fullOutput)
 
   override lazy val metrics =
     Map("numOutputRows" -> SQLMetrics.createMetric(sparkContext, "number of output rows"))
+
+  override protected def doPrepare(): Unit = {
+    super.doPrepare()
+    sendScanEvent.foreach(_(schema))
+  }
 
   protected override def doExecute(): RDD[InternalRow] = {
     val unsafeRow = rdd.mapPartitionsWithIndexInternal { (index, iter) =>
@@ -161,7 +167,8 @@ case class FileSourceScanExec(
     requiredSchema: StructType,
     partitionFilters: Seq[Expression],
     dataFilters: Seq[Expression],
-    override val tableIdentifier: Option[TableIdentifier])
+    override val tableIdentifier: Option[TableIdentifier],
+    sendScanEvent: Option[StructType => Unit] = None)
   extends DataSourceScanExec with ColumnarBatchScan  {
 
   // Note that some vals referring the file-based relation are lazy intentionally
@@ -175,6 +182,11 @@ case class FileSourceScanExec(
     } else {
       false
     }
+  }
+
+  override protected def doPrepare(): Unit = {
+    super.doPrepare()
+    sendScanEvent.foreach(_(schema))
   }
 
   override def vectorTypes: Option[Seq[String]] =
@@ -524,6 +536,7 @@ case class FileSourceScanExec(
       requiredSchema,
       QueryPlan.normalizePredicates(partitionFilters, output),
       QueryPlan.normalizePredicates(dataFilters, output),
-      None)
+      None,
+      sendScanEvent)
   }
 }
