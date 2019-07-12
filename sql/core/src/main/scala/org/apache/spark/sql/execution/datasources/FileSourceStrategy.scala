@@ -64,10 +64,11 @@ object FileSourceStrategy extends Strategy with Logging {
     case PhysicalOperation(projects, filters,
       l @ LogicalRelation(fsRelation: HadoopFsRelation, _, table, _)) =>
       val tableName = l.name
+      val filter: String = filters.reduceLeftOption(expressions.And).map(_.sql).getOrElse("true")
       val sendScanEvent: StructType => Unit = if (!Utils.isTesting) {
         schema: StructType => {
           Events.sendScan(tableName,
-            filters.reduceLeftOption(expressions.And).map(_.sql).getOrElse("true"),
+            filter,
             V2Util.columns(schema).asJava,
             Map.empty[String, String].asJava)
         }
@@ -128,24 +129,14 @@ object FileSourceStrategy extends Strategy with Logging {
       val outputAttributes = readDataColumns ++ partitionColumns
 
       val scan =
-        new FileSourceScanExec(
+        FileSourceScanExec(
           fsRelation,
           outputAttributes,
           outputSchema,
           partitionKeyFilters.toSeq,
           dataFilters,
-          table.map(_.identifier)) {
-
-          override protected def doProduce(ctx: CodegenContext): String = {
-            sendScanEvent(schema)
-            super.doProduce(ctx)
-          }
-
-          override protected def doExecute(): RDD[InternalRow] = {
-            sendScanEvent(schema)
-            super.doExecute()
-          }
-        }
+          table.map(_.identifier),
+          Some(sendScanEvent))
 
       val afterScanFilter = afterScanFilters.toSeq.reduceOption(expressions.And)
       val withFilter = afterScanFilter.map(execution.FilterExec(_, scan)).getOrElse(scan)
