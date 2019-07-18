@@ -31,6 +31,7 @@ import org.apache.spark.sql.catalyst.plans.logical._
 import org.apache.spark.sql.catalyst.rules.{Rule, RuleExecutor}
 import org.apache.spark.sql.catalyst.util.quoteIdentifier
 import org.apache.spark.sql.execution.datasources.LogicalRelation
+import org.apache.spark.sql.execution.datasources.v2.{DataSourceV2Relation, TableV2Relation}
 import org.apache.spark.sql.types.{ByteType, DataType, IntegerType, NullType}
 
 /**
@@ -605,6 +606,12 @@ class SQLBuilder private (
       case relation: CatalogRelation =>
         val m = relation.catalogTable
         Some(SQLTable(m.database, m.identifier.table, relation.output.map(_.withQualifier(None))))
+
+      case DataSourceV2Relation(_, output, _, Some(tableIdent), _) =>
+        Some(SQLTable(tableIdent.database.get, tableIdent.table, output))
+
+      case TableV2Relation(_, tableIdent, _, output, _) =>
+        Some(SQLTable(tableIdent.database.get, tableIdent.table, output))
 
       case _ => None
     }
