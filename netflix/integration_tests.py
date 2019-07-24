@@ -1380,6 +1380,279 @@ class ParquetPartitionedBatchPatternTest(unittest.TestCase):
 #                ])
 
 
+class DataSourceParquetPartitionedBatchPatternTest(unittest.TestCase):
+
+    @classmethod
+    def setUpClass(cls):
+        # create a test table
+        cls.shared_table = temp_table_name('parquet_partitioned')
+        sql("DROP TABLE IF EXISTS {0}", cls.shared_table)
+        sql("CREATE TABLE {0} (id bigint, data string, part string) USING parquet PARTITIONED BY (part)", cls.shared_table)
+
+        cls.data_table = temp_table_name('temp_data')
+        sql("CREATE TABLE {0} (id bigint, data string) USING parquet", cls.data_table)
+        sql("INSERT INTO {0} VALUES (1, 'a'), (2, 'b'), (3, 'c')", cls.data_table)
+        sql("""
+            INSERT INTO {0}
+            SELECT id, data, case when (id % 2) == 0 then 'even' else 'odd' end
+            FROM {1}
+            """, cls.shared_table, cls.data_table)
+
+    @classmethod
+    def tearDownClass(cls):
+        # clean up the test tables
+        sql("DROP TABLE IF EXISTS {0}", cls.shared_table)
+        sql("DROP TABLE IF EXISTS {0}", cls.data_table)
+
+    def test_simple_read(self):
+        rows = collect(sql("select * from {0}", self.shared_table))
+        self.assertEqual(sort_by_id(rows), [
+                {'id': 1, 'data': 'a', 'part': 'odd'},
+                {'id': 2, 'data': 'b', 'part': 'even'},
+                {'id': 3, 'data': 'c', 'part': 'odd'}
+            ])
+
+    def test_parquet_table_created(self):
+        # describe produces a table with col_name, table_type, and comment columns, with properties mixed in after the schema
+        describe = sql("DESCRIBE FORMATTED {0}", self.shared_table)
+
+        types = list(filter(lambda r: r['col_name'].strip() == 'table_type', collect(describe)))
+        self.assertEqual(len(types), 0, "Should produce no table_type property entry")
+
+        formats = list(filter(lambda r: r['col_name'].strip() == 'InputFormat', collect(describe)))
+        self.assertEqual(len(formats), 1, "Should produce an InputFormat property entry")
+        self.assertEqual(
+                formats[0]['data_type'].strip(),
+                'org.apache.hadoop.hive.ql.io.parquet.MapredParquetInputFormat',
+                "Should be a parquet table")
+
+    @spark_only
+    def test_batch_pattern_overwrite(self):
+        with temp_table(
+                "partitioned_batch_overwrite_test",
+                "CREATE TABLE {0} (id bigint, data string, part string) USING parquet PARTITIONED BY (part)") as t:
+
+            # write some data as the first batch
+            sql("""
+                INSERT INTO {0}
+                SELECT id, data, case when (id % 2) == 0 then 'even' else 'odd' end
+                FROM {1}
+                """, t, self.data_table)
+            rows = collect(spark.table(t))
+            self.assertEqual(sort_by_id(rows), [
+                    {'id': 1, 'data': 'a', 'part': 'odd'},
+                    {'id': 2, 'data': 'b', 'part': 'even'},
+                    {'id': 3, 'data': 'c', 'part': 'odd'}
+                ])
+
+            # second insert should overwrite all evens -- all ids * 2
+            sql("""
+                INSERT INTO {0}
+                SELECT id, data, case when (id % 2) == 0 then 'even' else 'odd' end
+                FROM (SELECT id * 2 as id, data FROM {1})
+                """, t, self.data_table)
+            rows = collect(spark.table(t))
+            # original id:2 row was replaced by the new 'even' data
+            self.assertEqual(sort_by_id(rows), [
+                    {'id': 1, 'data': 'a', 'part': 'odd'},
+                    {'id': 2, 'data': 'a', 'part': 'even'}, # data is not 'b' because it was replaced
+                    {'id': 3, 'data': 'c', 'part': 'odd'},
+                    {'id': 4, 'data': 'b', 'part': 'even'},
+                    {'id': 6, 'data': 'c', 'part': 'even'}
+                ])
+
+    @spark_only
+    def test_batch_pattern_overwrite_static_partition(self):
+        with temp_table(
+                "partitioned_batch_overwrite_test",
+                "CREATE TABLE {0} (id bigint, data string, static_part string, part string) USING parquet PARTITIONED BY (static_part, part)") as t:
+
+            # write some data as the first batch
+            sql("""
+                INSERT INTO {0} PARTITION (static_part='str', part)
+                SELECT id, data, case when (id % 2) == 0 then 'even' else 'odd' end
+                FROM {1}
+                """, t, self.data_table)
+            rows = collect(spark.table(t))
+            self.assertEqual(sort_by_id(rows), [
+                    {'id': 1, 'data': 'a', 'static_part': 'str', 'part': 'odd'},
+                    {'id': 2, 'data': 'b', 'static_part': 'str', 'part': 'even'},
+                    {'id': 3, 'data': 'c', 'static_part': 'str', 'part': 'odd'}
+                ])
+
+            # second insert should overwrite evens but not odds
+            sql("""
+                INSERT INTO {0} PARTITION (static_part='str', part='even')
+                SELECT id, data
+                FROM (SELECT id * 2 as id, data FROM {1})
+                """, t, self.data_table)
+            rows = collect(spark.table(t))
+            # original id:2 row was replaced by the new 'even' data
+            self.assertEqual(sort_by_id(rows), [
+                    {'id': 1, 'data': 'a', 'static_part': 'str', 'part': 'odd'},
+                    {'id': 2, 'data': 'a', 'static_part': 'str', 'part': 'even'}, # data is not 'b' because it was replaced
+                    {'id': 3, 'data': 'c', 'static_part': 'str', 'part': 'odd'},
+                    {'id': 4, 'data': 'b', 'static_part': 'str', 'part': 'even'},
+                    {'id': 6, 'data': 'c', 'static_part': 'str', 'part': 'even'}
+                ])
+
+    @spark_only
+    def test_batch_pattern_overwrite_static_and_dynamic_partitions(self):
+        """Tests SQL insert statement with both static and dynamic partitions.
+
+        The behavior of this test deviates from Spark's default behavior in
+        2.1.1, but matches Spark's behavior in 2.3.0+ when
+        spark.sql.sources.partitionOverwriteMode=dynamic. In older versions or
+        when the overwrite mode is static, all partitions under the static
+        location are deleted.
+
+        Batch pattern writes never implemented this behavior from Spark, which
+        differs from Hive's default behavior.
+        """
+        with temp_table(
+                "partitioned_batch_overwrite_test",
+                "CREATE TABLE {0} (id bigint, data string, static_part string, part string) USING parquet PARTITIONED BY (static_part, part)") as t:
+
+            # write some data as the first batch
+            sql("""
+                INSERT INTO {0} PARTITION (static_part='str', part)
+                SELECT id, data, case when (id % 2) == 0 then 'even' else 'odd' end
+                FROM {1}
+                """, t, self.data_table)
+            rows = collect(spark.table(t))
+            self.assertEqual(sort_by_id(rows), [
+                    {'id': 1, 'data': 'a', 'static_part': 'str', 'part': 'odd'},
+                    {'id': 2, 'data': 'b', 'static_part': 'str', 'part': 'even'},
+                    {'id': 3, 'data': 'c', 'static_part': 'str', 'part': 'odd'}
+                ])
+
+            # second insert should overwrite evens but not odds
+            sql("""
+                INSERT INTO {0} PARTITION (static_part='str', part)
+                SELECT id, data, case when (id % 2) == 0 then 'even' else 'odd' end
+                FROM (SELECT id * 2 as id, data FROM {1})
+                """, t, self.data_table)
+            rows = collect(spark.table(t))
+            # original id:2 row was replaced by the new 'even' data
+            self.assertEqual(sort_by_id(rows), [
+                    {'id': 1, 'data': 'a', 'static_part': 'str', 'part': 'odd'},
+                    {'id': 2, 'data': 'a', 'static_part': 'str', 'part': 'even'}, # data is not 'b' because it was replaced
+                    {'id': 3, 'data': 'c', 'static_part': 'str', 'part': 'odd'},
+                    {'id': 4, 'data': 'b', 'static_part': 'str', 'part': 'even'},
+                    {'id': 6, 'data': 'c', 'static_part': 'str', 'part': 'even'}
+                ])
+
+    @spark_only
+    def test_batch_pattern_dataframe_overwrite(self):
+        with temp_table(
+                "partitioned_batch_overwrite_test",
+                "CREATE TABLE {0} (id bigint, data string, part string) USING parquet PARTITIONED BY (part)") as t:
+
+            # write some data as the first batch
+            sql("""
+                INSERT INTO {0}
+                SELECT id, data, case when (id % 2) == 0 then 'even' else 'odd' end
+                FROM {1}
+                """, t, self.data_table)
+            rows = collect(spark.table(t))
+            self.assertEqual(sort_by_id(rows), [
+                    {'id': 1, 'data': 'a', 'part': 'odd'},
+                    {'id': 2, 'data': 'b', 'part': 'even'},
+                    {'id': 3, 'data': 'c', 'part': 'odd'}
+                ])
+
+            # data frame insert should also overwrite
+            spark.createDataFrame([(1, 'd', 'odd'), (3, 'e', 'odd'), (5, 'f', 'odd')]).write.insertInto(t)
+            rows = collect(spark.table(t))
+            self.assertEqual(sort_by_id(rows), [
+                    {'id': 1, 'data': 'd', 'part': 'odd'}, # note new data
+                    {'id': 2, 'data': 'b', 'part': 'even'},
+                    {'id': 3, 'data': 'e', 'part': 'odd'}, # note new data
+                    {'id': 5, 'data': 'f', 'part': 'odd'} # note new data
+                ])
+
+            # data frame insert by name should reorder columns
+            spark.createDataFrame([(1, 'odd', 'g'), (3, 'odd', 'h')], ("id", "part", "data")).write.byName().insertInto(t)
+            rows = collect(spark.table(t))
+            self.assertEqual(sort_by_id(rows), [
+                    {'id': 1, 'data': 'g', 'part': 'odd'}, # note new data
+                    {'id': 2, 'data': 'b', 'part': 'even'},
+                    {'id': 3, 'data': 'h', 'part': 'odd'} # note new data
+                    # note no id:5
+                ])
+
+    @spark_only
+    def test_batch_pattern_dataframe_save_as_table_append_fails(self):
+        with temp_table(
+                "partitioned_batch_save_as_table_test",
+                "CREATE TABLE {0} (id bigint, data string, part string) USING parquet PARTITIONED BY (part)") as t:
+
+            # write some data as the first batch
+            sql("""
+                INSERT INTO {0}
+                SELECT id, data, case when (id % 2) == 0 then 'even' else 'odd' end
+                FROM {1}
+                """, t, self.data_table)
+            rows = collect(spark.table(t))
+            self.assertEqual(sort_by_id(rows), [
+                    {'id': 1, 'data': 'a', 'part': 'odd'},
+                    {'id': 2, 'data': 'b', 'part': 'even'},
+                    {'id': 3, 'data': 'c', 'part': 'odd'}
+                ])
+
+            try:
+                # data frame saveAsTable with append fails in 2.1.1 because the table is not deleted
+                spark.createDataFrame([(1, 'd', 'odd'), (3, 'e', 'odd'), (5, 'f', 'odd')]).write.mode("append").saveAsTable(t)
+            except Exception as e:
+                self.assertIsInstance(e, AnalysisException)
+                self.assertIn(expected_error_text('already-exists'), e.desc)
+
+    @spark_only
+    def test_batch_pattern_dataframe_save_as_table_overwrite(self):
+        with temp_table(
+                "partitioned_batch_save_as_table_overwrite_test",
+                "CREATE TABLE {0} (id bigint, data string, part string) USING parquet PARTITIONED BY (part)") as t:
+
+            # write some data as the first batch
+            sql("""
+                INSERT INTO {0}
+                SELECT id, data, case when (id % 2) == 0 then 'even' else 'odd' end
+                FROM {1}
+                """, t, self.data_table)
+            rows = collect(spark.table(t))
+            self.assertEqual(sort_by_id(rows), [
+                    {'id': 1, 'data': 'a', 'part': 'odd'},
+                    {'id': 2, 'data': 'b', 'part': 'even'},
+                    {'id': 3, 'data': 'c', 'part': 'odd'}
+                ])
+
+            try:
+                # data frame saveAsTable with append fails in 2.1.1 because the table is not deleted
+                spark.createDataFrame([(1, 'd', 'odd'), (3, 'e', 'odd'), (5, 'f', 'odd')]).write.mode("append").saveAsTable(t)
+            except Exception as e:
+                self.assertIsInstance(e, AnalysisException)
+                self.assertIn(expected_error_text('already-exists'), e.desc)
+#            # data frame saveAsTable should overwrite for batch pattern tables
+#            spark.createDataFrame([(1, 'd', 'odd'), (3, 'e', 'odd'), (5, 'f', 'odd')]).write.mode("overwrite").saveAsTable(t)
+#            rows = collect(spark.table(t))
+#            self.assertEqual(sort_by_id(rows), [
+#                    {'id': 1, 'data': 'd', 'part': 'odd'}, # note new data
+#                    {'id': 2, 'data': 'b', 'part': 'even'},
+#                    {'id': 3, 'data': 'e', 'part': 'odd'}, # note new data
+#                    {'id': 5, 'data': 'f', 'part': 'odd'} # note new data
+#                ])
+#
+#            # data frame saveAsTable should reorder columns
+#            spark.createDataFrame([(1, 'odd', 'g'), (3, 'odd', 'h')], ("id", "part", "data")).write.mode("overwrite").saveAsTable(t)
+#            rows = collect(spark.table(t))
+#            self.assertEqual(sort_by_id(rows), [
+#                    {'id': 1, 'data': 'g', 'part': 'odd'}, # note new data
+#                    {'id': 2, 'data': 'b', 'part': 'even'},
+#                    {'id': 3, 'data': 'h', 'part': 'odd'} # note new data
+#                    # note no id:5
+#                ])
+
+
 class IcebergIdentityPartitionedBatchPatternTest(unittest.TestCase):
     """This test case is a copy of ParquetPartitionedBatchPatternTest.
 
@@ -1633,6 +1906,100 @@ class ParquetUnpartitionedBatchPatternTest(unittest.TestCase):
         with temp_table(
                 "batch_overwrite_test",
                 "CREATE TABLE {0} (id bigint, data string) STORED AS parquet") as t:
+
+            # write some data as the first batch
+            sql("INSERT INTO {0} VALUES (1, 'a'), (2, 'b'), (3, 'c')", t)
+            rows = collect(spark.table(t))
+            self.assertEqual(rows, [
+                    {'id': 1, 'data': 'a'},
+                    {'id': 2, 'data': 'b'},
+                    {'id': 3, 'data': 'c'}
+                ])
+
+            # data frame insert should overwrite
+            spark.createDataFrame([(7, "g"), (8, "h"), (9, "i")], ("id", "data")).write.insertInto(t)
+            rows = collect(spark.table(t))
+            self.assertEqual(rows, [
+                    {'id': 7, 'data': 'g'},
+                    {'id': 8, 'data': 'h'},
+                    {'id': 9, 'data': 'i'}
+                ])
+
+            # test by name insert overwrite
+            spark.createDataFrame([("j", 10), ("k", 11)], ("data", "id")).write.byName().insertInto(t)
+            rows = collect(spark.table(t))
+            self.assertEqual(rows, [
+                    {'id': 10, 'data': 'j'},
+                    {'id': 11, 'data': 'k'},
+                ])
+
+
+class DataSourceParquetUnpartitionedBatchPatternTest(unittest.TestCase):
+
+    @classmethod
+    def setUpClass(cls):
+        # create a test table
+        cls.shared_table = temp_table_name('parquet_unpartitioned')
+        sql("DROP TABLE IF EXISTS {0}", cls.shared_table)
+        sql("CREATE TABLE {0} (id bigint, data string) USING parquet", cls.shared_table)
+        sql("INSERT INTO {0} VALUES (1, 'a'), (2, 'b'), (3, 'c')", cls.shared_table)
+
+    @classmethod
+    def tearDownClass(cls):
+        # clean up the test table
+        sql("DROP TABLE IF EXISTS {0}", cls.shared_table)
+
+    def test_simple_read(self):
+        rows = collect(sql("select * from {0}", self.shared_table))
+        self.assertEqual(rows, [
+                {'id': 1, 'data': 'a'},
+                {'id': 2, 'data': 'b'},
+                {'id': 3, 'data': 'c'}
+            ])
+
+    def test_parquet_table_created(self):
+        # describe produces a table with col_name, table_type, and comment columns, with properties mixed in after the schema
+        describe = sql("DESCRIBE FORMATTED {0}", self.shared_table)
+
+        types = list(filter(lambda r: r['col_name'].strip() == 'table_type', collect(describe)))
+        self.assertEqual(len(types), 0, "Should produce no table_type property entry")
+
+        formats = list(filter(lambda r: r['col_name'].strip() == 'InputFormat', collect(describe)))
+        self.assertEqual(len(formats), 1, "Should produce an InputFormat property entry")
+        self.assertEqual(
+                formats[0]['data_type'].strip(),
+                'org.apache.hadoop.hive.ql.io.parquet.MapredParquetInputFormat',
+                "Should be a parquet table")
+
+    @spark_only
+    def test_batch_pattern_overwrite(self):
+        with temp_table(
+                "batch_overwrite_test",
+                "CREATE TABLE {0} (id bigint, data string) USING parquet") as t:
+
+            # write some data as the first batch
+            sql("INSERT INTO {0} VALUES (1, 'a'), (2, 'b'), (3, 'c')", t)
+            rows = collect(spark.table(t))
+            self.assertEqual(rows, [
+                    {'id': 1, 'data': 'a'},
+                    {'id': 2, 'data': 'b'},
+                    {'id': 3, 'data': 'c'}
+                ])
+
+            # second insert should overwrite
+            sql("INSERT INTO {0} VALUES (4, 'd'), (5, 'e'), (6, 'f')", t)
+            rows = collect(spark.table(t))
+            self.assertEqual(rows, [
+                    {'id': 4, 'data': 'd'},
+                    {'id': 5, 'data': 'e'},
+                    {'id': 6, 'data': 'f'}
+                ])
+
+    @spark_only
+    def test_batch_pattern_dataframe_overwrite(self):
+        with temp_table(
+                "batch_overwrite_test",
+                "CREATE TABLE {0} (id bigint, data string) USING parquet") as t:
 
             # write some data as the first batch
             sql("INSERT INTO {0} VALUES (1, 'a'), (2, 'b'), (3, 'c')", t)
