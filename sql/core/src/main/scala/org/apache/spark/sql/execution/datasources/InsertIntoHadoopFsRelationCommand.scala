@@ -253,6 +253,10 @@ case class InsertIntoHadoopFsRelationCommand(
           statsTrackers = Seq(basicWriteJobStatsTracker(hadoopConf)),
           options = options)
 
+      // refresh the table because its partitions and location may have changed
+      catalogTable.foreach { table =>
+        sparkSession.sessionState.catalog.refreshTable(table.identifier)
+      }
 
       // update metastore partition metadata
       refreshUpdatedPartitions(updatedPartitionPaths)

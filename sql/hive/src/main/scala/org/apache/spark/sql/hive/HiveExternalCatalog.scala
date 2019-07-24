@@ -791,6 +791,8 @@ private[spark] class HiveExternalCatalog(conf: SparkConf, hadoopConf: Configurat
     }
   }
 
+  private val HasBatchID = """(.*)/batchid=\d+""".r
+
   private def restoreDataSourceTable(table: CatalogTable, provider: String): CatalogTable = {
     // Internally we store the table location in storage properties with key "path" for data
     // source tables. Here we set the table location to `locationUri` field and filter out the
@@ -798,8 +800,15 @@ private[spark] class HiveExternalCatalog(conf: SparkConf, hadoopConf: Configurat
     val storageWithLocation = {
       val tableLocation = getLocationFromStorageProps(table)
       // We pass None as `newPath` here, to remove the path option in storage properties.
-      updateLocationInStorageProps(table, newPath = None).copy(
-        locationUri = tableLocation.map(CatalogUtils.stringToURI(_)))
+      val storage = updateLocationInStorageProps(table, newPath = None)
+      // NFLX: Spark will overwrite the location with the "path" from serde options, but this may
+      // be a batch pattern path. If it has a batchid folder, use the URI location instead.
+      storage.locationUri.map(_.toString) match {
+        case Some(HasBatchID(_)) =>
+          storage
+        case _ =>
+          storage.copy(locationUri = tableLocation.map(CatalogUtils.stringToURI(_)))
+      }
     }
 
     val isS3 = Option(table.location)
