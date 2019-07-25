@@ -81,11 +81,6 @@ class V1TableCatalog(sessionState: SessionState) extends TableCatalog {
     }
   }
 
-  override def refreshTable(ident: TableIdentifier): Table = {
-    catalog.refreshTable(ident)
-    loadTable(ident)
-  }
-
   override def createTable(ident: TableIdentifier,
       schema: StructType,
       partitions: util.List[PartitionTransform],
