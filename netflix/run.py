@@ -25,6 +25,7 @@ import os.path
 import shutil
 import commands
 import xml.etree.ElementTree as xml_parser
+import glob
 
 
 DEFAULT_DRIVER_MEM_MB = {
@@ -159,6 +160,7 @@ def write_config_yml(spark_args):
                 default_flow_style=False
             )
 
+# Remove this method once old pyspark kernels are deprecated
 def clean_delimiter_args(command, command_args):
     '''Makes args with DELIMITER look like args passed by the other commands.
 
@@ -171,6 +173,14 @@ def clean_delimiter_args(command, command_args):
     args = [command]
     args.extend(command_args[delim+1:])
     return args
+
+def split_args(command_args):
+    '''Extract spark_args and kernel_args for pyspark-kernel commands
+    '''
+    split_point = command_args.index('DELIMITER')
+    spark_args = command_args[:split_point]
+    kernel_args = command_args[split_point+1:]
+    return (spark_args, kernel_args)
 
 def get_venv_path(profile):
     ''' Gets the latest published version of the big data image python environment built
@@ -214,6 +224,7 @@ def main(command_args):
     # args should start with the name of the executable
     spark_args = [spark_command]
 
+    # Remove this if block once old pyspark kernels are deprecated
     # this is special handling for the hacky way pyspark-kernel works
     # it doesn't pass the script name as the first arg to spark-shell
     # instead, it runs its own python script.
@@ -225,6 +236,13 @@ def main(command_args):
         else:
             spark_executable = '%s/bin/%s' % (spark_home, command)
             spark_args = [command]
+
+    if command == 'spark-kernel-python':
+        (cmd_spark_args, cmd_kernel_args) = split_args(command_args)
+        spark_python = os.path.join(spark_home, 'python')
+        py4j = glob.glob(os.path.join(spark_python, 'lib', 'py4j-*.zip'))[0]
+        os.environ['PYTHONPATH'] = os.pathsep.join([spark_python, py4j])
+        command_args = cmd_spark_args
 
     # add the Spark properties file
     spark_args.append('--properties-file')
@@ -306,6 +324,32 @@ def main(command_args):
 
         # command_args contains: ['sparklyr',executable,args...]
         os.execv(command_args[1], command_args[1:])
+    elif command == 'spark-kernel-python':
+        spark_args = spark_args[1:]
+        current_job_working_dir = os.getenv('CURRENT_JOB_WORKING_DIR')
+        if current_job_working_dir:
+            if os.getenv('TITUS_TASK_ID'):
+                spark_log_path = '/logs/{GENIE_JOB_ID}/spark.log'.format(**os.environ)
+            else:
+                spark_log_path = '{}.log'.format(current_job_working_dir.rstrip('/'))
+            os.environ['SPARK_LOG_FILE_PATH'] = spark_log_path
+            spark_args.append('--conf')
+            spark_args.append("spark.log.path=" + spark_log_path)
+            # add the user's spark properties, if present. this comes before spark CLI
+            #  arguments so that properties set on the command line take precedence.
+            extra_properties_path = os.path.expanduser('~/.spark.properties')
+            if os.path.exists(extra_properties_path):
+                spark_args.insert(0, '--extra-properties-file')
+                spark_args.insert(1, extra_properties_path)
+            else:
+                extra_properties_path = os.path.expanduser('~/notebooks/spark.properties')
+                if os.path.exists(extra_properties_path):
+                    spark_args.insert(0, '--extra-properties-file')
+                    spark_args.insert(1, extra_properties_path)
+            extra_args = " ".join(['"%s"' % (x) for x in spark_args])
+            os.environ['PYSPARK_SUBMIT_ARGS'] = '--verbose ' + extra_args + ' pyspark-shell'
+            os.execv(cmd_kernel_args[0], cmd_kernel_args)
+
     elif command == 'spark-session':
         # if this is a spark-session job, append properties it needs to run
         spark_args.extend(command_args[1:])
