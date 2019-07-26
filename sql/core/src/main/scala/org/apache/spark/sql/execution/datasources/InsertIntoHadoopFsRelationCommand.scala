@@ -334,7 +334,7 @@ case class InsertIntoHadoopFsRelationCommand(
         "/" + PartitioningUtils.getPathFragment(p.spec, table.partitionSchema)).toString
       // remove batch IDs from locations so that the partitions match and these paths will not go
       // through the absolute path code, which is used to insert into specific partition locations
-      val location = p.location match {
+      val location = p.location.toString match {
         case InsertIntoHadoopFsRelationCommand.BatchIDPattern(partition, _) =>
           partition
         case _ => p.location.toString
