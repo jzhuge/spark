@@ -23,11 +23,11 @@ import java.util
 import scala.collection.JavaConverters._
 
 import com.google.common.collect.Maps
-import com.netflix.iceberg.{DataFile, DataFiles, Metrics, MetricsConfig, PartitionSpec}
-import com.netflix.iceberg.parquet.ParquetMetrics
-import com.netflix.iceberg.spark.hacks.Hive
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{Path, PathFilter}
+import org.apache.iceberg.{DataFile, DataFiles, Metrics, MetricsConfig, PartitionSpec}
+import org.apache.iceberg.parquet.ParquetMetrics
+import org.apache.iceberg.spark.hacks.Hive
 import org.apache.parquet.hadoop.ParquetFileReader
 
 import org.apache.spark.sql.{DataFrame, SparkSession}
@@ -98,10 +98,10 @@ private[sql] object IcebergUtil {
   ) {
 
     /**
-     * Convert this to a [[DataFile]] that can be added to a [[com.netflix.iceberg.Table]].
+     * Convert this to a [[DataFile]] that can be added to a [[org.apache.iceberg.Table]].
      *
      * @param spec a [[PartitionSpec]] that will be used to parse the partition key
-     * @return a [[DataFile]] that can be passed to [[com.netflix.iceberg.AppendFiles]]
+     * @return a [[DataFile]] that can be passed to [[org.apache.iceberg.AppendFiles]]
      */
     def toDataFile(spec: PartitionSpec): DataFile = {
       // values are strings, so pass a path to let the builder coerce to the right types
