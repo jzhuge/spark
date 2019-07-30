@@ -3,9 +3,9 @@
 set -e
 
 # configure the environment to build SparkR
-if ! grep 'cran' /etc/apt/sources.list; then
-  sudo apt-key adv --keyserver keyserver.ubuntu.com --recv-keys E084DAB9
-  sudo echo deb http://cran.r-project.org/bin/linux/ubuntu/ trusty/ | sudo tee -a /etc/apt/sources.list
+if ! grep 'cloud.r' /etc/apt/sources.list; then
+  sudo apt-key adv --keyserver keyserver.ubuntu.com --recv-keys E298A3A825C0D65DFD57CBB651716619E084DAB9
+  sudo echo deb https://cloud.r-project.org/bin/linux/ubuntu xenial/ | sudo tee -a /etc/apt/sources.list
 fi
 
 sudo apt-get update -y
