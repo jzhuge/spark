@@ -133,7 +133,7 @@
     <orc.version>1.4.4</orc.version>
     <orc.classifier>nohive</orc.classifier>
     <hive.parquet.version>1.6.0-nflx-36</hive.parquet.version>
-    <iceberg.version>0.4.108</iceberg.version>
+    <iceberg.version>0.5.0-2</iceberg.version>
     <lineage.version>0.1.8</lineage.version>
     <catalogs.version>0.1.0</catalogs.version>
     <jetty.version>9.3.24.v20180605</jetty.version>
