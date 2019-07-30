@@ -38,6 +38,7 @@
     <dependency>
       <groupId>com.netflix.iceberg</groupId>
       <artifactId>bdp-iceberg</artifactId>
+      <version>0.5.0-unstable-6</version>
     </dependency>
     <dependency>
       <groupId>com.univocity</groupId>
