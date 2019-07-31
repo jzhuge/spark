@@ -32,7 +32,6 @@ import scala.util.control.NonFatal
 
 import com.google.common.util.concurrent.ThreadFactoryBuilder
 import com.netflix.bdp
-import com.netflix.bdp.metrics.GcLogger
 
 import org.apache.spark._
 import org.apache.spark.deploy.SparkHadoopUtil
@@ -171,10 +170,8 @@ private[spark] class Executor(
 
   startDriverHeartbeater()
 
-  if (!isLocal && conf.getBoolean("spark.report.gc.metrics", true)) {
-    bdp.TaskMetrics.addTag("app", conf.getAppId)
-    conf.getOption("spark.genie.id").foreach(bdp.TaskMetrics.addTag("job", _))
-    GcLogger.start(bdp.TaskMetrics.groupFactory())
+  if (!isLocal) {
+    GcLogger.start(conf)
   }
 
   private[executor] def numRunningTasks: Int = runningTasks.size()

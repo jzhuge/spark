@@ -245,6 +245,11 @@ def main(command_args):
     spark_args.append('--conf')
     spark_args.append('spark.genie.id=%s' % get_genie_job_id(current_job_working_dir))
 
+    # add the Genie name
+    if 'GENIE_JOB_NAME' in os.environ:
+        spark_args.append('--conf')
+        spark_args.append('spark.genie.name=%s' % os.getenv('GENIE_JOB_NAME'))
+
     # add a default log path
     spark_args.append('--conf')
     spark_args.append('spark.log.path=spark.log')

@@ -32,8 +32,6 @@ import scala.reflect.{classTag, ClassTag}
 import scala.util.control.NonFatal
 
 import com.google.common.collect.MapMaker
-import com.netflix.bdp
-import com.netflix.bdp.metrics.GcLogger
 import org.apache.commons.lang3.SerializationUtils
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FileSystem, Path}
@@ -510,11 +508,7 @@ class SparkContext(config: SparkConf) extends Logging {
     _ui.foreach(_.setAppId(_applicationId))
     _env.blockManager.initialize(_applicationId)
 
-    if (_conf.getBoolean("spark.metrics.report.gc", true)) {
-      bdp.TaskMetrics.addTag("app", _conf.getAppId)
-      _conf.getOption("spark.genie.id").foreach(bdp.TaskMetrics.addTag("job", _))
-      GcLogger.start(bdp.TaskMetrics.groupFactory())
-    }
+    GcLogger.start(_conf)
 
     // The metrics system for Driver need to be set spark.app.id to app ID.
     // So it should start after we get app ID from the task scheduler and set spark.app.id.
