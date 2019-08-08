@@ -174,7 +174,7 @@ object V2Util {
         names(map.valueType).map(col => "value" :: col)
       case arr: ArrayType =>
         names(arr.elementType).map(col => "element" :: col)
-      case _: AtomicType =>
+      case _ =>
         Seq(Nil)
     }
   }
