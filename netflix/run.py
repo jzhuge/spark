@@ -160,7 +160,21 @@ def write_config_yml(spark_args):
                 default_flow_style=False
             )
 
-def clean_delimiter_args(command_args):
+# Remove this method once old pyspark kernels are deprecated
+def clean_delimiter_args(command, command_args):
+    '''Makes args with DELIMITER look like args passed by the other commands.
+
+    clean_delimiter_args('sparklyr',
+        ['pyspark-kernel', ..., 'DELIMITER',
+         'R', '-e', 'IRKernel::main()', '--args', 'conn.json'])
+    => ['sparklyr', 'R', '-e', 'IRKernel::main()', '--args', 'conn.json'])
+    '''
+    delim = command_args.index('DELIMITER')
+    args = [command]
+    args.extend(command_args[delim+1:])
+    return args
+
+def split_args(command_args):
     '''Extract spark_args and kernel_args for pyspark-kernel commands
     '''
     split_point = command_args.index('DELIMITER')
@@ -210,8 +224,21 @@ def main(command_args):
     # args should start with the name of the executable
     spark_args = [spark_command]
 
-    if command == 'pyspark-kernel-unstable':
-        (cmd_spark_args, cmd_kernel_args) = clean_delimiter_args(command_args)
+    # Remove this if block once old pyspark kernels are deprecated
+    # this is special handling for the hacky way pyspark-kernel works
+    # it doesn't pass the script name as the first arg to spark-shell
+    # instead, it runs its own python script.
+    if command.startswith('../../../../../../../../'):
+        # detect R
+        if '/usr/lib/R/bin/R' in command_args:
+            command = 'sparklyr'
+            command_args = clean_delimiter_args(command, command_args)
+        else:
+            spark_executable = '%s/bin/%s' % (spark_home, command)
+            spark_args = [command]
+
+    if command == 'spark-kernel-python':
+        (cmd_spark_args, cmd_kernel_args) = split_args(command_args)
         spark_python = os.path.join(spark_home, 'python')
         py4j = glob.glob(os.path.join(spark_python, 'lib', 'py4j-*.zip'))[0]
         os.environ['PYTHONPATH'] = os.pathsep.join([spark_python, py4j])
@@ -297,7 +324,7 @@ def main(command_args):
 
         # command_args contains: ['sparklyr',executable,args...]
         os.execv(command_args[1], command_args[1:])
-    elif command == 'pyspark-kernel-unstable':
+    elif command == 'spark-kernel-python':
         spark_args = spark_args[1:]
         current_job_working_dir = os.getenv('CURRENT_JOB_WORKING_DIR')
         if current_job_working_dir:
