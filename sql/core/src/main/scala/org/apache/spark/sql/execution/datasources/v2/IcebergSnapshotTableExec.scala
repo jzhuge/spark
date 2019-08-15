@@ -83,7 +83,7 @@ case class IcebergSnapshotTableExec(
           .repartition(1000)
           .orderBy($"path")
           .collectAsIterator()
-      iterator.grouped(500000).foreach(addBatch)
+      iterator.grouped(100000).foreach(addBatch)
     })(catchBlock = {
       catalog.dropTable(targetTable)
     })
