@@ -19,6 +19,10 @@ package org.apache.spark.sql.execution.datasources.v2
 
 import scala.collection.JavaConverters._
 
+import com.netflix.iceberg.metacat.MetacatTables
+import org.apache.hadoop.fs.Path
+import org.apache.iceberg.ManifestFile
+
 import org.apache.spark.SparkException
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.DataFrame
@@ -26,7 +30,6 @@ import org.apache.spark.sql.catalog.v2.{TableCatalog, TableChange, V1MetadataTab
 import org.apache.spark.sql.catalyst.{InternalRow, TableIdentifier}
 import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.execution.LeafExecNode
-import org.apache.spark.sql.execution.datasources.v2.IcebergUtil.SparkDataFile
 import org.apache.spark.sql.functions.not
 import org.apache.spark.util.{SerializableConfiguration, Utils}
 
@@ -36,8 +39,6 @@ case class IcebergMigrateTableExec(
 
   private val HasBatchID = """(.*)/batchid=\d+""".r
   private val HasPartitionFolder = """.*/[^/]+=[^/]+/?""".r
-
-  import IcebergSnapshotTableExec.addFiles
 
   @transient private lazy val spark = sqlContext.sparkSession
 
@@ -103,11 +104,31 @@ case class IcebergMigrateTableExec(
           ("migrated-from-hive" -> "true")
       catalog.createTable(tempIdent, source.schema, source.partitioning, properties.asJava)
 
+      val tables = new MetacatTables(conf.value, "spark-" + version, applicationId, mcCatalog)
+      val table = tables.load(db, tempName)
+
+      // create a temp path in HDFS for manifests. these will be rewritten.
+      val tempPath = new Path(s"/tmp/iceberg-conversions/$applicationId")
+      val fs = new Path("hdfs:/").getFileSystem(conf.value)
+      fs.deleteOnExit(fs.makeQualified(tempPath))
+
       Utils.tryWithSafeFinallyAndFailureCallbacks(block = {
         logInfo(s"Creating Iceberg table metadata for data files in $sourceName")
-        val addBatch = addFiles(conf.value, version, applicationId, mcCatalog, db, tempName)
-        val iterator: Iterator[SparkDataFile] = files.orderBy($"path").collectAsIterator()
-        iterator.grouped(500000).foreach(addBatch)
+
+        val writeManifest =
+          IcebergSnapshotTableExec.writeManifest(conf, table.spec, tempPath.toString)
+        val manifests: Seq[ManifestFile] = files
+            .repartition(1000)
+            .orderBy($"path")
+            .mapPartitions(writeManifest)
+            .collect()
+            .map(_.toManifestFile)
+
+        val append = table.newAppend
+
+        manifests.foreach(append.appendManifest)
+
+        append.commit()
 
         logInfo(s"Finished loading data into $tempIdent")
         logInfo(s"Updating location of table $tempIdent to $location")
