@@ -87,7 +87,8 @@ case class IcebergSnapshotTableExec(
     Utils.tryWithSafeFinallyAndFailureCallbacks(block = {
       logInfo(s"Creating Iceberg table metadata for data files in $sourceTable")
 
-      val writeManifest = IcebergSnapshotTableExec.writeManifest(conf, table.spec, tempPath)
+      val writeManifest =
+        IcebergSnapshotTableExec.writeManifest(conf, table.spec, tempPath.toString)
       val manifests: Seq[ManifestFile] = files
           .repartition(1000)
           .orderBy($"path")
@@ -144,7 +145,7 @@ private[sql] object IcebergSnapshotTableExec {
   def writeManifest(
       conf: SerializableConfiguration,
       spec: PartitionSpec,
-      basePath: Path): Iterator[SparkDataFile] => Iterator[Manifest] = {
+      basePath: String): Iterator[SparkDataFile] => Iterator[Manifest] = {
     files =>
       if (files.hasNext) {
         val ctx = TaskContext.get()

@@ -116,7 +116,8 @@ case class IcebergMigrateTableExec(
       Utils.tryWithSafeFinallyAndFailureCallbacks(block = {
         logInfo(s"Creating Iceberg table metadata for data files in $sourceName")
 
-        val writeManifest = IcebergSnapshotTableExec.writeManifest(conf, table.spec, tempPath)
+        val writeManifest =
+          IcebergSnapshotTableExec.writeManifest(conf, table.spec, tempPath.toString)
         val manifests: Seq[ManifestFile] = files
             .repartition(1000)
             .orderBy($"path")
