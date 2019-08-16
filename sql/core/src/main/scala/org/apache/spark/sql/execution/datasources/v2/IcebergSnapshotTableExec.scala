@@ -20,9 +20,11 @@ package org.apache.spark.sql.execution.datasources.v2
 import scala.collection.JavaConverters._
 
 import com.netflix.iceberg.metacat.MetacatTables
-import org.apache.hadoop.conf.Configuration
+import org.apache.hadoop.fs.Path
+import org.apache.iceberg.{ManifestFile, ManifestWriter, PartitionSpec}
+import org.apache.iceberg.hadoop.HadoopFileIO
 
-import org.apache.spark.SparkException
+import org.apache.spark.{SparkException, TaskContext}
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.catalog.v2.{CatalogV2Implicits, TableCatalog}
@@ -38,7 +40,6 @@ case class IcebergSnapshotTableExec(
     targetTable: TableIdentifier,
     sourceTable: TableIdentifier) extends LeafExecNode {
 
-  import IcebergSnapshotTableExec.addFiles
   import CatalogV2Implicits._
 
   @transient private lazy val spark = sqlContext.sparkSession
@@ -76,14 +77,30 @@ case class IcebergSnapshotTableExec(
         ("spark.behavior.compatibility" -> "true")
     catalog.createTable(targetTable, source.schema, source.partitioning, properties.asJava)
 
+    val tables = new MetacatTables(conf.value, "spark-" + version, applicationId, mcCatalog)
+    val table = tables.load(db, name)
+
+    // create a temp path in HDFS for manifests. these will be rewritten.
+    val tempPath = new Path(s"hdfs:/tmp/iceberg-conversions/$applicationId")
+    tempPath.getFileSystem(conf.value).deleteOnExit(tempPath)
+
     Utils.tryWithSafeFinallyAndFailureCallbacks(block = {
       logInfo(s"Creating Iceberg table metadata for data files in $sourceTable")
-      val addBatch = addFiles(conf.value, version, applicationId, mcCatalog, db, name)
-      val iterator: Iterator[SparkDataFile] = files
+
+      val writeManifest = IcebergSnapshotTableExec.writeManifest(conf, table.spec, tempPath)
+      val manifests: Seq[ManifestFile] = files
           .repartition(1000)
           .orderBy($"path")
-          .collectAsIterator()
-      iterator.grouped(100000).foreach(addBatch)
+          .mapPartitions(writeManifest)
+          .collect()
+          .map(_.toManifestFile)
+
+      val append = table.newAppend
+
+      manifests.foreach(append.appendManifest)
+
+      append.commit()
+
     })(catchBlock = {
       catalog.dropTable(targetTable)
     })
@@ -96,29 +113,59 @@ case class IcebergSnapshotTableExec(
   override def output: Seq[Attribute] = Seq.empty
 }
 
+private[sql] case class Manifest(location: String, fileLength: Long, specId: Int) {
+  def toManifestFile: ManifestFile = new ManifestFile {
+    override def path: String = location
+
+    override def length: Long = fileLength
+
+    override def partitionSpecId: Int = specId
+
+    override def snapshotId: java.lang.Long = null
+
+    override def addedFilesCount: Integer = null
+
+    override def existingFilesCount: Integer = null
+
+    override def deletedFilesCount: Integer = null
+
+    override def partitions: java.util.List[ManifestFile.PartitionFieldSummary] = null
+
+    override def copy: ManifestFile = this
+  }
+}
+
 private[sql] case class TablePartition(
     partition: Map[String, String],
     uri: String,
     format: String)
 
 private[sql] object IcebergSnapshotTableExec {
-  def addFiles(
-      conf: Configuration,
-      version: String,
-      appId: String,
-      catalog: String,
-      dbName: String,
-      tableName: String): Seq[SparkDataFile] => Unit = {
+  def writeManifest(
+      conf: SerializableConfiguration,
+      spec: PartitionSpec,
+      basePath: Path): Iterator[SparkDataFile] => Iterator[Manifest] = {
     files =>
-      // open the table and append the files from this partition
-      val tables = new MetacatTables(conf, "spark-" + version, appId, catalog)
-      val table = tables.load(dbName, tableName)
+      if (files.hasNext) {
+        val ctx = TaskContext.get()
+        val manifestLocation = new Path(basePath,
+          s"stage-${ctx.stageId()}-task-${ctx.taskAttemptId()}-manifest.avro").toString
+        val io = new HadoopFileIO(conf.value)
+        val writer = ManifestWriter.write(spec, io.newOutputFile(manifestLocation))
 
-      // fast appends will create a manifest for the new files
-      val append = table.newFastAppend
-      files.foreach { file =>
-        append.appendFile(file.toDataFile(table.spec))
+        try {
+          files.foreach { file =>
+            writer.add(file.toDataFile(spec))
+          }
+        } finally {
+          writer.close()
+        }
+
+        val manifest = writer.toManifestFile
+        Seq(Manifest(manifest.path, manifest.length, manifest.partitionSpecId)).iterator
+
+      } else {
+        Seq.empty.iterator
       }
-      append.commit()
   }
 }
