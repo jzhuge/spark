@@ -91,11 +91,12 @@ case class IcebergBucketTransform(
   @transient lazy val bucketFunc: Any => Int = child.dataType match {
     case _: DecimalType =>
       val t = Transforms.bucket[Any](icebergInputType, numBuckets)
-      d: Decimal => t(d.toBigDecimal).toInt
+      d: Any => t(d.asInstanceOf[Decimal].toBigDecimal).toInt
     case _: StringType =>
       // the spec requires that the hash of a string is equal to the hash of its UTF-8 encoded bytes
+      // TODO: pass bytes without the copy out of the InternalRow
       val t = Transforms.bucket[ByteBuffer](Types.BinaryType.get(), numBuckets)
-      s: UTF8String => t(ByteBuffer.wrap(s.getBytes)).toInt // TODO: pass bytes without a copy
+      s: Any => t(ByteBuffer.wrap(s.asInstanceOf[UTF8String].getBytes)).toInt
     case _ =>
       val t = Transforms.bucket[Any](icebergInputType, numBuckets)
       a: Any => t(a).toInt
