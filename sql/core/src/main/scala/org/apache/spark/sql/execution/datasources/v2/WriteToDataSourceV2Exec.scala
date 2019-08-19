@@ -291,7 +291,7 @@ abstract class V2TableWriteExec(
     val childOrdering = clusteringExpressions.map { expr =>
       // match the direction of any child ordering because clustering for tasks is what matters
       val existingOrdering = query.outputOrdering.find(order => order.child.semanticEquals(expr))
-      SortOrder(expr, existingOrdering.map(_.direction).getOrElse(Ascending))
+      existingOrdering.getOrElse(SortOrder(expr, Ascending))
     }
 
     childOrdering :: Nil
