@@ -46,7 +46,12 @@ abstract class IcebergTimeTransform
   def child: Expression
   def transform: Transform[Any, Integer]
 
-  override def eval(input: InternalRow): Any = transform(child.eval(input)).toInt
+  override def eval(input: InternalRow): Any = child.eval(input) match {
+    case null =>
+      null
+    case value =>
+      transform(value).toInt
+  }
 
   override def dataType: DataType = IntegerType
 
@@ -86,17 +91,22 @@ case class IcebergBucketTransform(
   @transient lazy val bucketFunc: Any => Int = child.dataType match {
     case _: DecimalType =>
       val t = Transforms.bucket[Any](icebergInputType, numBuckets)
-      d: Decimal => t(d.toBigDecimal)
+      d: Decimal => t(d.toBigDecimal).toInt
     case _: StringType =>
       // the spec requires that the hash of a string is equal to the hash of its UTF-8 encoded bytes
       val t = Transforms.bucket[ByteBuffer](Types.BinaryType.get(), numBuckets)
-      s: UTF8String => t(ByteBuffer.wrap(s.getBytes)) // TODO: pass bytes without a copy
+      s: UTF8String => t(ByteBuffer.wrap(s.getBytes)).toInt // TODO: pass bytes without a copy
     case _ =>
       val t = Transforms.bucket[Any](icebergInputType, numBuckets)
-      a: Any => t(a)
+      a: Any => t(a).toInt
   }
 
-  override def eval(input: InternalRow): Any = bucketFunc(child.eval(input))
+  override def eval(input: InternalRow): Any = child.eval(input) match {
+    case null =>
+      null
+    case value =>
+      bucketFunc(value)
+  }
 
   override def dataType: DataType = IntegerType
 }
