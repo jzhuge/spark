@@ -133,6 +133,10 @@ public class PartitionTransforms {
       return colNames;
     }
 
+    public String reference() {
+      return colNames[0];
+    }
+
     @Override
     public String describe() {
       return name() + "(" + colNames[0] + ")";

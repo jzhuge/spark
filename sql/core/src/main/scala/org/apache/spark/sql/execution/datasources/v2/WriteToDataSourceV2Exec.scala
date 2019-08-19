@@ -27,10 +27,12 @@ import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.SparkHadoopWriterUtils
 import org.apache.spark.sql.catalog.v2.{PartitionTransform, Table, TableCatalog}
+import org.apache.spark.sql.catalog.v2.PartitionTransforms.{Bucket, Date, DateAndHour, Identity, Month, Year}
 import org.apache.spark.sql.catalyst.{InternalRow, TableIdentifier}
 import org.apache.spark.sql.catalyst.analysis.{NoSuchTableException, TableAlreadyExistsException}
-import org.apache.spark.sql.catalyst.expressions.Attribute
+import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, Expression, IcebergBucketTransform, IcebergDayTransform, IcebergHourTransform, IcebergMonthTransform, IcebergYearTransform, SortOrder}
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
+import org.apache.spark.sql.catalyst.plans.physical.{ClusteredDistribution, Distribution, UnspecifiedDistribution}
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.sources.v2.writer._
 import org.apache.spark.sql.types.{ArrayType, AtomicType, DataType, MapType, StructType}
@@ -51,6 +53,8 @@ case class AppendDataExec(
     writeOptions: Map[String, String],
     plan: SparkPlan) extends V2TableWriteExec(writeOptions, plan) {
 
+  override def partitioning: Seq[PartitionTransform] = table.partitioning.asScala
+
   override protected def doExecute(): RDD[InternalRow] = {
     Events.sendAppend(
       table.toString,
@@ -65,6 +69,8 @@ case class OverwritePartitionsDynamicExec(
     writeOptions: Map[String, String],
     plan: SparkPlan) extends V2TableWriteExec(writeOptions, plan) {
   import org.apache.spark.sql.sources.v2.DataSourceV2Implicits._
+
+  override def partitioning: Seq[PartitionTransform] = table.partitioning.asScala
 
   override protected def doExecute(): RDD[InternalRow] = {
     Events.sendDynamicOverwrite(
@@ -149,6 +155,8 @@ case class WriteToDataSourceV2Exec(
     writer: DataSourceWriter,
     plan: SparkPlan) extends V2TableWriteExec(Map.empty, plan) {
 
+  override def partitioning: Seq[PartitionTransform] = Seq.empty
+
   override protected def doExecute(): RDD[InternalRow] = {
     doAppend(writer)
   }
@@ -184,6 +192,7 @@ abstract class V2TableWriteExec(
     query: SparkPlan) extends SparkPlan {
   import org.apache.spark.sql.sources.v2.DataSourceV2Implicits._
 
+  def partitioning: Seq[PartitionTransform]
   override def children: Seq[SparkPlan] = Seq(query)
   override def output: Seq[Attribute] = Nil
 
@@ -231,6 +240,61 @@ abstract class V2TableWriteExec(
     }
 
     sparkContext.emptyRDD
+  }
+
+  @transient lazy val clusteringExpressions: Seq[Expression] = partitioning.flatMap {
+    case identity: Identity =>
+      Some(query.output.find(attr => identity.reference == attr.name)
+          .getOrElse(throw new SparkException(s"Missing attribute: ${identity.name}")))
+
+    case year: Year =>
+      Some(query.output.find(attr => year.reference == attr.name)
+          .map(attr => IcebergYearTransform(attr))
+          .getOrElse(throw new SparkException(s"Missing attribute: ${year.name}")))
+
+    case month: Month =>
+      Some(query.output.find(attr => month.reference == attr.name)
+          .map(attr => IcebergMonthTransform(attr))
+          .getOrElse(throw new SparkException(s"Missing attribute: ${month.name}")))
+
+    case date: Date =>
+      Some(query.output.find(attr => date.reference == attr.name)
+          .map(attr => IcebergDayTransform(attr))
+          .getOrElse(throw new SparkException(s"Missing attribute: ${date.name}")))
+
+    case hour: DateAndHour =>
+      Some(query.output.find(attr => hour.reference == attr.name)
+          .map(attr => IcebergHourTransform(attr))
+          .getOrElse(throw new SparkException(s"Missing attribute: ${hour.name}")))
+
+    case bucket: Bucket if bucket.references.length == 1 =>
+      Some(query.output.find(attr => bucket.references.head == attr.name)
+          .map(attr => IcebergBucketTransform(bucket.numBuckets, attr))
+          .getOrElse(throw new SparkException(s"Missing attribute: ${bucket.name}")))
+
+    case _ =>
+      None
+  }
+
+  override def requiredChildDistribution: Seq[Distribution] = {
+    // add a required distribution if the table is bucketed
+    val distribution = if (clusteringExpressions.exists(_.isInstanceOf[IcebergBucketTransform])) {
+      ClusteredDistribution(clusteringExpressions.filter(_.isInstanceOf[IcebergBucketTransform]))
+    } else {
+      UnspecifiedDistribution
+    }
+
+    distribution :: Nil
+  }
+
+  override def requiredChildOrdering: Seq[Seq[SortOrder]] = {
+    val childOrdering = clusteringExpressions.map { expr =>
+      // match the direction of any child ordering because clustering for tasks is what matters
+      val existingOrdering = query.outputOrdering.find(order => order.child.semanticEquals(expr))
+      SortOrder(expr, existingOrdering.map(_.direction).getOrElse(Ascending))
+    }
+
+    childOrdering :: Nil
   }
 }
 
