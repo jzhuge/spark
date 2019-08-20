@@ -188,6 +188,11 @@ def get_venv_path(profile):
     :param profile: one of python2 or python3
     :return:
     '''
+
+    # Check and redirect path for python 3.7
+    if profile == 'python3':
+        profile = 'python{}.{}'.format(sys.version_info.major, sys.version_info.minor)
+
     venv_path = 'hdfs:///venv/{}/bdp-python-meta/current.tar.gz'.format(profile)
 
     sys.stderr.write("Using Python virtual environment: {} ".format(venv_path))
