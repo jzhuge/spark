@@ -292,10 +292,11 @@ abstract class V2TableWriteExec(
       case ProjectExec(exprs, _) =>
         expr match {
           case attr: Attribute =>
-            exprs.find {
+            val alias = exprs.find {
               case a: Alias if a.exprId == attr.exprId => true
               case _ => false
             }
+            alias.map(_.asInstanceOf[Alias].child)
           case _ =>
             None
         }
