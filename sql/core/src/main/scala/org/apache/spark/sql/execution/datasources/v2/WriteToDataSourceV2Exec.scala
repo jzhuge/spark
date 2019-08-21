@@ -30,10 +30,10 @@ import org.apache.spark.sql.catalog.v2.{PartitionTransform, Table, TableCatalog}
 import org.apache.spark.sql.catalog.v2.PartitionTransforms.{Bucket, Date, DateAndHour, Identity, Month, Year}
 import org.apache.spark.sql.catalyst.{InternalRow, TableIdentifier}
 import org.apache.spark.sql.catalyst.analysis.{NoSuchTableException, TableAlreadyExistsException}
-import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, Expression, IcebergBucketTransform, IcebergDayTransform, IcebergHourTransform, IcebergMonthTransform, IcebergYearTransform, SortOrder}
+import org.apache.spark.sql.catalyst.expressions.{Alias, Ascending, Attribute, Expression, IcebergBucketTransform, IcebergDayTransform, IcebergHourTransform, IcebergMonthTransform, IcebergYearTransform, SortOrder}
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
 import org.apache.spark.sql.catalyst.plans.physical.{ClusteredDistribution, Distribution, UnspecifiedDistribution}
-import org.apache.spark.sql.execution.SparkPlan
+import org.apache.spark.sql.execution.{ProjectExec, SparkPlan}
 import org.apache.spark.sql.sources.v2.writer._
 import org.apache.spark.sql.types.{ArrayType, AtomicType, DataType, MapType, StructType}
 import org.apache.spark.util.Utils
@@ -287,10 +287,35 @@ abstract class V2TableWriteExec(
     distribution :: Nil
   }
 
+  private def unwrapAlias(plan: SparkPlan, expr: Expression): Option[Expression] = {
+    plan match {
+      case ProjectExec(exprs, _) =>
+        expr match {
+          case attr: Attribute =>
+            exprs.find {
+              case a: Alias if a.exprId == attr.exprId => true
+              case _ => false
+            }
+          case _ =>
+            None
+        }
+      case _ =>
+        None
+    }
+  }
+
   override def requiredChildOrdering: Seq[Seq[SortOrder]] = {
     val childOrdering = clusteringExpressions.map { expr =>
+      // unwrap aliases that may be added to match up column names to the table
+      // for example: event_type#835 AS event_type#2278
+      val unaliased = unwrapAlias(query, expr)
       // match the direction of any child ordering because clustering for tasks is what matters
-      val existingOrdering = query.outputOrdering.find(order => order.child.semanticEquals(expr))
+      val existingOrdering = query.outputOrdering.find {
+        case SortOrder(child, _, _) =>
+          expr.semanticEquals(child) || unaliased.exists(_.semanticEquals(child))
+        case _ =>
+          false
+      }
       existingOrdering.getOrElse(SortOrder(expr, Ascending))
     }
 
