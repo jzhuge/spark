@@ -27,6 +27,7 @@ import org.apache.spark.sql.Dataset
 import org.apache.spark.sql.catalyst.catalog.CatalogRelation
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.optimizer.{CollapseProject, CombineUnions}
+import org.apache.spark.sql.catalyst.plans.QueryPlan
 import org.apache.spark.sql.catalyst.plans.logical._
 import org.apache.spark.sql.catalyst.rules.{Rule, RuleExecutor}
 import org.apache.spark.sql.catalyst.util.quoteIdentifier
@@ -442,11 +443,15 @@ class SQLBuilder private (
     )
 
     object NormalizedAttribute extends Rule[LogicalPlan] {
-      override def apply(plan: LogicalPlan): LogicalPlan = plan.transformAllExpressions {
-        case a: AttributeReference =>
-          AttributeReference(normalizedName(a), a.dataType)(exprId = a.exprId, qualifier = None)
-        case a: Alias =>
-          Alias(a.child, normalizedName(a))(exprId = a.exprId, qualifier = None)
+      override def apply(plan: LogicalPlan): LogicalPlan = plan.transform {
+        case skip @ (_: DataSourceV2Relation | _: TableV2Relation) =>
+          skip
+        case q: QueryPlan[_] => q.transformExpressions {
+          case a: AttributeReference =>
+            AttributeReference(normalizedName(a), a.dataType)(exprId = a.exprId, qualifier = None)
+          case a: Alias =>
+            Alias(a.child, normalizedName(a))(exprId = a.exprId, qualifier = None)
+        }
       }
     }
 
