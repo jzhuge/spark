@@ -21,12 +21,12 @@ import java.sql.{Connection, DriverManager}
 import java.util.Properties
 
 import org.apache.spark.sql.catalyst.util.CaseInsensitiveMap
+import org.apache.spark.util.Utils
 
 /**
  * Options for the JDBC data source.
  */
-class JDBCOptions(
-    @transient private val parameters: CaseInsensitiveMap)
+class JDBCOptions(private val parameters: CaseInsensitiveMap)
   extends Serializable {
 
   import JDBCOptions._
@@ -53,10 +53,16 @@ class JDBCOptions(
    * `dbtable`, and `numPartition`. This should be used when invoking JDBC API like `Driver.connect`
    * because each DBMS vendor has its own property list for JDBC driver. See SPARK-17776.
    */
-  val asConnectionProperties: Properties = {
+  def asConnectionProperties: Properties = {
     val properties = new Properties()
     parameters.filterKeys(key => !jdbcOptionNames(key.toLowerCase))
-      .foreach { case (k, v) => properties.setProperty(k, v) }
+      .foreach {
+        case ("passwordsupplier", v) =>
+          val password = Utils.getContextOrSparkClassLoader
+            .loadClass(v).newInstance().asInstanceOf[java.util.function.Supplier[String]].get()
+          properties.setProperty("password", password)
+        case (k, v) => properties.setProperty(k, v)
+      }
     properties
   }
 
