@@ -78,7 +78,7 @@ class NetflixAnalysis(spark: SparkSession) extends Rule[LogicalPlan] {
 
     // replace the default v2 catalog with one for Iceberg tables
     case refresh @ RefreshTable(cat, ident)
-        if shouldReplaceCatalog(cat, Option(cat.loadTable(ident).properties.get("provider"))) =>
+        if cat != icebergCatalog && cat.loadTable(ident).getClass.getName.contains("iceberg") =>
       refresh.copy(catalog = icebergCatalog)
 
     case alter @ AlterTable(cat, rel: TableV2Relation, _)
@@ -93,9 +93,8 @@ class NetflixAnalysis(spark: SparkSession) extends Rule[LogicalPlan] {
         if shouldReplaceCatalog(catalog, options.get("provider")) =>
       ctas.copy(catalog = icebergCatalog)
 
-    case drop @ DropTable(catalog, identifier, _)
-        if shouldReplaceCatalog(catalog,
-          Option(catalog.loadTable(identifier).properties.get("provider"))) =>
+    case drop @ DropTable(cat, ident, _)
+        if cat != icebergCatalog && cat.loadTable(ident).getClass.getName.contains("iceberg") =>
       drop.copy(catalog = icebergCatalog)
 
     // this case is only used for older iceberg tables that don't have the provider set
