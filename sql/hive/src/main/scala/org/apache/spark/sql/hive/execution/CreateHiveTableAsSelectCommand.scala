@@ -17,7 +17,10 @@
 
 package org.apache.spark.sql.hive.execution
 
+import scala.collection.JavaConverters._
 import scala.util.control.NonFatal
+
+import com.netflix.bdp.Events
 
 import org.apache.spark.sql.{AnalysisException, Row, SaveMode, SparkSession}
 import org.apache.spark.sql.catalyst.catalog.CatalogTable
@@ -25,6 +28,7 @@ import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.command.DataWritingCommand
+import org.apache.spark.sql.execution.datasources.v2.V2Util
 
 
 /**
@@ -44,6 +48,12 @@ case class CreateHiveTableAsSelectCommand(
   private val tableIdentifier = tableDesc.identifier
 
   override def run(sparkSession: SparkSession, child: SparkPlan): Seq[Row] = {
+    Events.sendCTAS(
+      tableDesc.identifier.unquotedString,
+      V2Util.columns(query.schema).asJava,
+      tableDesc.properties.asJava
+    )
+
     val catalog = sparkSession.sessionState.catalog
     if (catalog.tableExists(tableIdentifier)) {
       assert(mode != SaveMode.Overwrite,

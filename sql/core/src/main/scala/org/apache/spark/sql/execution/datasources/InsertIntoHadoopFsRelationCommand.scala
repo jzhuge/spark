@@ -213,7 +213,7 @@ case class InsertIntoHadoopFsRelationCommand(
             case _ =>
               ident.table
           }
-        }.getOrElse("unknown")
+        }.orElse(catalogTable.map(_.location)).getOrElse("unknown")
 
         val schema = catalogTable.map(_.schema).getOrElse(query.schema)
 
