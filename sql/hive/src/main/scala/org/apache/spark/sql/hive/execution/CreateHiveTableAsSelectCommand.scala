@@ -17,12 +17,16 @@
 
 package org.apache.spark.sql.hive.execution
 
+import scala.collection.JavaConverters._
 import scala.util.control.NonFatal
+
+import com.netflix.bdp.Events
 
 import org.apache.spark.sql.{AnalysisException, Row, SparkSession}
 import org.apache.spark.sql.catalyst.catalog.CatalogTable
 import org.apache.spark.sql.catalyst.plans.logical.{InsertIntoTable, LogicalPlan, OverwriteOptions}
 import org.apache.spark.sql.execution.command.RunnableCommand
+import org.apache.spark.sql.execution.datasources.v2.V2Util
 import org.apache.spark.sql.hive.MetastoreRelation
 
 
@@ -45,6 +49,12 @@ case class CreateHiveTableAsSelectCommand(
   override def innerChildren: Seq[LogicalPlan] = Seq(query)
 
   override def run(sparkSession: SparkSession): Seq[Row] = {
+    Events.sendCTAS(
+      tableDesc.identifier.unquotedString,
+      V2Util.columns(query.schema).asJava,
+      tableDesc.properties.asJava
+    )
+
     lazy val metastoreRelation: MetastoreRelation = {
       import org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat
       import org.apache.hadoop.hive.serde2.`lazy`.LazySimpleSerDe
