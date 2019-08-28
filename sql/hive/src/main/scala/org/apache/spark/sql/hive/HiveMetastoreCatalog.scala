@@ -17,10 +17,14 @@
 
 package org.apache.spark.sql.hive
 
+import java.util.Collections
+
+import scala.collection.JavaConverters._
 import scala.util.control.NonFatal
 
 import com.google.common.cache.{CacheBuilder, CacheLoader, LoadingCache}
 import com.google.common.util.concurrent.Striped
+import com.netflix.bdp.Events
 import org.apache.hadoop.fs.Path
 
 import org.apache.spark.SparkException
@@ -33,6 +37,7 @@ import org.apache.spark.sql.catalyst.rules._
 import org.apache.spark.sql.execution.command.DDLUtils
 import org.apache.spark.sql.execution.datasources._
 import org.apache.spark.sql.execution.datasources.parquet.{ParquetFileFormat, ParquetOptions}
+import org.apache.spark.sql.execution.datasources.v2.V2Util
 import org.apache.spark.sql.hive.orc.OrcFileFormat
 import org.apache.spark.sql.internal.SQLConf.HiveCaseSensitiveInferenceMode._
 import org.apache.spark.sql.types._
@@ -148,6 +153,13 @@ private[hive] class HiveMetastoreCatalog(sparkSession: SparkSession) extends Log
           val plan = sparkSession.sessionState.sqlParser.parsePlan(viewOriginalText)
           sparkSession.sessionState.executePlan(plan).analyzed
       }
+
+      Events.sendLoadView(
+        tableIdent.unquotedString,
+        V2Util.columns(viewPlan.schema).asJava,
+        Collections.emptyMap
+      )
+
       SubqueryAlias(
         alias.getOrElse(table.identifier.table),
         viewPlan,
