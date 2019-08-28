@@ -157,7 +157,7 @@ private[hive] class HiveMetastoreCatalog(sparkSession: SparkSession) extends Log
       Events.sendLoadView(
         tableIdent.unquotedString,
         V2Util.columns(viewPlan.schema).asJava,
-        Collections.emptyMap
+        Map.empty[String, String].asJava
       )
 
       SubqueryAlias(
