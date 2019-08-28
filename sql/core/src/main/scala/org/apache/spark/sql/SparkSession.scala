@@ -25,7 +25,7 @@ import scala.collection.mutable
 import scala.reflect.runtime.universe.TypeTag
 import scala.util.control.NonFatal
 
-import com.netflix.bdp.KSGatewayListener
+import com.netflix.bdp.KSGatewaySparkListener
 
 import org.apache.spark.{SPARK_VERSION, SparkConf, SparkContext}
 import org.apache.spark.annotation.{DeveloperApi, Experimental, InterfaceStability}
@@ -96,13 +96,8 @@ class SparkSession private(
 
   // initialize the Keystone listener to send events from this JVM
   Option(sparkContext.hadoopConfiguration.get("keystone.gateway.host")) match {
-    case Some(host) =>
-      KSGatewayListener.initialize(
-        "spark",
-        sparkContext.applicationId,
-        sparkContext.hadoopConfiguration.get("genie.job.id"),
-        host,
-        sparkContext.hadoopConfiguration.getInt("keystone.gateway.port", 80))
+    case Some(_) =>
+      KSGatewaySparkListener.initialize(this)
 
     case _ =>
   }
