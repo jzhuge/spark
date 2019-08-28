@@ -142,8 +142,15 @@ object DataSourceV2Strategy extends Strategy {
            |Output: ${output.mkString(", ")}
          """.stripMargin)
 
+      val tableName = relation match {
+        case r: DataSourceV2Relation =>
+          r.name
+        case t: TableV2Relation =>
+          t.table.toString
+      }
+
       val scan = DataSourceV2ScanExec(
-        output, sourceName, relation.name, options, pushedFilters, reader)
+        output, sourceName, tableName, options, pushedFilters, reader)
 
       val filterCondition = postScanFilters.reduceLeftOption(And)
       val withFilter = filterCondition.map(FilterExec(_, scan)).getOrElse(scan)

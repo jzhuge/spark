@@ -100,11 +100,6 @@ case class CreateTableAsSelectExec(
     ifNotExists: Boolean) extends V2TableWriteExec(writeOptions, plan) {
 
   override protected def doExecute(): RDD[InternalRow] = {
-    Events.sendCTAS(
-      s"${catalog.name}.${ident.unquotedString}",
-      V2Util.columns(plan.schema).asJava,
-      writeOptions.asJava)
-
     if (catalog.tableExists(ident)) {
       if (ifNotExists) {
         return sparkContext.parallelize(Seq.empty, 1)
@@ -115,6 +110,12 @@ case class CreateTableAsSelectExec(
 
     Utils.tryWithSafeFinallyAndFailureCallbacks({
       val table = catalog.createTable(ident, plan.schema, partitioning.asJava, properties.asJava)
+
+      Events.sendCTAS(
+        table.toString,
+        V2Util.columns(plan.schema).asJava,
+        writeOptions.asJava)
+
       appendToTable(table)
     })(catchBlock = {
       catalog.dropTable(ident)
@@ -131,11 +132,6 @@ case class ReplaceTableAsSelectExec(
     plan: SparkPlan) extends V2TableWriteExec(writeOptions, plan) {
 
   override protected def doExecute(): RDD[InternalRow] = {
-    Events.sendRTAS(
-      s"${catalog.name}.${ident.unquotedString}",
-      V2Util.columns(plan.schema).asJava,
-      writeOptions.asJava)
-
     if (!catalog.tableExists(ident)) {
       throw new NoSuchTableException(ident.database.getOrElse("null"), ident.table)
     }
@@ -144,6 +140,12 @@ case class ReplaceTableAsSelectExec(
 
     Utils.tryWithSafeFinallyAndFailureCallbacks({
       val table = catalog.createTable(ident, plan.schema, partitioning.asJava, properties.asJava)
+
+      Events.sendRTAS(
+        table.toString,
+        V2Util.columns(plan.schema).asJava,
+        writeOptions.asJava)
+
       appendToTable(table)
     })(catchBlock = {
       catalog.dropTable(ident)
