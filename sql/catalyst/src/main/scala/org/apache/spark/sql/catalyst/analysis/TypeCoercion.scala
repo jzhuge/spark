@@ -84,7 +84,7 @@ object TypeCoercion {
    * the operation. Those rules are implemented in [[DecimalPrecision]].
    */
   val findTightestCommonType: (DataType, DataType) => Option[DataType] = {
-    case (t1, t2) if t1.sameType(t2) => Some(t1)
+    case (t1, t2) if t1 == t2 => Some(t1)
     case (NullType, t1) => Some(t1)
     case (t1, NullType) => Some(t1)
 
