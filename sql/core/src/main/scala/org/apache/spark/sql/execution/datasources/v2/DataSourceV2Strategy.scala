@@ -147,8 +147,13 @@ object DataSourceV2Strategy extends Strategy {
       val filterCondition = postScanFilters.reduceLeftOption(And)
       val withFilter = filterCondition.map(FilterExec(_, scan)).getOrElse(scan)
 
-      // always add the projection, which will produce unsafe rows required by some operators
-      ProjectExec(project, withFilter) :: Nil
+      val withProjection = if (withFilter.output != project || !scan.supportsBatch) {
+        ProjectExec(project, withFilter)
+      } else {
+        withFilter
+      }
+
+      withProjection :: Nil
 
     case r: StreamingDataSourceV2Relation =>
       // ensure there is a projection, which will produce unsafe rows required by some operators
