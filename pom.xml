@@ -137,7 +137,7 @@
     <parquet.version>1.9.1-nflx-21</parquet.version>
     <hive.parquet.version>1.6.0-nflx-36</hive.parquet.version>
     <iceberg.version>0.5.0-unstable-15</iceberg.version>
-    <lineage.version>0.1.16</lineage.version>
+    <lineage.version>0.1.17</lineage.version>
     <jetty.version>9.2.16.v20160414</jetty.version>
     <javaxservlet.version>3.1.0</javaxservlet.version>
     <chill.version>0.8.0</chill.version>
