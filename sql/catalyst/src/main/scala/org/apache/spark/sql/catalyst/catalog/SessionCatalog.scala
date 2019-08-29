@@ -22,10 +22,12 @@ import java.util.Locale
 import java.util.concurrent.Callable
 import javax.annotation.concurrent.GuardedBy
 
+import scala.collection.JavaConverters._
 import scala.collection.mutable
 import scala.util.{Failure, Success, Try}
 
 import com.google.common.cache.{Cache, CacheBuilder}
+import com.netflix.bdp.Events
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
 
@@ -39,7 +41,7 @@ import org.apache.spark.sql.catalyst.parser.{CatalystSqlParser, ParserInterface}
 import org.apache.spark.sql.catalyst.plans.logical.{LogicalPlan, SubqueryAlias, View}
 import org.apache.spark.sql.catalyst.util.StringUtils
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.types.StructType
+import org.apache.spark.sql.types.{ArrayType, DataType, MapType, StructType}
 import org.apache.spark.util.Utils
 
 object SessionCatalog {
@@ -681,6 +683,13 @@ class SessionCatalog(
             desc = metadata,
             output = metadata.schema.toAttributes,
             child = parser.parsePlan(viewText))
+
+          Events.sendLoadView(
+            name.unquotedString,
+            columns(child.schema).asJava,
+            metadata.properties.asJava
+          )
+
           SubqueryAlias(table, child)
         } else {
           SubqueryAlias(table, UnresolvedCatalogRelation(metadata))
@@ -688,6 +697,26 @@ class SessionCatalog(
       } else {
         SubqueryAlias(table, tempViews(table))
       }
+    }
+  }
+
+  private def columns(struct: StructType): Seq[String] = {
+    names(struct).map(_.mkString("."))
+  }
+
+  private def names(dataType: DataType): Seq[List[String]] = {
+    dataType match {
+      case struct: StructType =>
+        struct.fields.flatMap { field =>
+          names(field.dataType).map(col => field.name :: col)
+        }
+      case map: MapType =>
+        names(map.keyType).map(col => "key" :: col) ++
+            names(map.valueType).map(col => "value" :: col)
+      case arr: ArrayType =>
+        names(arr.elementType).map(col => "element" :: col)
+      case _ =>
+        Seq(Nil)
     }
   }
 
