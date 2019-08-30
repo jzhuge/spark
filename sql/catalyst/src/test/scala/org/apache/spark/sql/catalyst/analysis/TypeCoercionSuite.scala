@@ -416,6 +416,15 @@ class TypeCoercionSuite extends AnalysisTest {
       StructType(Seq(StructField("a", IntegerType, nullable = true))),
       Some(StructType(Seq(StructField("a", IntegerType, nullable = true)))))
 
+    widenTest(
+      StructType(Seq(StructField("a", IntegerType, nullable = true).withComment("abc"))),
+      StructType(Seq(StructField("a", IntegerType, nullable = true).withComment("def"))),
+      Some(StructType(Seq(StructField("a", IntegerType, nullable = true)))))
+    widenTest(
+      ArrayType(StructType(Seq(StructField("a", IntegerType, nullable = true).withComment("a")))),
+      ArrayType(StructType(Seq(StructField("a", IntegerType, nullable = true).withComment("d")))),
+      Some(ArrayType(StructType(Seq(StructField("a", IntegerType, nullable = true))))))
+
     withSQLConf(SQLConf.CASE_SENSITIVE.key -> "true") {
       widenTest(
         StructType(Seq(StructField("a", IntegerType))),
