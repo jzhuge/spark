@@ -343,7 +343,7 @@ abstract class V2TableWriteExec(
 
   override def requiredChildOrdering: Seq[Seq[SortOrder]] = {
     requiredChildDistribution match {
-      case OrderedDistribution(order) =>
+      case Seq(OrderedDistribution(order)) =>
         // if this requires an ordered distribution, require the same sort order
         order :: Nil
       case _ =>
