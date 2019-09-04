@@ -32,7 +32,7 @@ import org.apache.spark.sql.catalyst.{InternalRow, TableIdentifier}
 import org.apache.spark.sql.catalyst.analysis.{NoSuchTableException, TableAlreadyExistsException}
 import org.apache.spark.sql.catalyst.expressions.{Alias, Ascending, Attribute, Expression, IcebergBucketTransform, IcebergDayTransform, IcebergHourTransform, IcebergMonthTransform, IcebergYearTransform, SortOrder}
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
-import org.apache.spark.sql.catalyst.plans.physical.{ClusteredDistribution, Distribution, UnspecifiedDistribution}
+import org.apache.spark.sql.catalyst.plans.physical.{ClusteredDistribution, Distribution, OrderedDistribution, RoundRobinPartitioning, UnknownPartitioning, UnspecifiedDistribution}
 import org.apache.spark.sql.execution.{ProjectExec, SparkPlan}
 import org.apache.spark.sql.sources.v2.writer._
 import org.apache.spark.sql.types.{ArrayType, AtomicType, DataType, MapType, StructType}
@@ -279,11 +279,29 @@ abstract class V2TableWriteExec(
   }
 
   override def requiredChildDistribution: Seq[Distribution] = {
-    // add a required distribution if the table is bucketed
-    val distribution = if (clusteringExpressions.exists(_.isInstanceOf[IcebergBucketTransform])) {
-      ClusteredDistribution(clusteringExpressions.filter(_.isInstanceOf[IcebergBucketTransform]))
-    } else {
-      UnspecifiedDistribution
+    // add a required distribution if the data is not clustered or ordered
+    lazy val requiredDistribution = {
+      val maybeBucketedAttr = clusteringExpressions.collectFirst {
+        case IcebergBucketTransform(_, attr: Attribute) =>
+          attr
+      }
+
+      maybeBucketedAttr match {
+        case Some(bucketedAttr) =>
+          OrderedDistribution(orderingExpressions :+ SortOrder(bucketedAttr, Ascending))
+        case _ =>
+          ClusteredDistribution(clusteringExpressions)
+      }
+    }
+
+    // only override output partitioning if the data is obviously not distributed for the write
+    val distribution = query.outputPartitioning match {
+      case UnknownPartitioning(_) =>
+        requiredDistribution
+      case RoundRobinPartitioning(_) =>
+        requiredDistribution
+      case _ =>
+        UnspecifiedDistribution
     }
 
     distribution :: Nil
@@ -307,8 +325,8 @@ abstract class V2TableWriteExec(
     }
   }
 
-  override def requiredChildOrdering: Seq[Seq[SortOrder]] = {
-    val childOrdering = clusteringExpressions.map { expr =>
+  @transient lazy val orderingExpressions: Seq[SortOrder] = {
+    clusteringExpressions.map { expr =>
       // unwrap aliases that may be added to match up column names to the table
       // for example: event_type#835 AS event_type#2278
       val unaliased = unwrapAlias(query, expr)
@@ -321,8 +339,17 @@ abstract class V2TableWriteExec(
       }
       existingOrdering.getOrElse(SortOrder(expr, Ascending))
     }
+  }
 
-    childOrdering :: Nil
+  override def requiredChildOrdering: Seq[Seq[SortOrder]] = {
+    requiredChildDistribution match {
+      case OrderedDistribution(order) =>
+        // if this requires an ordered distribution, require the same sort order
+        order :: Nil
+      case _ =>
+        // otherwise, request a local ordering to avoid creating too many output files
+        orderingExpressions :: Nil
+    }
   }
 }
 
