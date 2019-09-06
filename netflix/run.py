@@ -191,7 +191,10 @@ def get_venv_path(profile):
 
     # Check and redirect path for python 3.7
     if profile == 'python3':
-        profile = 'python{}.{}'.format(sys.version_info.major, sys.version_info.minor)
+        import subprocess
+        profile = subprocess.check_output(
+            ['python3', '-c', 'import sys; print("python" + str(sys.version_info[0])+"."+str(sys.version_info[1]))']
+        ).strip()
 
     venv_path = 'hdfs:///venv/{}/bdp-python-meta/current.tar.gz'.format(profile)
 
