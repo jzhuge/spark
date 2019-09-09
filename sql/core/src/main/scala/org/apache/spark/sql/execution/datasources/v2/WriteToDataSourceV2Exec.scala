@@ -296,6 +296,8 @@ abstract class V2TableWriteExec(
 
     // only override output partitioning if the data is obviously not distributed for the write
     val distribution = query.outputPartitioning match {
+      case _ if clusteringExpressions.isEmpty =>
+        UnspecifiedDistribution
       case UnknownPartitioning(_) =>
         requiredDistribution
       case RoundRobinPartitioning(_) =>
