@@ -182,15 +182,15 @@ def split_args(command_args):
     kernel_args = command_args[split_point+1:]
     return (spark_args, kernel_args)
 
-def get_venv_path(profile):
+def get_venv_path(profile, deploy_mode):
     ''' Gets the latest published version of the big data image python environment built
 
     :param profile: one of python2 or python3
     :return:
     '''
 
-    # Check and redirect path for python 3.7
-    if profile == 'python3':
+    # Check and redirect path for default python version in client mode
+    if profile == 'python3' and deploy_mode == 'client':
         import subprocess
         profile = subprocess.check_output(
             ['python3', '-c', 'import sys; print("python" + str(sys.version_info[0])+"."+str(sys.version_info[1]))']
@@ -294,10 +294,15 @@ def main(command_args):
     # get the python environment
     venv_profile, command_args = get_value(command_args, '--venv')
     if venv_profile:
+        # Default to virtualenv python
         venv_python = './__venv__/bin/python'
 
+        # Fallback to local python for big data image
+        if deploy_mode == 'client':
+            venv_python = venv_profile
+
         spark_args.append('--conf')
-        spark_args.append('spark.yarn.python.venv={}'.format(get_venv_path(venv_profile)))
+        spark_args.append('spark.yarn.python.venv={}'.format(get_venv_path(venv_profile, deploy_mode)))
         spark_args.append('--conf')
         spark_args.append('spark.executorEnv.PYSPARK_PYTHON={}'.format(venv_python))
         spark_args.append('--conf')
