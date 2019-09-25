@@ -299,7 +299,8 @@ def main(command_args):
 
         # Fallback to local python for big data image
         if deploy_mode == 'client':
-            venv_python = venv_profile
+            spark_args.append('--conf')
+            spark_args.append('spark.pyspark.driver.python={}'.format(venv_profile))
 
         spark_args.append('--conf')
         spark_args.append('spark.yarn.python.venv={}'.format(get_venv_path(venv_profile, deploy_mode)))
