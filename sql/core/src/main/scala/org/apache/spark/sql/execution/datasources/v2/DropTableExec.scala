@@ -36,6 +36,8 @@ case class DropTableExec(
       throw new NoSuchTableException(identifier.database.get, identifier.table)
     }
 
+    catalog.refreshTable(identifier)
+
     sqlContext.sparkContext.parallelize(Seq.empty, 1)
   }
 
