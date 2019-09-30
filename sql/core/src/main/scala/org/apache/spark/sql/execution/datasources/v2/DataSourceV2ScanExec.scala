@@ -75,19 +75,7 @@ case class DataSourceV2ScanExec(
       V2Util.columns(reader.readSchema()).asJava,
       options.asJava)
 
-    val metricsHandler = new MetricsHandler(longMetric("numOutputRows"))
-
-    inputRDD.mapPartitions { iter =>
-      try {
-        iter.map { r =>
-          metricsHandler.updateMetrics()
-          r
-        }
-
-      } finally {
-        metricsHandler.updateMetrics(force = true)
-      }
-    }
+    inputRDD.mapPartitions(new MetricsIterator(_, new MetricsHandler(longMetric("numOutputRows"))))
   }
 
   class MetricsHandler(numOutputRows: SQLMetric) extends Logging with Serializable {
@@ -108,6 +96,25 @@ case class DataSourceV2ScanExec(
       }
       inputMetrics.incRecordsRead(1)
       numOutputRows += 1
+    }
+  }
+
+  private class MetricsIterator[E](
+      iter: Iterator[E],
+      metricsHandler: MetricsHandler) extends Iterator[E] {
+    override def hasNext: Boolean = {
+      if (iter.hasNext) {
+        true
+      } else {
+        metricsHandler.updateMetrics(force = true)
+        false
+      }
+    }
+
+    override def next(): E = {
+      val item = iter.next
+      metricsHandler.updateMetrics()
+      item
     }
   }
 }
