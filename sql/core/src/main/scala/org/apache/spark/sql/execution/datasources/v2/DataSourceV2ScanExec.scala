@@ -71,23 +71,33 @@ case class DataSourceV2ScanExec(
     reader.planInputPartitions().asScala
   }
 
-  private lazy val inputRDD: RDD[InternalRow] = reader match {
-    case r: SupportsScanColumnarBatch if r.enableBatchRead() =>
-      assert(!reader.isInstanceOf[ContinuousReader],
-        "continuous stream reader does not support columnar read yet.")
-      new DataSourceRDD(sparkContext, r.planBatchInputPartitions().asScala)
-        .asInstanceOf[RDD[InternalRow]]
+  private lazy val inputRDD: RDD[InternalRow] = {
+    Events.sendScan(
+      tableName,
+      if (pushedFilters.nonEmpty) pushedFilters.reduce(And).sql else "true",
+      V2Util.columns(reader.readSchema()).asJava,
+      options.asJava)
 
-    case _: ContinuousReader =>
-      EpochCoordinatorRef.get(
-        sparkContext.getLocalProperty(ContinuousExecution.EPOCH_COORDINATOR_ID_KEY),
-        sparkContext.env)
-        .askSync[Unit](SetReaderPartitions(partitions.size))
-      new ContinuousDataSourceRDD(sparkContext, sqlContext, partitions)
-        .asInstanceOf[RDD[InternalRow]]
+    val innerRDD = reader match {
+      case r: SupportsScanColumnarBatch if r.enableBatchRead() =>
+        assert(!reader.isInstanceOf[ContinuousReader],
+          "continuous stream reader does not support columnar read yet.")
+        new DataSourceRDD(sparkContext, r.planBatchInputPartitions().asScala)
+            .asInstanceOf[RDD[InternalRow]]
 
-    case _ =>
-      new DataSourceRDD(sparkContext, partitions).asInstanceOf[RDD[InternalRow]]
+      case _: ContinuousReader =>
+        EpochCoordinatorRef.get(
+          sparkContext.getLocalProperty(ContinuousExecution.EPOCH_COORDINATOR_ID_KEY),
+          sparkContext.env)
+            .askSync[Unit](SetReaderPartitions(partitions.size))
+        new ContinuousDataSourceRDD(sparkContext, sqlContext, partitions)
+            .asInstanceOf[RDD[InternalRow]]
+
+      case _ =>
+        new DataSourceRDD(sparkContext, partitions).asInstanceOf[RDD[InternalRow]]
+    }
+
+    innerRDD.mapPartitions(new MetricsIterator(_, new MetricsHandler(longMetric("numOutputRows"))))
   }
 
   override def inputRDDs(): Seq[RDD[InternalRow]] = Seq(inputRDD)
@@ -100,28 +110,10 @@ case class DataSourceV2ScanExec(
   override protected def needsUnsafeRowConversion: Boolean = false
 
   override protected def doExecute(): RDD[InternalRow] = {
-    Events.sendScan(
-      tableName,
-      if (pushedFilters.nonEmpty) pushedFilters.reduce(And).sql else "true",
-      V2Util.columns(reader.readSchema()).asJava,
-      options.asJava)
-
     if (supportsBatch) {
       WholeStageCodegenExec(this)(codegenStageId = 0).execute()
     } else {
-      val metricsHandler = new MetricsHandler(longMetric("numOutputRows"))
-
-      inputRDD.mapPartitions { iter =>
-        try {
-          iter.map { r =>
-            metricsHandler.updateMetrics()
-            r
-          }
-
-        } finally {
-          metricsHandler.updateMetrics(force = true)
-        }
-      }
+      inputRDD
     }
   }
 
@@ -138,6 +130,25 @@ case class DataSourceV2ScanExec(
       }
       inputMetrics.incRecordsRead(1)
       numOutputRows += 1
+    }
+  }
+
+  private class MetricsIterator[E](
+      iter: Iterator[E],
+      metricsHandler: MetricsHandler) extends Iterator[E] {
+    override def hasNext: Boolean = {
+      if (iter.hasNext) {
+        true
+      } else {
+        metricsHandler.updateMetrics(force = true)
+        false
+      }
+    }
+
+    override def next(): E = {
+      val item = iter.next
+      metricsHandler.updateMetrics()
+      item
     }
   }
 }
