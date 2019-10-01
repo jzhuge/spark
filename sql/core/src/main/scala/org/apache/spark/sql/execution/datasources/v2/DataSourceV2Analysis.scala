@@ -302,15 +302,15 @@ class DataSourceV2Analysis(spark: SparkSession) extends Rule[LogicalPlan] {
   object V2TableReference {
     def unapply(ident: TableIdentifier): Option[(TableIdentifier, Table)] = {
       val identifier = ensureDatabaseIsSet(ident)
-      Try(catalog.loadTable(identifier)).toOption match {
-        case Some(table) =>
-          table match {
-            case table: V1MetadataTable if !isV2Source(table.catalogTable) =>
-              None
-            case _ =>
-              Some((identifier, table))
-          }
-        case _ =>
+      try {
+        catalog.loadTable(identifier) match {
+          case table: V1MetadataTable if !isV2Source(table.catalogTable) =>
+            None
+          case table =>
+            Some((identifier, table))
+        }
+      } catch {
+        case _: NoSuchTableException =>
           None
       }
     }
