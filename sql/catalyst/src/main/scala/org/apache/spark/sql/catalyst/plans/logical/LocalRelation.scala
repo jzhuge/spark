@@ -43,7 +43,10 @@ object LocalRelation {
   }
 }
 
-case class LocalRelation(output: Seq[Attribute], data: Seq[InternalRow] = Nil)
+case class LocalRelation(
+    output: Seq[Attribute],
+    data: Seq[InternalRow] = Nil,
+    @transient sendScanEvent: Option[() => Unit] = None)
   extends LeafNode with analysis.MultiInstanceRelation {
 
   // A local relation must have resolved output.
@@ -68,7 +71,7 @@ case class LocalRelation(output: Seq[Attribute], data: Seq[InternalRow] = Nil)
 
   override def sameResult(plan: LogicalPlan): Boolean = {
     plan.canonicalized match {
-      case LocalRelation(otherOutput, otherData) =>
+      case LocalRelation(otherOutput, otherData, _) =>
         otherOutput.map(_.dataType) == output.map(_.dataType) && otherData == data
       case _ => false
     }

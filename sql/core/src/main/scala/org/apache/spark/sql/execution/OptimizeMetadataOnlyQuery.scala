@@ -17,6 +17,10 @@
 
 package org.apache.spark.sql.execution
 
+import scala.collection.JavaConverters._
+
+import com.netflix.bdp.Events
+
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.catalog.{CatalogRelation, SessionCatalog}
 import org.apache.spark.sql.catalyst.expressions._
@@ -108,7 +112,15 @@ case class OptimizeMetadataOnlyQuery(
           case l @ LogicalRelation(fsRelation: HadoopFsRelation, _, _) =>
             val partAttrs = getPartitionAttrs(fsRelation.partitionSchema.map(_.name), l)
             val partitionData = fsRelation.location.listFiles(filters = relFilters)
-            LocalRelation(partAttrs, partitionData.map(_.values).toList)
+            val sendScanEvent: () => Unit = () => {
+              Events.sendScan(
+                l.name,
+                relFilters.reduceLeftOption(And).map(_.sql).getOrElse("true"),
+                partAttrs.map(_.name).asJava,
+                Map("context" -> "metadata_query").asJava)
+            }
+
+            LocalRelation(partAttrs, partitionData.map(_.values).toList, Some(sendScanEvent))
 
           case relation: CatalogRelation =>
             val partAttrs = getPartitionAttrs(relation.catalogTable.partitionColumnNames, relation)
@@ -123,7 +135,16 @@ case class OptimizeMetadataOnlyQuery(
                 Cast(Literal(p.spec(attr.name)), attr.dataType).eval()
               })
             }
-            LocalRelation(partAttrs, partitionData.toList)
+
+            val sendScanEvent: () => Unit = () => {
+              Events.sendScan(
+                relation.catalogTable.identifier.unquotedString,
+                relFilters.reduceLeftOption(And).map(_.sql).getOrElse("true"),
+                partAttrs.map(_.name).asJava,
+                Map("context" -> "metadata_query").asJava)
+            }
+
+            LocalRelation(partAttrs, partitionData.toList, Some(sendScanEvent))
 
           case _ =>
             throw new IllegalStateException(s"unrecognized table scan node: $relation, " +

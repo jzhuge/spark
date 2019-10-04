@@ -1131,11 +1131,11 @@ object DecimalAggregates extends Rule[LogicalPlan] {
  */
 object ConvertToLocalRelation extends Rule[LogicalPlan] {
   def apply(plan: LogicalPlan): LogicalPlan = plan transform {
-    case Project(projectList, LocalRelation(output, data))
+    case Project(projectList, LocalRelation(output, data, sendEventCallback))
         if !projectList.exists(hasUnevaluableExpr) =>
       val projection = new InterpretedProjection(projectList, output)
       projection.initialize(0)
-      LocalRelation(projectList.map(_.toAttribute), data.map(projection))
+      LocalRelation(projectList.map(_.toAttribute), data.map(projection), sendEventCallback)
   }
 
   private def hasUnevaluableExpr(expr: Expression): Boolean = {
