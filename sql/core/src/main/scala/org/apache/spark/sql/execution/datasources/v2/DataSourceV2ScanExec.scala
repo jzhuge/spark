@@ -97,7 +97,11 @@ case class DataSourceV2ScanExec(
         new DataSourceRDD(sparkContext, partitions).asInstanceOf[RDD[InternalRow]]
     }
 
-    innerRDD.mapPartitions(new MetricsIterator(_, new MetricsHandler(longMetric("numOutputRows"))))
+    // create a metrics handler on the driver that gets serialized to executors because the metric
+    // can't be created on executors (SparkContext is null)
+    val metricsHandler = new MetricsHandler(longMetric("numOutputRows"))
+
+    innerRDD.mapPartitions(new MetricsIterator(_, metricsHandler))
   }
 
   override def inputRDDs(): Seq[RDD[InternalRow]] = Seq(inputRDD)
