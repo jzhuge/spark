@@ -18,9 +18,11 @@
 package org.apache.spark.sql.execution.command
 
 import scala.collection.{GenMap, GenSeq}
+import scala.collection.JavaConverters._
 import scala.collection.parallel.ForkJoinTaskSupport
 import scala.util.control.NonFatal
 
+import com.netflix.bdp.Events
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs._
 import org.apache.hadoop.mapred.{FileInputFormat, JobConf}
@@ -30,9 +32,10 @@ import org.apache.spark.sql.catalyst.TableIdentifier
 import org.apache.spark.sql.catalyst.analysis.{NoSuchTableException, Resolver}
 import org.apache.spark.sql.catalyst.catalog._
 import org.apache.spark.sql.catalyst.catalog.CatalogTypes.TablePartitionSpec
-import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference}
+import org.apache.spark.sql.catalyst.expressions.{And, Attribute, AttributeReference, EqualTo, Expression, Literal, Or}
 import org.apache.spark.sql.catalyst.plans.logical.Command
 import org.apache.spark.sql.execution.datasources.PartitioningUtils
+import org.apache.spark.sql.execution.datasources.v2.V2Util
 import org.apache.spark.sql.types._
 import org.apache.spark.util.{SerializableConfiguration, ThreadUtils}
 
@@ -403,10 +406,22 @@ case class AlterTableAddPartitionCommand(
       // inherit table storage format (possibly except for location)
       CatalogTablePartition(normalizedSpec, table.storage.copy(locationUri = location))
     }
+
+    Events.sendAppend(
+      table.identifier.unquotedString,
+      V2Util.columns(table.schema).asJava,
+      // add all new partitions to the options map as (partition key) -> (partition location)
+      (parts.map(p => toKey(table.partitionColumnNames, p.spec) -> p.location).toMap +
+          ("partitions" -> partitionSpecsAndLocs.size.toString) +
+          ("context" -> "add_partitions")).asJava)
+
     catalog.createPartitions(table.identifier, parts, ignoreIfExists = ifNotExists)
     Seq.empty[Row]
   }
 
+  private def toKey(partNames: Seq[String], partData: TablePartitionSpec): String = {
+    partNames.map(name => s"$name=${partData.getOrElse(name, "(null)")}").mkString("/")
+  }
 }
 
 /**
@@ -484,12 +499,28 @@ case class AlterTableDropPartitionCommand(
         sparkSession.sessionState.conf.resolver)
     }
 
+    Events.sendDelete(
+      table.identifier.unquotedString,
+      toDeleteExpression(table.partitionColumnNames, normalizedSpecs).sql,
+      Map("context" -> "drop_partitions").asJava)
+
     catalog.dropPartitions(
       table.identifier, normalizedSpecs, ignoreIfNotExists = ifExists, purge = purge,
       retainData = retainData)
     Seq.empty[Row]
   }
 
+  private def toDeleteExpression(
+      partNames: Seq[String],
+      partitions: Seq[TablePartitionSpec]): Expression = {
+    val maybeExpression = partitions.flatMap { partData =>
+      partNames.map { name =>
+        EqualTo(Literal(name), Literal(partData.get(name).orNull))
+      }.reduceLeftOption(Or)
+    }.reduceLeftOption(And)
+
+    maybeExpression.getOrElse(Literal(false))
+  }
 }
 
 

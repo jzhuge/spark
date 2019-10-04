@@ -22,10 +22,12 @@ import java.net.URI
 import java.nio.file.FileSystems
 import java.util.Date
 
+import scala.collection.JavaConverters._
 import scala.collection.mutable.ArrayBuffer
-import scala.util.control.NonFatal
 import scala.util.Try
+import scala.util.control.NonFatal
 
+import com.netflix.bdp.Events
 import org.apache.hadoop.fs.Path
 
 import org.apache.spark.sql.{AnalysisException, Row, SparkSession}
@@ -40,6 +42,7 @@ import org.apache.spark.sql.execution.datasources.{DataSource, FileFormat, Parti
 import org.apache.spark.sql.execution.datasources.csv.CSVFileFormat
 import org.apache.spark.sql.execution.datasources.json.JsonFileFormat
 import org.apache.spark.sql.execution.datasources.parquet.ParquetFileFormat
+import org.apache.spark.sql.execution.datasources.v2.V2Util
 import org.apache.spark.sql.types._
 import org.apache.spark.util.Utils
 
@@ -365,14 +368,29 @@ case class LoadDataCommand(
       }
 
     if (partition.nonEmpty) {
+      val partitionData = partition.get
+      val partitionKey = targetTable.partitionColumnNames.map {
+        name => s"$name=${partitionData.getOrElse(name, "(null)")}"
+      }.mkString("/")
+
+      Events.sendAppend(
+        targetTable.identifier.unquotedString,
+        V2Util.columns(targetTable.schema).asJava,
+        Map("context" -> "load_data", partitionKey -> path).asJava)
+
       catalog.loadPartition(
         targetTable.identifier,
         loadPath.toString,
-        partition.get,
+        partitionData,
         isOverwrite,
         holdDDLTime = false,
         inheritTableSpecs = true)
     } else {
+      Events.sendAppend(
+        targetTable.identifier.unquotedString,
+        V2Util.columns(targetTable.schema).asJava,
+        Map("inpath" -> path).asJava)
+
       catalog.loadTable(
         targetTable.identifier,
         loadPath.toString,
