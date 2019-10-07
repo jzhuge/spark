@@ -277,8 +277,10 @@ def main(command_args):
         spark_args.append('spark.genie.name=%s' % os.getenv('GENIE_JOB_NAME'))
 
     # add a default log path
+    job_dir = getenv('GENIE_JOB_DIR')
+    spark_log_path = os.path.join(job_dir, 'spark.log')
     spark_args.append('--conf')
-    spark_args.append('spark.log.path=spark.log')
+    spark_args.append('spark.log.path=' + spark_log_path)
 
     # set deploy mode
     deploy_mode, command_args = get_value(command_args, '--deploy-mode')
@@ -342,13 +344,7 @@ def main(command_args):
         spark_args = spark_args[1:]
         current_job_working_dir = os.getenv('CURRENT_JOB_WORKING_DIR')
         if current_job_working_dir:
-            if os.getenv('TITUS_TASK_ID'):
-                spark_log_path = '/logs/{GENIE_JOB_ID}/spark.log'.format(**os.environ)
-            else:
-                spark_log_path = '{}.log'.format(current_job_working_dir.rstrip('/'))
             os.environ['SPARK_LOG_FILE_PATH'] = spark_log_path
-            spark_args.append('--conf')
-            spark_args.append("spark.log.path=" + spark_log_path)
             # add the user's spark properties, if present. this comes before spark CLI
             #  arguments so that properties set on the command line take precedence.
             extra_properties_path = os.path.expanduser('~/.spark.properties')
