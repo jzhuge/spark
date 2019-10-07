@@ -129,11 +129,12 @@ class DataSourceV2Analysis(spark: SparkSession) extends Rule[LogicalPlan] {
       CreateTable(catalog, ensureDatabaseIsSet(targetIdent),
         source.schema, source.partitioning.asScala, options, ifNotExists)
 
-    case sql.CreateTable(ident, V2Provider(provider), schema, transforms, bucketSpec, options,
-    ifNotExists) =>
+    case sql.CreateTable(ident, V2Provider(provider), schema, transforms, bucketSpec, properties,
+        options, ifNotExists) =>
       val partitioning = transforms ++ bucketSpec.map(PartitionUtil.convertBucketSpec).toSeq
       CreateTable(catalog, ensureDatabaseIsSet(ident),
-        schema, partitioning, options + ("provider" -> provider), ignoreIfExists = ifNotExists)
+        schema, partitioning, properties, options + ("provider" -> provider),
+        ignoreIfExists = ifNotExists)
 
     case datasources.CreateTable(catalogTable, mode, None) if isV2Source(catalogTable, spark) =>
       val pathOption = catalogTable.storage.locationUri.map("path" -> CatalogUtils.URIToString(_))
@@ -145,22 +146,23 @@ class DataSourceV2Analysis(spark: SparkSession) extends Rule[LogicalPlan] {
 
       mode match {
         case SaveMode.ErrorIfExists =>
-          CreateTable(catalog, identifier(catalogTable), catalogTable.schema, partitioning, options,
-            ignoreIfExists = false)
+          CreateTable(catalog, identifier(catalogTable), catalogTable.schema, partitioning,
+            catalogTable.properties, options, ignoreIfExists = false)
 
         case SaveMode.Ignore =>
-          CreateTable(catalog, identifier(catalogTable), catalogTable.schema, partitioning, options,
-            ignoreIfExists = true)
+          CreateTable(catalog, identifier(catalogTable), catalogTable.schema, partitioning,
+            catalogTable.properties, options, ignoreIfExists = true)
 
         case _ =>
           throw new AnalysisException(s"$mode cannot be used for table creation in v2 data sources")
       }
 
-    case sql.CreateTableAsSelect(ident, V2Provider(provider), transforms, bucketSpec, options,
-    asSelect, ifNotExists) =>
+    case sql.CreateTableAsSelect(ident, V2Provider(provider), transforms, bucketSpec, properties,
+        options, asSelect, ifNotExists) =>
       val partitioning = transforms ++ bucketSpec.map(PartitionUtil.convertBucketSpec).toSeq
       CreateTableAsSelect(catalog, ensureDatabaseIsSet(ident),
-        partitioning, asSelect, options + ("provider" -> provider), ignoreIfExists = ifNotExists)
+        partitioning, properties, asSelect, options + ("provider" -> provider),
+        ignoreIfExists = ifNotExists)
 
     case datasources.CreateTable(catalogTable, mode, Some(query))
         if isV2Source(catalogTable, spark) =>
@@ -177,15 +179,16 @@ class DataSourceV2Analysis(spark: SparkSession) extends Rule[LogicalPlan] {
           throw new AnalysisException("Append mode cannot be used with CTAS for v2 data sources")
 
         case SaveMode.ErrorIfExists =>
-          CreateTableAsSelect(catalog, identifier(catalogTable), Seq.empty, query, options,
-            ignoreIfExists = false)
+          CreateTableAsSelect(catalog, identifier(catalogTable), Seq.empty, catalogTable.properties,
+            query, options, ignoreIfExists = false)
 
         case SaveMode.Ignore =>
-          CreateTableAsSelect(catalog, identifier(catalogTable), Seq.empty, query, options,
-            ignoreIfExists = true)
+          CreateTableAsSelect(catalog, identifier(catalogTable), Seq.empty, catalogTable.properties,
+            query, options, ignoreIfExists = true)
 
         case SaveMode.Overwrite =>
-          ReplaceTableAsSelect(catalog, identifier(catalogTable), Seq.empty, query, options)
+          ReplaceTableAsSelect(catalog, identifier(catalogTable), Seq.empty,
+            catalogTable.properties, query, options)
       }
 
     case insert @ InsertIntoTable(LogicalRelation(v2: V2AsBaseRelation, _, _, _), _, _, _, _, _) =>

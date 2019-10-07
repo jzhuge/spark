@@ -85,11 +85,11 @@ class NetflixAnalysis(spark: SparkSession) extends Rule[LogicalPlan] {
         if cat != icebergCatalog && rel.table.getClass.getName.contains("iceberg") =>
       alter.copy(catalog = icebergCatalog)
 
-    case create @ CreateTable(catalog, _, _, _, options, _)
+    case create @ CreateTable(catalog, _, _, _, _, options, _)
         if shouldReplaceCatalog(catalog, options.get("provider")) =>
       create.copy(catalog = icebergCatalog)
 
-    case ctas @ CreateTableAsSelect(catalog, _, _, _, options, _)
+    case ctas @ CreateTableAsSelect(catalog, _, _, _, _, options, _)
         if shouldReplaceCatalog(catalog, options.get("provider")) =>
       ctas.copy(catalog = icebergCatalog)
 

@@ -433,8 +433,8 @@ class SparkSqlAstBuilder(conf: SQLConf) extends AstBuilder(conf) {
           ctx)
 
       case Some(asSelect) =>
-        sql.CreateTableAsSelect(table, provider, partitions, bucketSpec, options, asSelect,
-          ifNotExists = ifNotExists)
+        sql.CreateTableAsSelect(table, provider, partitions, bucketSpec, properties, options,
+          asSelect, ifNotExists = ifNotExists)
 
       case None if temp =>
         if (ifNotExists) {
@@ -447,7 +447,7 @@ class SparkSqlAstBuilder(conf: SQLConf) extends AstBuilder(conf) {
 
       case _ =>
         sql.CreateTable(table, provider, schema.getOrElse(new StructType), partitions, bucketSpec,
-          options, ifNotExists = ifNotExists)
+          properties, options, ifNotExists = ifNotExists)
     }
   }
 

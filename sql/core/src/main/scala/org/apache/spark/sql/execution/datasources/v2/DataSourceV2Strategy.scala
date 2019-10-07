@@ -182,20 +182,33 @@ object DataSourceV2Strategy extends Strategy {
     case AlterTable(catalog, rel: TableV2Relation, changes) =>
       AlterTableExec(catalog, rel.ident, changes) :: Nil
 
-    case CreateTable(catalog, ident, schema, partitioning, options, ignoreIfExists) =>
-      CreateTableExec(catalog, ident, schema, partitioning, options, ignoreIfExists) :: Nil
+    case CreateTable(catalog, ident, schema, partitioning, properties, options, ignoreIfExists) =>
+      val tableProperties = combinePropertiesAndOptions(properties, options)
+      CreateTableExec(catalog, ident, schema, partitioning, tableProperties, ignoreIfExists) :: Nil
 
-    case CreateTableAsSelect(catalog, ident, partitioning, query, writeOptions, ignoreIfExists) =>
-      CreateTableAsSelectExec(catalog, ident, partitioning, Map.empty, writeOptions,
+    case CreateTableAsSelect(
+        catalog, ident, partitioning, properties, query, writeOptions, ignoreIfExists) =>
+      val tableProperties = combinePropertiesAndOptions(properties, writeOptions)
+      CreateTableAsSelectExec(catalog, ident, partitioning, tableProperties, writeOptions,
         planLater(query), ignoreIfExists) :: Nil
 
-    case ReplaceTableAsSelect(catalog, ident, partitioning, query, writeOptions) =>
-      ReplaceTableAsSelectExec(catalog, ident, partitioning, Map.empty, writeOptions,
+    case ReplaceTableAsSelect(catalog, ident, partitioning, properties, query, writeOptions) =>
+      val tableProperties = combinePropertiesAndOptions(properties, writeOptions)
+      ReplaceTableAsSelectExec(catalog, ident, partitioning, tableProperties, writeOptions,
         planLater(query)) :: Nil
 
     case DeleteFrom(rel: TableV2Relation, expr) =>
       DeleteFromV2Exec(rel, expr) :: Nil
 
     case _ => Nil
+  }
+
+  def combinePropertiesAndOptions(
+      properties: Map[String, String],
+      options: Map[String, String]): Map[String, String] = {
+    properties ++ options.map {
+      case (key: String, value: String) if key == "provider" => key -> value
+      case (key: String, value: String) => s"options.$key" -> value
+    }
   }
 }

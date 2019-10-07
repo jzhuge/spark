@@ -30,6 +30,7 @@ case class CreateTable(
     tableSchema: StructType,
     partitioning: Seq[PartitionTransform],
     bucketSpec: Option[BucketSpec],
+    properties: Map[String, String],
     options: Map[String, String],
     ifNotExists: Boolean) extends ParsedLogicalPlan {
 
@@ -43,6 +44,7 @@ case class CreateTableAsSelect(
     provider: String,
     partitioning: Seq[PartitionTransform],
     bucketSpec: Option[BucketSpec],
+    properties: Map[String, String],
     options: Map[String, String],
     asSelect: LogicalPlan,
     ifNotExists: Boolean) extends ParsedLogicalPlan {

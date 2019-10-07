@@ -427,6 +427,7 @@ case class CreateTable(
     identifier: TableIdentifier,
     tableSchema: StructType,
     partitioning: Seq[PartitionTransform],
+    properties: Map[String, String],
     options: Map[String, String],
     ignoreIfExists: Boolean) extends Command
 
@@ -437,6 +438,7 @@ case class CreateTableAsSelect(
     catalog: TableCatalog,
     table: TableIdentifier,
     partitioning: Seq[PartitionTransform],
+    properties: Map[String, String],
     query: LogicalPlan,
     writeOptions: Map[String, String],
     ignoreIfExists: Boolean) extends Command {
@@ -452,6 +454,7 @@ case class ReplaceTableAsSelect(
     catalog: TableCatalog,
     table: TableIdentifier,
     partitioning: Seq[PartitionTransform],
+    properties: Map[String, String],
     query: LogicalPlan,
     writeOptions: Map[String, String]) extends Command {
 
