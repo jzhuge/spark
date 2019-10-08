@@ -293,8 +293,8 @@ final class DataFrameWriter[T] private[sql](ds: Dataset[T]) {
                (false, SaveMode.Overwrite) =>
 
             runCommand(df.sparkSession, "save") {
-              CreateTableAsSelect(catalog, identifier, Seq.empty, df.logicalPlan, options,
-                ignoreIfExists = mode == SaveMode.Ignore)
+              CreateTableAsSelect(catalog, identifier, Seq.empty, Map.empty, df.logicalPlan,
+                options, ignoreIfExists = mode == SaveMode.Ignore)
             }
 
           case _ =>
@@ -626,7 +626,7 @@ final class DataFrameWriter[T] private[sql](ds: Dataset[T]) {
           }
         } else {
           runCommand(df.sparkSession, "save") {
-            ReplaceTableAsSelect(catalog, identifier, Seq.empty, df.logicalPlan, options)
+            ReplaceTableAsSelect(catalog, identifier, Seq.empty, Map.empty, df.logicalPlan, options)
           }
         }
 
@@ -656,7 +656,7 @@ final class DataFrameWriter[T] private[sql](ds: Dataset[T]) {
         }
 
         runCommand(df.sparkSession, "save") {
-          CreateTableAsSelect(catalog, identifier, Seq.empty, df.logicalPlan, options,
+          CreateTableAsSelect(catalog, identifier, Seq.empty, Map.empty, df.logicalPlan, options,
             ignoreIfExists = mode == SaveMode.Ignore)
         }
 

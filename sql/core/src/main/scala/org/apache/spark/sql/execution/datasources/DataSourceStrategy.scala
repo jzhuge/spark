@@ -141,8 +141,8 @@ case class DataSourceAnalysis(conf: SQLConf) extends Rule[LogicalPlan] with Cast
   }
 
   override def apply(plan: LogicalPlan): LogicalPlan = plan transform {
-    case sql.CreateTable(table, V1Provider(provider), schema, partitioning, bucketSpec, options,
-    ifNotExists) =>
+    case sql.CreateTable(table, V1Provider(provider), schema, partitioning, bucketSpec, properties,
+        options, ifNotExists) =>
       val (partitionColumnNames, partitionBucketing) = PartitionUtil.convertTransforms(partitioning)
       if (bucketSpec.isDefined && partitionBucketing.isDefined) {
         throw new AnalysisException("Cannot create table with CLUSTERED BY and bucket partitions")
@@ -164,7 +164,8 @@ case class DataSourceAnalysis(conf: SQLConf) extends Rule[LogicalPlan] with Cast
         schema = schema,
         provider = Some(provider),
         partitionColumnNames = partitionColumnNames,
-        bucketSpec = bucketSpec.orElse(partitionBucketing)
+        bucketSpec = bucketSpec.orElse(partitionBucketing),
+        properties = properties
       )
 
       // Determine the storage mode.
@@ -173,8 +174,8 @@ case class DataSourceAnalysis(conf: SQLConf) extends Rule[LogicalPlan] with Cast
       DDLUtils.checkDataColNames(tableDesc)
       CreateDataSourceTableCommand(tableDesc, ignoreIfExists = mode == SaveMode.Ignore)
 
-    case sql.CreateTableAsSelect(table, V1Provider(provider), partitioning, bucketSpec, options,
-    query, ifNotExists) =>
+    case sql.CreateTableAsSelect(table, V1Provider(provider), partitioning, bucketSpec, properties,
+        options, query, ifNotExists) =>
       val (partitionColumnNames, partitionBucketing) = PartitionUtil.convertTransforms(partitioning)
       if (bucketSpec.isDefined && partitionBucketing.isDefined) {
         throw new AnalysisException("Cannot create table with CLUSTERED BY and bucket partitions")
@@ -196,7 +197,8 @@ case class DataSourceAnalysis(conf: SQLConf) extends Rule[LogicalPlan] with Cast
         schema = new StructType,
         provider = Some(provider),
         partitionColumnNames = partitionColumnNames,
-        bucketSpec = bucketSpec.orElse(partitionBucketing)
+        bucketSpec = bucketSpec.orElse(partitionBucketing),
+        properties = properties
       )
 
       // Determine the storage mode.

@@ -127,7 +127,8 @@ class DataSourceV2Analysis(spark: SparkSession) extends Rule[LogicalPlan] {
           sourceOptions
         }
       CreateTable(catalog, ensureDatabaseIsSet(targetIdent),
-        source.schema, source.partitioning.asScala, options, ifNotExists)
+        source.schema, source.partitioning.asScala, source.properties().asScala.toMap, options,
+        ifNotExists)
 
     case sql.CreateTable(ident, V2Provider(provider), schema, transforms, bucketSpec, properties,
         options, ifNotExists) =>
