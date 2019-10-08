@@ -244,6 +244,9 @@ abstract class V2TableWriteExec(
     sparkContext.emptyRDD
   }
 
+  private val inferDistributionAndOrdering = sparkContext.conf
+      .getBoolean("spark.sql.dsv2.inferDistributionAndOrdering", defaultValue = true)
+
   @transient lazy val clusteringExpressions: Seq[Expression] = partitioning.flatMap {
     case identity: Identity =>
       Some(query.output.find(attr => identity.reference == attr.name)
@@ -279,34 +282,38 @@ abstract class V2TableWriteExec(
   }
 
   override def requiredChildDistribution: Seq[Distribution] = {
-    // add a required distribution if the data is not clustered or ordered
-    lazy val requiredDistribution = {
-      val maybeBucketedAttr = clusteringExpressions.collectFirst {
-        case IcebergBucketTransform(_, attr: Attribute) =>
-          attr
+    if (inferDistributionAndOrdering) {
+      // add a required distribution if the data is not clustered or ordered
+      lazy val requiredDistribution = {
+        val maybeBucketedAttr = clusteringExpressions.collectFirst {
+          case IcebergBucketTransform(_, attr: Attribute) =>
+            attr
+        }
+
+        maybeBucketedAttr match {
+          case Some(bucketedAttr) =>
+            OrderedDistribution(orderingExpressions :+ SortOrder(bucketedAttr, Ascending))
+          case _ =>
+            ClusteredDistribution(clusteringExpressions)
+        }
       }
 
-      maybeBucketedAttr match {
-        case Some(bucketedAttr) =>
-          OrderedDistribution(orderingExpressions :+ SortOrder(bucketedAttr, Ascending))
+      // only override output partitioning if the data is obviously not distributed for the write
+      val distribution = query.outputPartitioning match {
+        case _ if clusteringExpressions.isEmpty =>
+          UnspecifiedDistribution
+        case UnknownPartitioning(_) =>
+          requiredDistribution
+        case RoundRobinPartitioning(_) =>
+          requiredDistribution
         case _ =>
-          ClusteredDistribution(clusteringExpressions)
+          UnspecifiedDistribution
       }
-    }
 
-    // only override output partitioning if the data is obviously not distributed for the write
-    val distribution = query.outputPartitioning match {
-      case _ if clusteringExpressions.isEmpty =>
-        UnspecifiedDistribution
-      case UnknownPartitioning(_) =>
-        requiredDistribution
-      case RoundRobinPartitioning(_) =>
-        requiredDistribution
-      case _ =>
-        UnspecifiedDistribution
+      distribution :: Nil
+    } else {
+      super.requiredChildDistribution
     }
-
-    distribution :: Nil
   }
 
   private def unwrapAlias(plan: SparkPlan, expr: Expression): Option[Expression] = {
@@ -344,13 +351,17 @@ abstract class V2TableWriteExec(
   }
 
   override def requiredChildOrdering: Seq[Seq[SortOrder]] = {
-    requiredChildDistribution match {
-      case Seq(OrderedDistribution(order)) =>
-        // if this requires an ordered distribution, require the same sort order
-        order :: Nil
-      case _ =>
-        // otherwise, request a local ordering to avoid creating too many output files
-        orderingExpressions :: Nil
+    if (inferDistributionAndOrdering) {
+      requiredChildDistribution match {
+        case Seq(OrderedDistribution(order)) =>
+          // if this requires an ordered distribution, require the same sort order
+          order :: Nil
+        case _ =>
+          // otherwise, request a local ordering to avoid creating too many output files
+          orderingExpressions :: Nil
+      }
+    } else {
+      super.requiredChildOrdering
     }
   }
 }
