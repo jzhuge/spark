@@ -244,8 +244,8 @@ abstract class V2TableWriteExec(
     sparkContext.emptyRDD
   }
 
-  private val inferDistributionAndOrdering = sparkContext.conf
-      .getBoolean("spark.sql.dsv2.inferDistributionAndOrdering", defaultValue = true)
+  private val inferDistributionAndOrdering = sqlContext.conf
+      .getConfString("spark.sql.dsv2.inferDistributionAndOrdering", "true").toBoolean
 
   @transient lazy val clusteringExpressions: Seq[Expression] = partitioning.flatMap {
     case identity: Identity =>
