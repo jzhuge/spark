@@ -20,6 +20,7 @@ package org.apache.spark.sql.execution.datasources.v2
 import scala.collection.JavaConverters._
 
 import com.netflix.bdp.Events
+import org.apache.hadoop.conf.Configuration
 
 import org.apache.spark.{SparkEnv, SparkException, TaskContext}
 import org.apache.spark.executor.{CommitDeniedException, OutputMetrics}
@@ -165,6 +166,17 @@ case class WriteToDataSourceV2Exec(
 }
 
 object V2Util {
+  def catalog(conf: Configuration): String = {
+    conf.get("hive.metastore.uris") match {
+      case "thrift://metacat.dynprod.netflix.net:12001" =>
+        "prodhive"
+      case "thrift://metacat.dynprod.netflix.net:12002" =>
+        "testhive"
+      case _ =>
+        "unknown"
+    }
+  }
+
   def columns(struct: StructType): Seq[String] = {
     names(struct).map(_.mkString("."))
   }

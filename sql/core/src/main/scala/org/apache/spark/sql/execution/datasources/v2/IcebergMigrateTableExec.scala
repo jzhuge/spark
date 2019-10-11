@@ -19,6 +19,7 @@ package org.apache.spark.sql.execution.datasources.v2
 
 import scala.collection.JavaConverters._
 
+import com.netflix.bdp.Events
 import com.netflix.iceberg.metacat.MetacatTables
 import org.apache.hadoop.fs.Path
 import org.apache.iceberg.ManifestFile
@@ -59,11 +60,18 @@ case class IcebergMigrateTableExec(
     val tempIdent = TableIdentifier(tempName, Some(db))
 
     // use the default table catalog
+    val sourceCatalog = V2Util.catalog(conf.value)
     val source = spark.catalog(None).asTableCatalog.loadTable(ident).asInstanceOf[V1MetadataTable]
     val location: String = source.catalogTable.location match {
       case HasBatchID(parent) => parent
       case withoutBatchID => withoutBatchID
     }
+
+    // send a scan event for the entire source table
+    Events.sendScan(s"$sourceCatalog.$sourceName",
+      "true",
+      V2Util.columns(source.schema).asJava,
+      Map("context" -> "migrate_table").asJava)
 
     // do not allow locations that look like partitions
     location match {
@@ -146,6 +154,10 @@ case class IcebergMigrateTableExec(
       logInfo(s"Restoring original table: renaming $hiveIdent to $ident")
       spark.sessionState.catalog.renameTable(hiveIdent, ident)
     })
+
+    Events.sendAppend(s"$mcCatalog.$sourceName",
+      V2Util.columns(source.schema).asJava,
+      Map("context" -> "migrate_table").asJava)
 
     // clear the cache for the original table because it changed.
     spark.sessionState.catalog.refreshTable(ident)

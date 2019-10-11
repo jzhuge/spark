@@ -19,6 +19,7 @@ package org.apache.spark.sql.execution.datasources.v2
 
 import scala.collection.JavaConverters._
 
+import com.netflix.bdp.Events
 import com.netflix.iceberg.metacat.MetacatTables
 import org.apache.hadoop.fs.Path
 import org.apache.iceberg.{ManifestFile, ManifestWriter, PartitionSpec}
@@ -56,9 +57,16 @@ case class IcebergSnapshotTableExec(
     val name = targetTable.table
 
     // use the default table catalog
+    val sourceCatalog = V2Util.catalog(conf.value)
     val source = spark.catalog(None).asTableCatalog.loadTable(sourceTable)
     val sourceName = s"${sourceTable.database.get}.${sourceTable.table}"
     val partitions: DataFrame = IcebergUtil.partitionDF(spark, sourceName)
+
+    // send a scan event for the entire source table
+    Events.sendScan(s"$sourceCatalog.$sourceName",
+      "true",
+      V2Util.columns(source.schema).asJava,
+      Map("context" -> "snapshot_table").asJava)
 
     val nonParquetPartitions = partitions.filter(not($"format".contains("parquet"))).count()
     if (nonParquetPartitions > 0) {
@@ -105,6 +113,10 @@ case class IcebergSnapshotTableExec(
     })(catchBlock = {
       catalog.dropTable(targetTable)
     })
+
+    Events.sendAppend(s"$mcCatalog.$db.$name",
+      V2Util.columns(source.schema).asJava,
+      Map("context" -> "snapshot_table").asJava)
 
     logInfo(s"Finished loading data into $targetTable")
 
