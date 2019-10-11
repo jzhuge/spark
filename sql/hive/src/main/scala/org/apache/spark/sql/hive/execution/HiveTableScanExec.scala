@@ -199,7 +199,7 @@ case class HiveTableScanExec(
         .getOrElse(partitionPruningPred)
 
     Events.sendScan(
-      s"${relation.databaseName}.${relation.tableName}",
+      s"${V2Util.catalog(hadoopConf)}.${relation.databaseName}.${relation.tableName}",
       if (allPredicates.nonEmpty) allPredicates.reduce(And).sql else "true",
       V2Util.columns(schema).asJava,
       Map.empty[String, String].asJava)

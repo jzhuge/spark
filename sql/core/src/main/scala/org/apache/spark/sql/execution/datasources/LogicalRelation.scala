@@ -20,12 +20,13 @@ import java.net.URI
 
 import scala.util.control.NonFatal
 
+import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.analysis.MultiInstanceRelation
 import org.apache.spark.sql.catalyst.catalog.{CatalogRelation, CatalogTable, MaybeCatalogRelation}
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeMap, AttributeReference}
 import org.apache.spark.sql.catalyst.plans.logical.{LeafNode, LogicalPlan, Statistics}
 import org.apache.spark.sql.execution.datasources.jdbc.JDBCRelation
-import org.apache.spark.sql.execution.datasources.v2.V2AsBaseRelation
+import org.apache.spark.sql.execution.datasources.v2.{V2AsBaseRelation, V2Util}
 import org.apache.spark.sql.sources.BaseRelation
 import org.apache.spark.util.Utils
 
@@ -43,14 +44,7 @@ case class LogicalRelation(
   extends LeafNode with MultiInstanceRelation with MaybeCatalogRelation {
 
   def name: String = {
-    val catalogTableName = catalogTable.map(_.identifier).map { ident =>
-      ident.database match {
-        case Some(db) =>
-          s"$db.${ident.table}"
-        case _ =>
-          ident.table
-      }
-    }
+    val catalogTableName = catalogTable.map(_.identifier).map(V2Util.fullName)
 
     catalogTableName.getOrElse(relation match {
       case fsRel: HadoopFsRelation =>

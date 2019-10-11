@@ -408,7 +408,7 @@ case class AlterTableAddPartitionCommand(
     }
 
     Events.sendAppend(
-      table.identifier.unquotedString,
+      V2Util.fullName(table.identifier),
       V2Util.columns(table.schema).asJava,
       // add all new partitions to the options map as (partition key) -> (partition location)
       (parts.map(p => toKey(table.partitionColumnNames, p.spec) -> p.location).toMap +
@@ -500,7 +500,7 @@ case class AlterTableDropPartitionCommand(
     }
 
     Events.sendDelete(
-      table.identifier.unquotedString,
+      V2Util.fullName(table.identifier),
       toDeleteExpression(table.partitionColumnNames, normalizedSpecs).sql,
       Map("context" -> "drop_partitions").asJava)
 

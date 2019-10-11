@@ -374,7 +374,7 @@ case class LoadDataCommand(
       }.mkString("/")
 
       Events.sendAppend(
-        targetTable.identifier.unquotedString,
+        V2Util.fullName(targetTable.identifier),
         V2Util.columns(targetTable.schema).asJava,
         Map("context" -> "load_data", partitionKey -> path).asJava)
 
@@ -387,7 +387,7 @@ case class LoadDataCommand(
         inheritTableSpecs = true)
     } else {
       Events.sendAppend(
-        targetTable.identifier.unquotedString,
+        V2Util.fullName(targetTable.identifier),
         V2Util.columns(targetTable.schema).asJava,
         Map("inpath" -> path).asJava)
 

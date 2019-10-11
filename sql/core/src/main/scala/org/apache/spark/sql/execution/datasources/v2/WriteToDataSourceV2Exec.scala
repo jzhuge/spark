@@ -26,7 +26,7 @@ import org.apache.spark.{SparkEnv, SparkException, TaskContext}
 import org.apache.spark.executor.{CommitDeniedException, OutputMetrics}
 import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.SparkHadoopWriterUtils
+import org.apache.spark.sql.{SparkHadoopWriterUtils, SparkSession}
 import org.apache.spark.sql.catalog.v2.{PartitionTransform, Table, TableCatalog}
 import org.apache.spark.sql.catalog.v2.PartitionTransforms.{Bucket, Date, DateAndHour, Identity, Month, Year}
 import org.apache.spark.sql.catalyst.{InternalRow, TableIdentifier}
@@ -166,6 +166,27 @@ case class WriteToDataSourceV2Exec(
 }
 
 object V2Util {
+  def fullName(ident: TableIdentifier): String = {
+    ident.database match {
+      case Some(db) =>
+        s"$catalog.$db.${ident.table}"
+      case _ =>
+        s"$catalog.$currentDb.${ident.table}"
+    }
+  }
+
+  def catalog: String = {
+    SparkSession.getActiveSession
+        .map(spark => catalog(spark.sparkContext.hadoopConfiguration))
+        .getOrElse("unknown")
+  }
+
+  def currentDb: String = {
+    SparkSession.getActiveSession
+        .map(spark => spark.sessionState.catalog.getCurrentDatabase)
+        .getOrElse("unknown")
+  }
+
   def catalog(conf: Configuration): String = {
     conf.get("hive.metastore.uris") match {
       case "thrift://metacat.dynprod.netflix.net:12001" =>

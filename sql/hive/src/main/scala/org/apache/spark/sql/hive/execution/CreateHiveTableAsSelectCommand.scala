@@ -50,7 +50,7 @@ case class CreateHiveTableAsSelectCommand(
 
   override def run(sparkSession: SparkSession): Seq[Row] = {
     Events.sendCTAS(
-      tableDesc.identifier.unquotedString,
+      V2Util.fullName(tableDesc.identifier),
       V2Util.columns(query.schema).asJava,
       tableDesc.properties.asJava
     )

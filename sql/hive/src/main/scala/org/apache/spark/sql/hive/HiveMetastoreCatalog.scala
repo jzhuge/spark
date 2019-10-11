@@ -155,7 +155,7 @@ private[hive] class HiveMetastoreCatalog(sparkSession: SparkSession) extends Log
       }
 
       Events.sendLoadView(
-        tableIdent.unquotedString,
+        V2Util.fullName(tableIdent),
         V2Util.columns(viewPlan.schema).asJava,
         Map.empty[String, String].asJava
       )

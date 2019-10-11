@@ -27,6 +27,7 @@ import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.expressions.aggregate._
 import org.apache.spark.sql.catalyst.plans.logical._
 import org.apache.spark.sql.catalyst.rules.Rule
+import org.apache.spark.sql.execution.datasources.v2.V2Util
 import org.apache.spark.sql.execution.datasources.{HadoopFsRelation, LogicalRelation}
 import org.apache.spark.sql.internal.SQLConf
 
@@ -138,7 +139,7 @@ case class OptimizeMetadataOnlyQuery(
 
             val sendScanEvent: () => Unit = () => {
               Events.sendScan(
-                relation.catalogTable.identifier.unquotedString,
+                V2Util.fullName(relation.catalogTable.identifier),
                 relFilters.reduceLeftOption(And).map(_.sql).getOrElse("true"),
                 partAttrs.map(_.name).asJava,
                 Map("context" -> "metadata_query").asJava)

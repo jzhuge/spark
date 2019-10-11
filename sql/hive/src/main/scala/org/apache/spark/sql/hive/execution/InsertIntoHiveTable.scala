@@ -334,6 +334,7 @@ case class InsertIntoHiveTable(
     val committerOptions: mutable.Map[String, String] = new mutable.HashMap[String, String]()
     committerOptions.put("spark.sql.commit-protocol.append", if (overwrite) "false" else "true")
 
+    var metacatCatalog = "unknown"
     val committerClass = if (useS3Committer) {
       if (overwrite) {
         committerOptions.put("s3.multipart.committer.conflict-mode", "replace")
@@ -346,9 +347,9 @@ case class InsertIntoHiveTable(
         partitionColumnNames.nonEmpty.toString)
 
       val tableIdentifier = table.catalogTable.identifier
-        val hiveEnv = hadoopConf.get("spark.sql.hive.env", "prod")
-        committerOptions.put("s3.multipart.committer.catalog",
-          sessionState.conf.metacatCatalog.getOrElse(s"${hiveEnv}hive"))
+      val hiveEnv = hadoopConf.get("spark.sql.hive.env", "prod")
+      metacatCatalog = sessionState.conf.metacatCatalog.getOrElse(s"${hiveEnv}hive")
+        committerOptions.put("s3.multipart.committer.catalog", metacatCatalog)
         committerOptions.put("s3.multipart.committer.database",
           tableIdentifier.database.getOrElse("default"))
         committerOptions.put("s3.multipart.committer.table", tableIdentifier.table)
@@ -366,7 +367,7 @@ case class InsertIntoHiveTable(
       committerOptions.toMap)
 
     if (!Utils.isTesting) {
-      val tableName = s"${table.databaseName}.${table.tableName}"
+      val tableName = s"$metacatCatalog.${table.databaseName}.${table.tableName}"
       if (overwrite) {
         Events.sendDynamicOverwrite(
           tableName,

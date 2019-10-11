@@ -150,14 +150,9 @@ case class InsertIntoHadoopFsRelationCommand(
         committerOptions.toMap)
 
       if (!Utils.isTesting) {
-        val tableName = catalogTable.map(_.identifier).map { ident =>
-          ident.database match {
-            case Some(db) =>
-              s"$db.${ident.table}"
-            case _ =>
-              ident.table
-          }
-        }.getOrElse(outputPath.toString)
+        val tableName = catalogTable.map(_.identifier)
+            .map(V2Util.fullName)
+            .getOrElse(outputPath.toString)
 
         val schema = catalogTable.map(_.schema).getOrElse(query.schema)
 
