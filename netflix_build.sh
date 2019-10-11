@@ -118,3 +118,4 @@ echo
 echo 'Integration tests PASSED. Deploying tarball to app location.'
 echo
 netflix/assume_role.sh aws s3 cp --no-progress spark-${BUILD_VERSION}.tgz s3://netflix-bigdataplatform/spark-builds/${BUILD_VERSION}/
+netflix/assume_role.sh aws s3 cp --no-progress netflix/integration_tests.py s3://netflix-bigdataplatform/spark-builds/${BUILD_VERSION}/
