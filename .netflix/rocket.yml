@@ -1,0 +1,12 @@
+scm:
+  checkout:
+    prBuildMerge: true
+notifications:
+  email:
+  - to:
+    - jzhuge@netflix.com
+    rocketBranch: netflix/.*
+    conditions:
+    - aborted
+    - failure
+    - success

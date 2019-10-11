@@ -1,0 +1,7 @@
+#!/bin/sh
+set -efx
+
+case "$ROCKET_BRANCH" in
+  netflix/2.3.2-unstable|netflix/2.3.2|netflix/2.1.1-unstable|netflix/2.1.1)
+    bash -x netflix_build.sh
+esac
