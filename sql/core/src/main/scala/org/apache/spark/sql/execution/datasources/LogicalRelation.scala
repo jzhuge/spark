@@ -50,53 +50,10 @@ case class LogicalRelation(
       case fsRel: HadoopFsRelation =>
         fsRel.location.rootPaths.mkString(",")
       case jdbcRel: JDBCRelation =>
-        (Option(jdbcRel.jdbcOptions.table), Option(jdbcRel.jdbcOptions.url)) match {
-          case (Some(table), Some(url)) =>
-            addTableToURI(table, url)
-          case (None, Some(url)) =>
-            url
-          case (Some(table), None) =>
-            table
-          case _ =>
-            "jdbc:unknown"
-        }
+        V2Util.addTableToURI(jdbcRel.jdbcOptions.table, jdbcRel.jdbcOptions.url)
       case _ =>
-        "unknown"
+        s"unknown:$relation"
     })
-  }
-
-  def addTableToURI(table: String, url: String): String = {
-    try {
-      val uri = URI.create(url)
-      Option(uri.getPath) match {
-        case Some(path) =>
-          new URI(
-            uri.getScheme,
-            null,
-            uri.getHost,
-            uri.getPort,
-            s"$path/$table",
-            null,
-            uri.getFragment).toString
-        case _ =>
-          Option(uri.getScheme) match {
-            case Some(scheme) =>
-              val inner = URI.create(addTableToURI(table, uri.getRawSchemeSpecificPart))
-              new URI(
-                scheme,
-                s"${inner.getScheme}:${inner.getSchemeSpecificPart}",
-                uri.getFragment).toString
-            case _ =>
-              new URI(
-                null,
-                s"${uri.getSchemeSpecificPart}/$table",
-                uri.getFragment).toString
-          }
-      }
-    } catch {
-      case NonFatal(_) =>
-        table
-    }
   }
 
   override def asCatalogRelation: Option[CatalogRelation] = {

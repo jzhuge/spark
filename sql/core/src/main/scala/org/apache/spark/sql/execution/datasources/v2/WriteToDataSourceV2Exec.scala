@@ -217,6 +217,46 @@ object V2Util {
         Seq(Nil)
     }
   }
+
+  val URIWithAuthorityAndQuery = "([^/]*)(?:\\/\\/)([^/]*)(\\/[^?]*)?\\?(.*)".r
+  val URIWithAuthority = "([^/]*)(?:\\/\\/)([^/]*)(\\/[^?]*)?".r
+  val CredentialsAndHost = "([^@]*)@(.*)".r
+  val UserAndPassword = "([^:]*)(?::.*)?".r
+  val URIWithQuery = "([^?]*)\\?(.*)".r
+
+  def addTableToURI(table: String, uri: String): String = {
+    def removePassword(authority: String): String = {
+      authority match {
+        case CredentialsAndHost(credentials, host) =>
+          credentials match {
+            case UserAndPassword(user) =>
+              s"$user@$host"
+            case user =>
+              s"$user@$host"
+          }
+        case host =>
+          host
+      }
+    }
+
+    uri match {
+      case URIWithAuthorityAndQuery(scheme, authority, path, query) =>
+        val userAndHost = removePassword(authority)
+        val sanitizedQuery = query.replaceAll("(?:^pass[^&]*&?)|(?:&pass[^&]*)", "")
+        s"$scheme//$userAndHost${Option(path).getOrElse("")}/$table?$sanitizedQuery"
+
+      case URIWithAuthority(scheme, authority, path) =>
+        val userAndHost = removePassword(authority)
+        s"$scheme//$userAndHost${Option(path).getOrElse("")}/$table"
+
+      case URIWithQuery(uri, query) =>
+        val sanitizedQuery = query.replaceAll("(?:^pass[^&]*&?)|(?:&pass[^&]*)", "")
+        s"$uri/$table?$sanitizedQuery"
+
+      case _ =>
+        uri
+    }
+  }
 }
 
 /**
