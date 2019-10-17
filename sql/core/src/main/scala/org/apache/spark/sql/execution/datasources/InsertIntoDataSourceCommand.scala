@@ -43,18 +43,19 @@ case class InsertIntoDataSourceCommand(
 
   override def run(sparkSession: SparkSession): Seq[Row] = {
     if (!Utils.isTesting) {
-      val tableName = logicalRelation.name
+      val tableName = logicalRelation.tableName
+      val meta = logicalRelation.jdbcUri.map("jdbc_uri" -> _).toMap
       if (overwrite.enabled) {
         Events.sendDynamicOverwrite(
           tableName,
           V2Util.columns(logicalRelation.schema).asJava,
-          Map.empty[String, String].asJava
+          meta.asJava
         )
       } else {
         Events.sendAppend(
           tableName,
           V2Util.columns(logicalRelation.schema).asJava,
-          Map.empty[String, String].asJava
+          meta.asJava
         )
       }
     }

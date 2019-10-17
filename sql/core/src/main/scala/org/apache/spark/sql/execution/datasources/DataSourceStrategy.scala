@@ -438,13 +438,14 @@ object DataSourceStrategy extends Strategy with Logging {
         (a, _) => toCatalystRDD(l, a, t.buildScan(a.map(_.name).toArray))) :: Nil
 
     case l @ LogicalRelation(baseRelation: TableScan, _, _) =>
-      val tableName = l.name
+      val tableName = l.tableName
+      val meta = l.jdbcUri.map("jdbc_uri" -> _).toMap
       val sendScanEvent: StructType => Unit = if (!Utils.isTesting) {
         schema: StructType => {
           Events.sendScan(tableName,
             "true",
             V2Util.columns(schema).asJava,
-            Map.empty[String, String].asJava)
+            meta.asJava)
         }
       } else {
         _: StructType => {}
@@ -537,14 +538,15 @@ object DataSourceStrategy extends Strategy with Logging {
     // `Filter`s or cannot be handled by `relation`.
     val filterCondition = unhandledPredicates.reduceLeftOption(expressions.And)
 
-    val tableName = relation.name
+    val tableName = relation.tableName
+    val meta = relation.jdbcUri.map("jdbc_uri" -> _).toMap
     val filter = filterPredicates.reduceLeftOption(expressions.And).map(_.sql).getOrElse("true")
     val sendScanEvent: StructType => Unit = if (!Utils.isTesting) {
       schema: StructType => {
         Events.sendScan(tableName,
           filter,
           V2Util.columns(schema).asJava,
-          Map.empty[String, String].asJava)
+          meta.asJava)
       }
     } else {
       _: StructType => {}

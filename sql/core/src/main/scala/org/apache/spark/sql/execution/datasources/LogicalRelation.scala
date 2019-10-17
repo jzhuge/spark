@@ -16,11 +16,6 @@
  */
 package org.apache.spark.sql.execution.datasources
 
-import java.net.URI
-
-import scala.util.control.NonFatal
-
-import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.analysis.MultiInstanceRelation
 import org.apache.spark.sql.catalyst.catalog.{CatalogRelation, CatalogTable, MaybeCatalogRelation}
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeMap, AttributeReference}
@@ -43,17 +38,26 @@ case class LogicalRelation(
     catalogTable: Option[CatalogTable] = None)
   extends LeafNode with MultiInstanceRelation with MaybeCatalogRelation {
 
-  def name: String = {
+  def tableName: String = {
     val catalogTableName = catalogTable.map(_.identifier).map(V2Util.fullName)
 
     catalogTableName.getOrElse(relation match {
       case fsRel: HadoopFsRelation =>
         fsRel.location.rootPaths.mkString(",")
       case jdbcRel: JDBCRelation =>
-        V2Util.addTableToURI(jdbcRel.jdbcOptions.table, jdbcRel.jdbcOptions.url)
+        s"jdbc.${jdbcRel.jdbcOptions.table}"
       case _ =>
         s"unknown:$relation"
     })
+  }
+
+  def jdbcUri: Option[String] = {
+    relation match {
+      case jdbcRel: JDBCRelation =>
+        Some(V2Util.removePassword(jdbcRel.jdbcOptions.url))
+      case _ =>
+        None
+    }
   }
 
   override def asCatalogRelation: Option[CatalogRelation] = {

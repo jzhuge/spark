@@ -63,14 +63,15 @@ object FileSourceStrategy extends Strategy with Logging {
   def apply(plan: LogicalPlan): Seq[SparkPlan] = plan match {
     case PhysicalOperation(projects, filters,
       l @ LogicalRelation(fsRelation: HadoopFsRelation, _, table)) =>
-      val tableName = l.name
+      val tableName = l.tableName
+      val meta = l.jdbcUri.map("jdbc_uri" -> _).toMap
       val filter: String = filters.reduceLeftOption(expressions.And).map(_.sql).getOrElse("true")
       val sendScanEvent: StructType => Unit = if (!Utils.isTesting) {
         schema: StructType => {
           Events.sendScan(tableName,
             filter,
             V2Util.columns(schema).asJava,
-            Map.empty[String, String].asJava)
+            meta.asJava)
         }
       } else {
         _: StructType => {}

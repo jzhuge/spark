@@ -113,12 +113,13 @@ case class OptimizeMetadataOnlyQuery(
           case l @ LogicalRelation(fsRelation: HadoopFsRelation, _, _) =>
             val partAttrs = getPartitionAttrs(fsRelation.partitionSchema.map(_.name), l)
             val partitionData = fsRelation.location.listFiles(filters = relFilters)
+            val meta = Map("context" -> "metadata_query") ++ l.jdbcUri.map("jdbc_uri" -> _).toMap
             val sendScanEvent: () => Unit = () => {
               Events.sendScan(
-                l.name,
+                l.tableName,
                 relFilters.reduceLeftOption(And).map(_.sql).getOrElse("true"),
                 partAttrs.map(_.name).asJava,
-                Map("context" -> "metadata_query").asJava)
+                meta.asJava)
             }
 
             LocalRelation(partAttrs, partitionData.map(_.values).toList, Some(sendScanEvent))

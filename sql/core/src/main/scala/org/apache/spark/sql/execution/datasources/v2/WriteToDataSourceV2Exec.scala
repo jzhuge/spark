@@ -224,8 +224,8 @@ object V2Util {
   val UserAndPassword = "([^:]*)(?::.*)?".r
   val URIWithQuery = "([^?]*)\\?(.*)".r
 
-  def addTableToURI(table: String, uri: String): String = {
-    def removePassword(authority: String): String = {
+  def removePassword(uri: String): String = {
+    def removeAuthorityPassword(authority: String): String = {
       authority match {
         case CredentialsAndHost(credentials, host) =>
           credentials match {
@@ -239,19 +239,23 @@ object V2Util {
       }
     }
 
+    def removeQueryPassword(query: String): String = {
+      query.replaceAll("(?:^pass[^&]*&?)|(?:&pass[^&]*)", "")
+    }
+
     uri match {
       case URIWithAuthorityAndQuery(scheme, authority, path, query) =>
-        val userAndHost = removePassword(authority)
-        val sanitizedQuery = query.replaceAll("(?:^pass[^&]*&?)|(?:&pass[^&]*)", "")
-        s"$scheme//$userAndHost${Option(path).getOrElse("")}/$table?$sanitizedQuery"
+        val userAndHost = removeAuthorityPassword(authority)
+        val sanitizedQuery = removeQueryPassword(query)
+        s"$scheme//$userAndHost${Option(path).getOrElse("")}?$sanitizedQuery"
 
       case URIWithAuthority(scheme, authority, path) =>
-        val userAndHost = removePassword(authority)
-        s"$scheme//$userAndHost${Option(path).getOrElse("")}/$table"
+        val userAndHost = removeAuthorityPassword(authority)
+        s"$scheme//$userAndHost${Option(path).getOrElse("")}"
 
       case URIWithQuery(uri, query) =>
-        val sanitizedQuery = query.replaceAll("(?:^pass[^&]*&?)|(?:&pass[^&]*)", "")
-        s"$uri/$table?$sanitizedQuery"
+        val sanitizedQuery = removeQueryPassword(query)
+        s"$uri?$sanitizedQuery"
 
       case _ =>
         uri
