@@ -124,6 +124,11 @@
       <groupId>org.apache.hadoop</groupId>
       <artifactId>hadoop-minikdc</artifactId>
     </dependency>
+    <!-- Fix org.apache.directory.jdbm:apacheds-jdbm1:bundle:2.0.0-M2 not found -->
+    <dependency>
+      <groupId>org.apache.directory.jdbm</groupId>
+      <artifactId>apacheds-jdbm1</artifactId>
+    </dependency>
     <!-- Kafka embedded server uses Zookeeper 3.5.7 API -->
     <dependency>
       <groupId>org.apache.zookeeper</groupId>

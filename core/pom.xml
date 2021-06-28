@@ -426,6 +426,12 @@
       <artifactId>hadoop-minikdc</artifactId>
       <scope>test</scope>
     </dependency>
+    <!-- Fix org.apache.directory.jdbm:apacheds-jdbm1:bundle:2.0.0-M2 not found -->
+    <dependency>
+      <groupId>org.apache.directory.jdbm</groupId>
+      <artifactId>apacheds-jdbm1</artifactId>
+      <scope>test</scope>
+    </dependency>
     <dependency>
       <groupId>net.razorvine</groupId>
       <artifactId>pickle</artifactId>

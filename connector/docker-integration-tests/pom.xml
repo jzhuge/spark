@@ -101,6 +101,12 @@
       <artifactId>hadoop-minikdc</artifactId>
       <scope>test</scope>
     </dependency>
+    <!-- Fix org.apache.directory.jdbm:apacheds-jdbm1:bundle:2.0.0-M2 not found -->
+    <dependency>
+      <groupId>org.apache.directory.jdbm</groupId>
+      <artifactId>apacheds-jdbm1</artifactId>
+      <scope>test</scope>
+    </dependency>
     <!-- Although SPARK-28737 upgraded Jersey to 2.29 for JDK11, 'com.spotify.docker-client' still
       uses this repackaged 'jersey-guava'. We add this back for JDK8/JDK11 testing. -->
     <dependency>

@@ -1460,6 +1460,13 @@
           </exclusion>
         </exclusions>
       </dependency>
+      <!-- Fix org.apache.directory.jdbm:apacheds-jdbm1:bundle:2.0.0-M2 not found -->
+      <dependency>
+        <groupId>org.apache.directory.jdbm</groupId>
+        <artifactId>apacheds-jdbm1</artifactId>
+        <version>2.0.0-M2</version>
+        <scope>test</scope>
+      </dependency>
       <dependency>
         <groupId>org.bouncycastle</groupId>
         <artifactId>bcprov-jdk15on</artifactId>
